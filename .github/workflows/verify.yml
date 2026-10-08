@@ -1,0 +1,123 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  typescript:
+    name: TypeScript · typecheck, tests, lint, build, asset guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # `pnpm install` runs the postinstall hook, which builds packages/* so
+      # their dist/ output and type declarations exist for the checks below.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests
+        shell: bash
+        run: |
+          set -o pipefail
+          set +e
+          pnpm test 2>&1 | tee "$RUNNER_TEMP/pnpm-test.log"
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            diagnostics=$(tail -n 35 "$RUNNER_TEMP/pnpm-test.log" | tr '\n' '; ' || true)
+            echo "::error title=TypeScript test failure::$diagnostics"
+          fi
+          exit "$status"
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Asset guard
+        run: node scripts/check-assets.mjs
+
+      # Pixelify Sans and Silkscreen are self-hosted from pinned @fontsource
+      # packages, so this production build does not fetch fonts from Google.
+      - name: Production build
+        run: pnpm build
+
+  programs:
+    name: Anchor programs · check, unit tests, integration tests
+    runs-on: ubuntu-latest
+    env:
+      # The anchor and solana macros expand to cfg values this crate does not
+      # declare, which produces hundreds of warning lines per build and pushes
+      # the actual test output out of the log. The lint is noise here, not a
+      # signal about this repository's code.
+      RUSTFLAGS: -A unexpected_cfgs
+      # solana-program-test turns on env_logger; at the default level every
+      # instruction emits dozens of stable_log DEBUG lines.
+      RUST_LOG: error
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+
+      # Catches syntax, type and lifetime errors without the Solana BPF
+      # toolchain. A real `anchor build` / `anchor test` still has to run
+      # before any deployment.
+      - name: cargo check
+        shell: bash
+        run: |
+          set -o pipefail
+          set +e
+          cargo check --all-targets --message-format=short 2>&1 | tee "$RUNNER_TEMP/cargo-check.log"
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            diagnostics=$(grep -F 'error' "$RUNNER_TEMP/cargo-check.log" | head -n 20 | tr '\n' '; ' || true)
+            echo "::error title=Cargo check::$diagnostics"
+          fi
+          exit "$status"
+
+      # Host-side unit tests for the Metaplex Core asset parser in
+      # programs/district/src/mpl_core.rs, against synthetic account bytes.
+      - name: Unit tests
+        run: cargo test --lib -- --nocapture
+
+      # Instruction-level tests in programs/district/tests/integration.rs. They
+      # run the real program logic inside solana-program-test's simulated bank,
+      # so account constraints, PDA derivation, borsh serialization and the SPL
+      # Token burn CPI are all exercised. No validator, no BPF build and no
+      # Anchor CLI are involved, which is why this runs in the same job as cargo
+      # check.
+      #
+      # The tests assert committed account state rather than emitted events:
+      # solana_runtime collects logs with ExcludeReturnData, and because the
+      # program runs as a native builtin instead of through the BPF VM, the
+      # sol_log_data call behind emit! never reaches the returned logs.
+      #
+      # This is not a replacement for `anchor build` + `anchor test` against a
+      # real validator before deployment; it is the automated regression guard
+      # for the security checks in the meantime.
+      #
+      # --test-threads=1 because each test builds its own bank and the run is
+      # fast enough that parallelism buys nothing but interleaved output.
+      - name: Integration tests
+        run: cargo test --test integration -- --test-threads=1

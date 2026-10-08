@@ -1,0 +1,38 @@
+{
+  "name": "@bas/content",
+  "version": "1.0.0",
+  "private": true,
+  "description": "English content schemas, validation and server loaders for BAS Pixel District",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/citizens.server.d.ts",
+      "default": "./dist/citizens.server.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm build && node --experimental-strip-types --conditions=react-server --test --test-reporter=spec \"test/*.test.ts\""
+  },
+  "dependencies": {
+    "@bas/config": "workspace:*",
+    "server-only": "^0.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "typescript": "^5.7.3"
+  }
+}

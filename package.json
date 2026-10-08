@@ -3,14 +3,31 @@
   "version": "1.0.0",
   "private": true,
   "description": "BAS - Living Pixel Art World & Citizen Progression on Solana",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.6.0",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.15.9",
   "scripts": {
-    "dev": "pnpm --filter @bas/web dev",
-    "build": "pnpm --filter \"@bas/*\" build",
+    "postinstall": "pnpm build:packages",
+    "build:packages": "pnpm --filter \"./packages/*\" build",
+    "build:web": "pnpm --filter @bas/web build",
+    "build": "pnpm build:packages && pnpm build:web",
+    "dev": "pnpm build:packages && pnpm --filter @bas/web dev",
+    "dev:packages": "pnpm --filter \"./packages/*\" --parallel dev",
     "lint": "pnpm --filter \"@bas/*\" lint",
-    "typecheck": "pnpm --filter \"@bas/*\" typecheck",
-    "test": "pnpm --filter \"@bas/*\" test"
+    "typecheck": "pnpm build:packages && pnpm --filter \"@bas/*\" typecheck",
+    "test": "pnpm --filter \"@bas/*\" test",
+    "assets": "node scripts/check-assets.mjs",
+    "verify": "pnpm typecheck && pnpm test && pnpm lint && pnpm build",
+    "program:check": "cargo check --all-targets",
+    "program:test": "cargo test --manifest-path programs/district/Cargo.toml",
+    "program:build": "anchor build",
+    "clean": "pnpm --filter \"@bas/*\" clean && rm -rf apps/web/.next"
   },
   "devDependencies": {
+    "@types/node": "^22.13.4",
     "typescript": "^5.7.3"
   }
 }

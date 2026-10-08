@@ -1,0 +1,33 @@
+[workspace]
+resolver = "2"
+members = ["programs/district"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "UNLICENSED"
+repository = "https://github.com/minramram206-boop/BAS-NFT"
+
+[workspace.dependencies]
+anchor-lang = "0.30.1"
+anchor-spl = "0.30.1"
+solana-program = "=1.18.26"
+
+# Host-side test harness. Pinned to the exact Solana version so
+# solana-program-test and solana-program resolve to one copy of `Pubkey`.
+solana-program-test = "=1.18.26"
+solana-sdk = "=1.18.26"
+# Same version and feature set anchor-spl 0.30.1 uses.
+spl-token = { version = "4", features = ["no-entrypoint"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+# BPF builds are size constrained, so optimise for a small binary.
+[profile.release]
+overflow-checks = true
+lto = "fat"
+codegen-units = 1
+
+[profile.release.build-override]
+opt-level = 3
+incremental = false
+codegen-units = 1

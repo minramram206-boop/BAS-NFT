@@ -1,0 +1,72 @@
+[
+  {
+    "index": 0,
+    "key": "pioneer",
+    "label": "Pioneer",
+    "initialStats": {
+      "intelligence": 1,
+      "alignment": 1,
+      "compute": 1
+    }
+  },
+  {
+    "index": 1,
+    "key": "steward",
+    "label": "Steward",
+    "initialStats": {
+      "intelligence": 1,
+      "alignment": 2,
+      "compute": 0
+    }
+  },
+  {
+    "index": 2,
+    "key": "artisan",
+    "label": "Artisan",
+    "initialStats": {
+      "intelligence": 0,
+      "alignment": 1,
+      "compute": 2
+    }
+  },
+  {
+    "index": 3,
+    "key": "sentinel",
+    "label": "Sentinel",
+    "initialStats": {
+      "intelligence": 0,
+      "alignment": 2,
+      "compute": 1
+    }
+  },
+  {
+    "index": 4,
+    "key": "scholar",
+    "label": "Scholar",
+    "initialStats": {
+      "intelligence": 2,
+      "alignment": 1,
+      "compute": 0
+    }
+  },
+  {
+    "index": 5,
+    "key": "navigator",
+    "label": "Navigator",
+    "initialStats": {
+      "intelligence": 2,
+      "alignment": 0,
+      "compute": 1
+    }
+  },
+  {
+    "index": 6,
+    "key": "mentor",
+    "label": "Mentor",
+    "initialStats": {
+      "intelligence": 1,
+      "alignment": 0,
+      "compute": 2
+    }
+  }
+]

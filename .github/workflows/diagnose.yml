@@ -1,0 +1,51 @@
+name: diagnose
+
+# Temporary. `workflow_dispatch` cannot be used because it resolves the
+# workflow file from the default branch, and this branch must not be merged or
+# pushed anywhere else. So it triggers on push and is deleted again afterwards.
+on:
+  push:
+    branches: [arena/671307ff-bas-nft]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    env:
+      # The anchor and solana macros expand to cfg values this crate does not
+      # declare; those warnings are hundreds of lines and bury the real output.
+      RUSTFLAGS: -A unexpected_cfgs
+      # solana-program-test turns on env_logger; at the default level every
+      # instruction emits dozens of stable_log DEBUG lines.
+      RUST_LOG: error
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # rust-cache is skipped on purpose: the failure may be in resolution, and
+      # a poisoned cache would hide it.
+      - name: Collect cargo output
+        run: |
+          {
+            echo '### cargo check --all-targets'
+            cargo check --all-targets --message-format=short 2>&1 | tail -n 120
+            echo
+            echo '### cargo test --lib'
+            cargo test --lib 2>&1 | tail -n 60
+            echo
+            echo '### cargo test --test integration'
+            cargo test --test integration -- --test-threads=1 2>&1 | tail -n 700
+          } > /tmp/diag.txt 2>&1 || true
+
+      - name: Report the output in an issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head -c 60000 /tmp/diag.txt > /tmp/diag-trim.txt
+          gh issue create \
+            --title "DIAGNOSTIC (temporary): cargo output for run ${{ github.run_id }}" \
+            --body-file /tmp/diag-trim.txt

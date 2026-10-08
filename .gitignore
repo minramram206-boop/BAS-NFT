@@ -1,10 +1,35 @@
-node_modules
-.next
-dist
-build
-.turbo
-target
-.env
-.env.local
-.DS_Store
+# dependencies
+node_modules/
+
+# build output
+dist/
+.next/
+out/
+build/
+target/
+.turbo/
+
+# test & tooling caches
+coverage/
 *.tsbuildinfo
+.eslintcache
+
+# environment
+.env
+.env.*
+!.env.example
+
+# editors & OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Anchor / Solana
+.anchor/
+test-ledger/
+
+# Program deploy keypairs are secrets, never commit them
+keypair.json
+*-keypair.json
+programs/*/keypair.json
