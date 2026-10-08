@@ -574,9 +574,24 @@ async fn pauses_and_resumes_and_rewriting_the_same_value_is_harmless() {
     let config = read_config(&mut context, &harness).await;
     assert!(config.is_paused);
     assert_eq!(config.authority, authority, "pausing must not rewrite the authority");
+    let before = (
+        config.is_paused,
+        config.authority,
+        config.utility_mint,
+        config.collection_mint,
+        config.burn_amount_required,
+        config.total_registered_citizens,
+        config.bump,
+    );
 
     // `set_paused` short-circuits when the value is unchanged, so repeating it
-    // has to succeed without touching the rest of the config.
+    // has to succeed without touching the rest of the config. The slot has to
+    // move first: an identical instruction from the same payer on the same
+    // blockhash produces an identical signature, which the bank rejects as
+    // `AlreadyProcessed` before the program is ever invoked.
+    context.warp_to_slot(2).expect("warping to slot 2");
+    context.last_blockhash = context.get_new_latest_blockhash().await.expect("a blockhash");
+
     send(
         &mut context,
         set_paused_instruction(&harness, authority, true),
@@ -584,20 +599,19 @@ async fn pauses_and_resumes_and_rewriting_the_same_value_is_harmless() {
     )
     .await
     .expect("repeating paused=true must still succeed");
+
     let repeated = read_config(&mut context, &harness).await;
     assert_eq!(
         (
             repeated.is_paused,
-            repeated.total_registered_citizens,
-            repeated.burn_amount_required,
+            repeated.authority,
             repeated.utility_mint,
+            repeated.collection_mint,
+            repeated.burn_amount_required,
+            repeated.total_registered_citizens,
+            repeated.bump,
         ),
-        (
-            config.is_paused,
-            config.total_registered_citizens,
-            config.burn_amount_required,
-            config.utility_mint,
-        ),
+        before,
         "an unchanged value must leave the config exactly as it was"
     );
 
