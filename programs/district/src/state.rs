@@ -40,9 +40,15 @@ impl CitizenState {
     pub const LEN: usize = 8 + 32 + 32 + 1 + 1 + 1 + 2 + 4 + 1;
 }
 
+/// Trainable citizen attribute.
+///
+/// Discriminants are explicit so the on-chain encoding stays stable when a new
+/// stat is ever appended, and so the value can be logged as a `u8`.
+/// Mirrored by `StatType` in `packages/chain-client`.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum CitizenStat {
-    Intelligence,
-    Alignment,
-    Composure,
+    Intelligence = 0,
+    Alignment = 1,
+    Composure = 2,
 }

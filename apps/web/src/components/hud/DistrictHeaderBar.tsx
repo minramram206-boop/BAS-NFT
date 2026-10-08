@@ -12,7 +12,8 @@ import {
   useTokensBurned,
   useWalletAddress,
 } from '@/stores/selectors';
-import { BROADCAST, INITIAL_SUPPLY_COUNT, UI } from '@/config/constants';
+import { BROADCAST, INITIAL_SUPPLY_COUNT, UI, districtBroadcastMessage } from '@/config/constants';
+import { useDistrictTelemetry } from '@/components/layout/DistrictTelemetryProvider';
 import { PixelIcon } from '@/components/ui/PixelIcon';
 import { ArcadeHeaderBar, HeaderTrailingMeta } from './ArcadeHeaderBar';
 import { HeaderBay } from './HeaderBay';
@@ -24,6 +25,7 @@ const VALUE_CLASS = 'font-heading font-extrabold tracking-wider whitespace-nowra
 
 /** District 01 header: identity, supply, burn telemetry, and session controls. */
 export const DistrictHeaderBar: React.FC = () => {
+  const telemetry = useDistrictTelemetry();
   const supplyCount = useSupplyCount();
   const tokensBurned = useTokensBurned();
   const sfxEnabled = useSfxEnabled();
@@ -34,10 +36,10 @@ export const DistrictHeaderBar: React.FC = () => {
 
   return (
     <ArcadeHeaderBar
-      pillLabel={UI.networkBadge}
-      broadcastTag={BROADCAST.district.tag}
-      broadcastMessage={`${UI.districtName} ONLINE • ${INITIAL_SUPPLY_COUNT - supplyCount}/${INITIAL_SUPPLY_COUNT} CITIZENS ACTIVE • ${BROADCAST.district.message}`}
-      trailing={<HeaderTrailingMeta>24ms</HeaderTrailingMeta>}
+      pillLabel={telemetry.networkLabel}
+      broadcastTag={BROADCAST.districtTag}
+      broadcastMessage={`${UI.districtName} ONLINE • ${INITIAL_SUPPLY_COUNT - supplyCount}/${INITIAL_SUPPLY_COUNT} CITIZENS ACTIVE • ${districtBroadcastMessage(telemetry.programShort, telemetry.maxSupply)}`}
+      trailing={<HeaderTrailingMeta>{telemetry.programShort}</HeaderTrailingMeta>}
       start={
         <>
           <HeaderBay className="gap-2.5 px-3 md:gap-3 md:px-4">

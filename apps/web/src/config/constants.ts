@@ -17,9 +17,6 @@ export { MAX_STAT_SCORE };
 /** Trainable stats in display order. */
 export const STAT_ORDER: readonly StatKey[] = STAT_KEYS;
 
-/** Short program label shown in the header ticker and the status bar. */
-export const PROGRAM_LABEL = 'Bas1...7SoL';
-
 /** Number of stat blocks rendered by a meter. */
 export const STAT_METER_SEGMENTS = 5;
 
@@ -27,8 +24,11 @@ export const STAT_METER_SEGMENTS = 5;
 export const REGISTRY_PAGE_SIZE = 9;
 
 /**
- * Supply shown by the mock header.
- * Replace with the on-chain value once the District program is wired up.
+ * Remaining slots shown by the mock header before any mint.
+ *
+ * The configured collection size comes from `config/<network>.json` and is
+ * exposed as `DistrictTelemetry.maxSupply`; this value is only the starting
+ * point of the client-side session counter until the program is wired up.
  */
 export const INITIAL_SUPPLY_COUNT = 100;
 
@@ -125,24 +125,39 @@ export const STAT_META: Record<StatKey, StatMeta> = {
   },
 };
 
-/** Broadcast and status copy shared by both headers and the status bar. */
+/**
+ * Broadcast and status copy shared by both headers and the status bar.
+ * Every cluster-specific value is passed in from `DistrictTelemetry`, so the
+ * shell can never advertise a program id or supply that the configuration does
+ * not actually contain.
+ */
 export const BROADCAST = {
-  district: {
-    tag: '⚡ LIVE BROADCAST:',
-    message: `BURN $DIST TO LEVEL UP STATS • PREPARE FOR DOJO TRAINING • PROGRAM ${PROGRAM_LABEL} • SOLANA VERIFIED 🛡`,
-  },
-  training: {
-    tag: '⚔ DRILL ACTIVE:',
-    message: `SELECT ANY CITIZEN BELOW • CLICK STAT BUTTON TO TRAIN INT / ALN / CMP • MAX STAT ${MAX_STAT_SCORE} PER CITIZEN • BAS ARCADE VERIFIED 🛡`,
-  },
-  statusBar: `◇ DISTRICT ONLINE • PROGRAM: ${PROGRAM_LABEL} • SOLANA VERIFIED ◇`,
+  districtTag: '⚡ LIVE BROADCAST:',
+  trainingTag: '⚔ DRILL ACTIVE:',
 } as const;
+
+export function districtBroadcastMessage(programShort: string, maxSupply: number): string {
+  return (
+    `BURN $DIST TO LEVEL UP STATS • PREPARE FOR DOJO TRAINING • ` +
+    `PROGRAM ${programShort} • ${maxSupply} CITIZEN SLOTS • SOLANA VERIFIED 🛡`
+  );
+}
+
+export function trainingBroadcastMessage(): string {
+  return (
+    `SELECT ANY CITIZEN BELOW • CLICK STAT BUTTON TO TRAIN INT / ALN / CMP • ` +
+    `MAX STAT ${MAX_STAT_SCORE} PER CITIZEN • BAS ARCADE VERIFIED 🛡`
+  );
+}
+
+export function statusBarMessage(programShort: string): string {
+  return `◇ DISTRICT ONLINE • PROGRAM: ${programShort} • SOLANA VERIFIED ◇`;
+}
 
 /** Static UI labels reused across views. */
 export const UI = {
   districtName: 'DISTRICT 01',
   trainingName: 'TRAINING DOJO',
-  networkBadge: 'SOLANA MAINNET',
   dojoBadge: 'DOJO SIMULATION',
   backToDistrict: '🏰 KEMBALI KE DISTRICT 01',
   backToDistrictLabel: 'KEMBALI KE DISTRICT 01',

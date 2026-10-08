@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import { Pixelify_Sans, Silkscreen } from 'next/font/google';
 import { loadCitizens } from '@bas/content/server';
+import { loadDistrictTelemetry } from '@/config/telemetry';
+import { DistrictTelemetryProvider } from '@/components/layout/DistrictTelemetryProvider';
 import { BasStoreProvider } from '@/stores/BasStoreProvider';
 import './globals.css';
 
@@ -37,15 +39,21 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const citizens = loadCitizens();
+  const telemetry = loadDistrictTelemetry();
+
   return (
     <html lang="en" className={`${silkscreen.variable} ${pixelify.variable}`}>
       <body className="m-0 h-screen w-screen select-none overflow-hidden bg-[#0c1622] p-1.5 font-pixel text-[#1a2734] antialiased selection:bg-[#4d7ca8] selection:text-white md:p-2">
         {/*
-          One store for the whole session, seeded with the validated roster.
-          Living in the layout keeps session progression (trained stats, minted
-          citizens) across client-side navigation between the district and dojo.
+          Static cluster telemetry plus one session store seeded with the
+          validated roster. Both live in the layout so session progression
+          (trained stats, minted citizens) survives client-side navigation
+          between the district and the dojo.
         */}
-        <BasStoreProvider citizens={loadCitizens()}>{children}</BasStoreProvider>
+        <DistrictTelemetryProvider telemetry={telemetry}>
+          <BasStoreProvider citizens={citizens}>{children}</BasStoreProvider>
+        </DistrictTelemetryProvider>
       </body>
     </html>
   );

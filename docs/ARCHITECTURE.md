@@ -43,8 +43,12 @@ config/
 content/
   en/citizens.json         authored English citizen roster
 
+scripts/
+  check-assets.mjs         asset guard: no orphan and no duplicate public file
+
 docs/                      this directory
 tests/                     reserved for e2e and integration suites (TECH_STACK_ID.md §11)
+.github/workflows/         verify.yml: TypeScript checks and cargo check
 ```
 
 ## 2. Package boundaries
@@ -135,8 +139,14 @@ Every sprite the UI renders is referenced from exactly one place:
 | `public/images/district/courtyard_stage_bg.png` | `STAGE.backgroundImage` in `apps/web/src/config/constants.ts` |
 | `public/icons/*.png` | `PixelIcon` call sites in `apps/web/src/components` |
 
-`packages/content/test/citizens.test.ts` fails when the roster points at a
-sprite that does not exist in `apps/web/public`, so the two cannot drift apart.
+Two guards keep this true:
+
+- `packages/content/test/citizens.test.ts` fails when the roster points at a
+  sprite that does not exist in `apps/web/public`.
+- `scripts/check-assets.mjs` (run as `pnpm assets`, and as the `@bas/web` test)
+  fails when a public file is referenced by nothing, or when two public files
+  are byte-identical.
+
 Experiment renders, mockup crops and previews do not belong in the repository;
 keep them outside the working tree.
 
@@ -158,7 +168,27 @@ Before any deployment: generate the program keypair, deploy, then write the
 same public key into `config/devnet.json`, `config/mainnet.json` and
 `programs/Anchor.toml`, and re-run the gate.
 
-## 7. Known gaps
+## 7. Cluster telemetry in the UI
+
+The shell never hardcodes a cluster label, program id, or supply. `app/layout.tsx`
+calls `loadDistrictTelemetry()` (server-only), which reads the resolved cluster
+through `@bas/config` and passes `DistrictTelemetry` down through
+`DistrictTelemetryProvider`. Header pill, ticker and status bar all render from
+that object, so switching `NEXT_PUBLIC_SOLANA_NETWORK` updates every label.
+
+Measured values that do not exist yet — latency, sync state — are not displayed.
+
+## 8. Continuous integration
+
+`.github/workflows/verify.yml` runs two jobs on every push to `main` and every
+pull request:
+
+| Job | Steps | Notes |
+| --- | --- | --- |
+| `typescript` | install (runs `postinstall` → `build:packages`), `pnpm typecheck`, `pnpm test`, `pnpm lint`, `node scripts/check-assets.mjs` | `next build` is deliberately excluded: `next/font` needs egress to `fonts.googleapis.com`. Enable it once the runner has network access or `NEXT_FONT_GOOGLE_MOCKED_RESPONSES` is provided |
+| `programs` | `cargo check --all-targets` | Catches Rust syntax and type errors. A real `anchor build` / `anchor test` must still run before deployment |
+
+## 9. Known gaps
 
 Tracked in [`DECISIONS.md`](./DECISIONS.md):
 
@@ -171,6 +201,6 @@ Tracked in [`DECISIONS.md`](./DECISIONS.md):
 - `apps/worker`, `packages/ai`, `packages/db`, `packages/metaplex-client`,
   `packages/mission-engine`, `packages/competition-engine`, `packages/ui` and
   `tests/` do not exist yet. They are later stages of `TECH_STACK_ID.md` §12.
-- `programs/district` has no `pause`/`unpause` instruction even though
-  `DistrictConfig.is_paused` gates `register_citizen` and `train_stat`, and the
-  release sequence requires mainnet to start paused.
+- `programs/district` now has `set_paused`, but it has never been compiled: no
+  Rust toolchain was available while it was written. Run `pnpm program:check`
+  and `anchor test` before trusting it.

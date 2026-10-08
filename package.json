@@ -19,6 +19,7 @@
     "lint": "pnpm --filter \"@bas/*\" lint",
     "typecheck": "pnpm build:packages && pnpm --filter \"@bas/*\" typecheck",
     "test": "pnpm --filter \"@bas/*\" test",
+    "assets": "node scripts/check-assets.mjs",
     "verify": "pnpm typecheck && pnpm test && pnpm lint && pnpm build",
     "program:check": "cargo check --all-targets",
     "program:build": "anchor build",

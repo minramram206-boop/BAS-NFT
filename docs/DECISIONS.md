@@ -102,16 +102,16 @@ bukan untuk mengganti persyaratan yang sudah eksplisit.
 - Komponen terkait: `programs/district/src/lib.rs`, `packages/metaplex-client` (belum ada), `docs/ARCHITECTURE.md`
 - Menggantikan: —
 
-## D-0006 — Instruksi pause/unpause belum ada
+## D-0006 — Instruksi `set_paused` untuk urutan rilis
 
 - Tanggal: 2026-10-08
-- Status: Proposed
-- Pemilik keputusan: Engineering
-- Konteks: `DistrictConfig.is_paused` sudah dipakai sebagai syarat pada `register_citizen` dan `train_stat`, dan diinisialisasi `false`. Tidak ada instruksi untuk mengubahnya, padahal urutan rilis mewajibkan mainnet di-deploy dalam keadaan paused dan utility baru dibuka setelah verifikasi binding, treasury, multisig, dan vault.
-- Keputusan: Mencatat kebutuhan instruksi `set_paused` yang hanya dapat dipanggil `config.authority`, tanpa mengimplementasikannya sekarang karena perubahan authority dan keamanan program memerlukan persetujuan pemilik.
-- Alasan: Menambahkan instruksi baru pada program yang belum dikompilasi dan belum diaudit berisiko mengunci kesalahan desain; spesifikasi juga meminta keputusan yang mengubah authority mendapat persetujuan pemilik.
-- Dampak: Deployment mainnet tidak dapat mengikuti urutan rilis yang diwajibkan sampai instruksi ini ada.
-- Komponen terkait: `programs/district/src/lib.rs`, `programs/district/src/state.rs`, `docs/AGENT_START_HERE.md`
+- Status: Proposed (menunggu persetujuan pemilik karena menyentuh authority)
+- Pemilik keputusan: Security
+- Konteks: `DistrictConfig.is_paused` sudah dipakai sebagai syarat pada `register_citizen` dan `train_stat`, dan diinisialisasi `false`, tetapi tidak ada instruksi untuk mengubahnya. Urutan rilis mewajibkan mainnet di-deploy dalam keadaan paused dan utility baru dibuka setelah verifikasi binding, treasury, multisig, dan vault.
+- Keputusan: Menambahkan instruksi `set_paused(paused: bool)` yang hanya dapat dipanggil oleh `config.authority`, dijaga oleh constraint `has_one = authority` dengan error baru `DistrictError::UnauthorizedAuthority`, dan memancarkan event `DistrictPausedChanged` hanya ketika nilainya benar-benar berubah. Bersamaan dengan itu ditambahkan event `CitizenRegistered` dan `StatTrained`, serta diskriminan eksplisit pada `CitizenStat` supaya encoding on-chain stabil.
+- Alasan: Tanpa instruksi ini urutan rilis yang diwajibkan spesifikasi tidak bisa diikuti. Event membuat transisi authority dan hasil pelatihan dapat diaudit dari rantai, bukan dari state browser.
+- Dampak: Perubahan ini belum dikompilasi maupun diuji karena lingkungan pengerjaan tidak memiliki toolchain Rust/Anchor. Wajib `pnpm program:check` dan `anchor test` sebelum deploy. Karena menyentuh authority, statusnya Proposed sampai pemilik menyetujui.
+- Komponen terkait: `programs/district/src/lib.rs`, `programs/district/src/events.rs`, `programs/district/src/errors.rs`, `programs/district/src/state.rs`
 - Menggantikan: —
 
 ## D-0007 — Perapian struktur repositori dan aset
@@ -124,4 +124,28 @@ bukan untuk mengganti persyaratan yang sudah eksplisit.
 - Alasan: Struktur yang diminta pemilik (modular dan rapi) dan penghapusan duplikasi yang membuat tidak jelas salinan mana yang kanonik.
 - Dampak: Semua berkas yang dihapus tetap dapat dipulihkan dari riwayat Git pada commit `37b3d6a`. Berkas `.tsbuildinfo` dan `dist/` kini diabaikan, dan `apps/web/public` hanya memuat aset yang ikut ter-deploy.
 - Komponen terkait: seluruh root repositori, `docs/`, `apps/web/public/`, `.gitignore`
+- Menggantikan: —
+
+## D-0008 — Telemetri shell dibaca dari konfigurasi cluster
+
+- Tanggal: 2026-10-08
+- Status: Approved
+- Pemilik keputusan: Engineering
+- Konteks: Header dan status bar menulis `SOLANA MAINNET`, `PROGRAM: Bas1...7SoL`, latensi `24ms`, dan `SYNCHRONIZED` sebagai teks tetap. Nilai-nilai itu tidak berasal dari konfigurasi mana pun: aplikasi berjalan di devnet, program id yang sebenarnya `BASDistr1ct111...`, dan tidak ada pengukuran latensi.
+- Keputusan: Menambahkan `apps/web/src/config/telemetry.ts` (server-only) yang membangun `DistrictTelemetry` dari `@bas/config`, meneruskannya melalui `DistrictTelemetryProvider` di `app/layout.tsx`, dan membuat seluruh label cluster, program id pendek, serta `maxSupply` dirender dari sana. Klaim yang tidak diukur (`24ms`, `SYNCHRONIZED`) dihapus.
+- Alasan: Spesifikasi melarang state browser diperlakukan sebagai kebenaran dan meminta paritas perilaku antar cluster. UI yang mengklaim mainnet sementara konfigurasi menunjuk devnet adalah bentuk lain dari masalah yang sama.
+- Dampak: `UI.networkBadge` dan `PROGRAM_LABEL` dihapus; `BROADCAST` berubah dari objek string menjadi fungsi yang menerima nilai telemetri. Mengganti cluster kini otomatis mengganti seluruh label di shell.
+- Komponen terkait: `apps/web/src/config/telemetry.ts`, `apps/web/src/config/constants.ts`, `apps/web/src/app/layout.tsx`, `apps/web/src/components/hud/*`, `apps/web/src/components/layout/DistrictStatusBar.tsx`
+- Menggantikan: —
+
+## D-0009 — Penjaga aset dan CI
+
+- Tanggal: 2026-10-08
+- Status: Approved
+- Pemilik keputusan: Engineering
+- Konteks: Perapian menemukan 74 berkas biner yang tidak dirujuk kode, dua pohon dokumen identik, dan tiga salinan sprite yang sama. Tidak ada pemeriksaan apa pun yang mencegah hal itu terulang. Repositori juga belum memiliki CI, padahal `TECH_STACK_ID.md` §12 Stage 1 mensyaratkannya.
+- Keputusan: Menambahkan `scripts/check-assets.mjs` yang gagal ketika ada berkas di `apps/web/public` yang tidak dirujuk oleh sumber atau konten, dan ketika ada dua berkas publik yang identik byte-per-byte. Skrip ini menjadi `pnpm test` milik `@bas/web`. Menambahkan `.github/workflows/verify.yml` dengan job TypeScript (typecheck, unit test, lint, asset guard) dan job `cargo check` untuk program Anchor.
+- Alasan: Aturan yang hanya tertulis di dokumentasi sudah terbukti tidak cukup; pemeriksaan yang berjalan otomatis membuat duplikasi gagal di CI, bukan ditemukan manual berbulan-bulan kemudian.
+- Dampak: `next build` sengaja tidak dijalankan di CI karena `next/font` mengunduh font dari `fonts.googleapis.com`; alasan dan cara mengaktifkannya kembali dicatat di workflow dan `docs/ARCHITECTURE.md`. Job Rust hanya menjalankan `cargo check`, bukan `anchor build`, karena BPF toolchain tidak tersedia di runner.
+- Komponen terkait: `scripts/check-assets.mjs`, `.github/workflows/verify.yml`, `apps/web/package.json`, `package.json`
 - Menggantikan: —

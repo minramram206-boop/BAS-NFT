@@ -32,11 +32,31 @@ Useful commands:
 ```bash
 pnpm build            # packages, then the Next.js production build
 pnpm verify           # typecheck + test + lint + build
-pnpm test             # node:test suites of every package
+pnpm test             # node:test suites + the asset guard
+pnpm assets           # asset guard only: no orphan and no duplicate public file
 pnpm dev:packages     # tsc --watch for packages/* (run beside pnpm dev)
 pnpm program:check    # cargo check (requires the Solana/Anchor toolchain)
 pnpm clean            # remove dist/, .next/ and tsbuildinfo files
 ```
+
+Do not run `pnpm build` while `pnpm dev` is running: both write to
+`apps/web/.next` and the dev server then fails on a stale chunk. See
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+## Continuous integration
+
+`.github/workflows/verify.yml` runs on every push to `main` and every pull
+request:
+
+- **typescript** — install (builds the packages), typecheck, unit tests, lint,
+  and the asset guard.
+- **programs** — `cargo check --all-targets` for the Anchor program.
+
+`next build` is deliberately not in CI because `next/font` downloads the pixel
+fonts from `fonts.googleapis.com`. Give the runner egress to
+`fonts.googleapis.com` and `fonts.gstatic.com`, or set
+`NEXT_FONT_GOOGLE_MOCKED_RESPONSES` (see `.env.example`), then add the step
+back.
 
 ## Repository layout
 
@@ -45,10 +65,12 @@ apps/web            Next.js 15 App Router application
 packages/config     typed cluster configuration, read from config/*.json
 packages/content    content schema, validation, and server-only loaders
 packages/chain-client  typed client for the District program
-programs/district   Anchor program (registration + token-burn training)
+programs/district   Anchor program (registration, pause, token-burn training)
 config/             devnet.json, mainnet.json — the canonical addresses
 content/en/         citizens.json — the authored English roster
+scripts/            check-assets.mjs — the asset guard
 docs/               product spec, tech stack, prize model, decisions, architecture
+.github/workflows/  verify.yml — CI
 ```
 
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) explains the module boundaries,
@@ -82,6 +104,11 @@ Tests fail when a config field is malformed, when the roster references a
 sprite that does not exist, or when the stat model diverges between
 `@bas/content`, `@bas/chain-client` and `programs/district`.
 
+The header and status bar read their cluster label, program id and supply from
+`config/<network>.json` through `apps/web/src/config/telemetry.ts`, so the UI
+can never advertise a cluster the deployment is not running on. Values that are
+not measured — latency, sync state — are not displayed at all.
+
 ## Launch gate
 
 `config/*.json` ships placeholder addresses — `programId` is 42 characters,
@@ -110,8 +137,10 @@ unpause, and only then open the NFT mint.
   trusted server logic may write canonical progression.
 - `register_citizen` does not verify collection membership yet; it needs the
   `packages/metaplex-client` adapter.
-- `programs/district` has no `pause`/`unpause` instruction and has never been
-  compiled in CI (no Rust toolchain in the current environment).
+- `programs/district` has never been compiled: the pause instruction, the
+  utility-mint checks and the events were written without a Rust toolchain
+  available. Run `pnpm program:check` and `anchor test` before trusting any of
+  it. CI only runs `cargo check`.
 - `apps/worker` and the remaining packages listed in `TECH_STACK_ID.md` §11 do
   not exist yet.
 

@@ -2,9 +2,11 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Burn, Token, TokenAccount};
 
 pub mod errors;
+pub mod events;
 pub mod state;
 
 use errors::*;
+use events::*;
 use state::*;
 
 declare_id!("BASDistr1ct1111111111111111111111111111111");
@@ -28,6 +30,29 @@ pub mod district {
         Ok(())
     }
 
+    /// Pause or resume registration and training.
+    ///
+    /// The release sequence requires mainnet to be deployed paused and only
+    /// unpaused after the token binding, treasury, multisig, vault, and program
+    /// configuration have been verified, so this is the only instruction that
+    /// may flip `DistrictConfig::is_paused`.
+    pub fn set_paused(ctx: Context<SetPaused>, paused: bool) -> Result<()> {
+        // The `has_one = authority` constraint on `SetPaused` already proved
+        // that the signer is the district authority.
+        let config = &mut ctx.accounts.config;
+
+        // Emit the transition so monitors and the audit log can follow it.
+        if config.is_paused != paused {
+            emit!(DistrictPausedChanged {
+                authority: ctx.accounts.authority.key(),
+                paused,
+            });
+        }
+
+        config.is_paused = paused;
+        Ok(())
+    }
+
     pub fn register_citizen(
         ctx: Context<RegisterCitizen>,
         initial_int: u8,
@@ -48,6 +73,12 @@ pub mod district {
         citizen.bump = ctx.bumps.citizen_state;
 
         config.total_registered_citizens = config.total_registered_citizens.saturating_add(1);
+
+        emit!(CitizenRegistered {
+            asset: citizen.asset,
+            owner: citizen.owner,
+            total_registered_citizens: config.total_registered_citizens,
+        });
         Ok(())
     }
 
@@ -115,8 +146,33 @@ pub mod district {
         );
         token::burn(burn_ctx, config.burn_amount_required)?;
 
+        emit!(StatTrained {
+            asset: citizen.asset,
+            owner: citizen.owner,
+            stat: stat as u8,
+            new_score: match stat {
+                CitizenStat::Intelligence => citizen.intelligence,
+                CitizenStat::Alignment => citizen.alignment,
+                CitizenStat::Composure => citizen.composure,
+            },
+            tokens_burned: config.burn_amount_required,
+            remaining_training_credits: citizen.training_credits,
+        });
+
         Ok(())
     }
+}
+
+#[derive(Accounts)]
+pub struct SetPaused<'info> {
+    #[account(
+        mut,
+        seeds = [b"district_config"],
+        bump = config.bump,
+        has_one = authority @ DistrictError::UnauthorizedAuthority
+    )]
+    pub config: Account<'info, DistrictConfig>,
+    pub authority: Signer<'info>,
 }
 
 #[derive(Accounts)]
@@ -144,6 +200,7 @@ pub struct RegisterCitizen<'info> {
         bump = config.bump
     )]
     pub config: Account<'info, DistrictConfig>,
+    /// Metaplex asset (or its metadata account) that becomes a citizen.
     pub asset: AccountInfo<'info>,
     #[account(
         init,

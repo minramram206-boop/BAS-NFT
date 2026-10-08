@@ -14,4 +14,6 @@ pub enum DistrictError {
     StatAlreadyMaxed,
     #[msg("Asset does not belong to the verified BAS District collection.")]
     InvalidCollection,
+    #[msg("Caller is not the district authority.")]
+    UnauthorizedAuthority,
 }

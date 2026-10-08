@@ -2,7 +2,8 @@
 
 import React from 'react';
 import { cn } from '@/lib/utils/cn';
-import { BROADCAST } from '@/config/constants';
+import { statusBarMessage } from '@/config/constants';
+import { useDistrictTelemetry } from './DistrictTelemetryProvider';
 
 export interface DistrictStatusBarProps {
   /** `compact` matches the tighter dojo footer. */
@@ -16,6 +17,7 @@ export const DistrictStatusBar: React.FC<DistrictStatusBarProps> = ({
   className,
 }) => {
   const compact = variant === 'compact';
+  const telemetry = useDistrictTelemetry();
 
   return (
     <footer
@@ -29,7 +31,9 @@ export const DistrictStatusBar: React.FC<DistrictStatusBarProps> = ({
     >
       <span className={cn('text-base', compact && 'text-[#3b5d80]')}>🛡</span>
       <span className={cn('flex-1', compact ? 'h-[1.5px] bg-[#9bb2c6]' : 'h-px bg-[#95aaba]')} />
-      <span className={cn(compact && 'tracking-wider')}>{BROADCAST.statusBar}</span>
+      <span className={cn(compact && 'tracking-wider')}>
+        {statusBarMessage(telemetry.programShort)}
+      </span>
       <span className={cn('flex-1', compact ? 'h-[1.5px] bg-[#9bb2c6]' : 'h-px bg-[#95aaba]')} />
       <span className={cn('text-base', compact && 'text-[#3b5d80]')}>🛡</span>
     </footer>
