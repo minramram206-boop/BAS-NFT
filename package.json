@@ -22,8 +22,8 @@
     "assets": "node scripts/check-assets.mjs",
     "verify": "pnpm typecheck && pnpm test && pnpm lint && pnpm build",
     "program:check": "cargo check --all-targets",
+    "program:test": "cargo test --lib && anchor test",
     "program:build": "anchor build",
-    "program:test": "anchor test",
     "clean": "pnpm --filter \"@bas/*\" clean && rm -rf apps/web/.next"
   },
   "devDependencies": {

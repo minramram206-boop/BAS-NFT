@@ -51,7 +51,7 @@ jobs:
       # (see .env.example) and add the step back.
 
   programs:
-    name: Anchor programs · cargo check
+    name: Anchor programs · cargo check + unit tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -67,3 +67,11 @@ jobs:
       # before any deployment.
       - name: cargo check
         run: cargo check --all-targets
+
+      # Runs the host-side unit tests, which cover the Metaplex Core asset
+      # parser in programs/district/src/mpl_core.rs. These are plain Rust tests
+      # against synthetic account bytes, so they need no validator and no BPF
+      # build. They are the only automated proof that the collection
+      # membership check reads the right offsets.
+      - name: cargo test
+        run: cargo test --lib -- --nocapture

@@ -35,6 +35,11 @@ packages/
 programs/
   Anchor.toml              Anchor toolchain and program ids
   district/                Anchor program: citizen registration and token-burn training
+    src/lib.rs             instructions and account constraints
+    src/state.rs           DistrictConfig, CitizenState, CitizenStat, STAT_MAX
+    src/errors.rs          DistrictError
+    src/events.rs          CitizenRegistered, StatTrained, DistrictPausedChanged
+    src/mpl_core.rs        Metaplex Core AssetV1 prefix reader + Rust unit tests
 
 config/
   devnet.json              devnet addresses and parameters
@@ -48,7 +53,7 @@ scripts/
 
 docs/                      this directory
 tests/                     reserved for e2e and integration suites (TECH_STACK_ID.md §11)
-.github/workflows/         verify.yml: TypeScript checks and cargo check
+.github/workflows/         verify.yml: TypeScript checks, cargo check and cargo test
 ```
 
 ## 2. Package boundaries
@@ -186,22 +191,26 @@ pull request:
 | Job | Steps | Notes |
 | --- | --- | --- |
 | `typescript` | install (runs `postinstall` → `build:packages`), `pnpm typecheck`, `pnpm test`, `pnpm lint`, `node scripts/check-assets.mjs` | `next build` is deliberately excluded: `next/font` needs egress to `fonts.googleapis.com`. Enable it once the runner has network access or `NEXT_FONT_GOOGLE_MOCKED_RESPONSES` is provided |
-| `programs` | `cargo check --all-targets` | Catches Rust syntax and type errors. A real `anchor build` / `anchor test` must still run before deployment |
+| `programs` | `cargo check --all-targets`, then `cargo test --lib` | Catches Rust syntax and type errors, and runs the host-side unit tests for the Metaplex Core asset parser — the only automated proof that the collection check reads the right offsets. A real `anchor build` / `anchor test` against a validator must still run before deployment |
 
 ## 9. Known gaps
 
 Tracked in [`DECISIONS.md`](./DECISIONS.md):
 
-- `register_citizen` does not yet verify that the presented asset belongs to
-  the official Metaplex Core collection. That check needs the
-  `packages/metaplex-client` adapter required by `TECH_STACK_ID.md` §11.
+- `register_citizen` verifies collection membership by reading the Metaplex
+  Core asset itself (D-0005, D-0011). Compressed assets are rejected, because a
+  `HashedAssetV1` account stores no readable owner or collection. Supporting
+  them would need a Merkle tree and a separate decision.
 - The web app has no wallet integration yet: `walletAddress` is a placeholder
   and `LOGIN` only toggles local state. `@solana/kit` plus Wallet Standard is
   the mandated integration.
 - `apps/worker`, `packages/ai`, `packages/db`, `packages/metaplex-client`,
   `packages/mission-engine`, `packages/competition-engine`, `packages/ui` and
   `tests/` do not exist yet. They are later stages of `TECH_STACK_ID.md` §12.
-- `programs/district` passes `cargo check --all-targets` in CI, but there is no
-  Anchor test suite and no BPF build yet. Run `anchor build` and `anchor test`
-  against a validator before deploying, and get owner sign-off for
-  `set_paused`, which touches authority (D-0006).
+- `programs/district` passes `cargo check --all-targets` and `cargo test --lib`
+  in CI, but there is no Anchor integration suite and no BPF build yet. Run
+  `anchor build` and `anchor test` against a validator before deploying, and get
+  owner sign-off for `set_paused`, which touches authority (D-0006).
+- `packages/metaplex-client`, the off-chain adapter required by
+  `TECH_STACK_ID.md` §11, still does not exist. On-chain verification does not
+  depend on it, but a wallet integration will.

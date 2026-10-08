@@ -14,6 +14,14 @@ pub enum DistrictError {
     StatAlreadyMaxed,
     #[msg("Asset does not belong to the verified BAS District collection.")]
     InvalidCollection,
+    #[msg("Asset account is too small to hold a Metaplex Core asset prefix.")]
+    AssetAccountTooSmall,
+    #[msg("Account is not an uncompressed Metaplex Core asset (Key::AssetV1).")]
+    NotACoreAsset,
+    #[msg("Asset update authority is not delegated to a collection.")]
+    AssetNotInACollection,
+    #[msg("Signer does not own the Metaplex Core asset being registered.")]
+    NotAssetOwner,
     #[msg("Caller is not the district authority.")]
     UnauthorizedAuthority,
 }

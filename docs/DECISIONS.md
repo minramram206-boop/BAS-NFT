@@ -90,16 +90,16 @@ bukan untuk mengganti persyaratan yang sudah eksplisit.
 - Komponen terkait: `programs/district/src/lib.rs`, `programs/district/src/errors.rs`
 - Menggantikan: —
 
-## D-0005 — Verifikasi koleksi pada `register_citizen` belum diimplementasikan
+## D-0005 — Verifikasi koleksi pada `register_citizen`
 
 - Tanggal: 2026-10-08
-- Status: Proposed
+- Status: Implemented (menunggu `anchor build` + `anchor test`, dan review Security)
 - Pemilik keputusan: Security
-- Konteks: `register_citizen` menerima `asset: AccountInfo` apa pun dan menyimpannya sebagai citizen, sehingga progres bisa ditempelkan ke mint yang bukan bagian dari koleksi resmi. `DistrictError::InvalidCollection` sudah dideklarasikan tetapi tidak pernah dipakai. Verifikasi keanggotaan koleksi Metaplex Core memerlukan adapter `packages/metaplex-client` yang diwajibkan `TECH_STACK_ID.md` §11 dan belum ada.
-- Keputusan: Tidak menambahkan pemeriksaan setengah jadi. Verifikasi koleksi ditunda sampai `packages/metaplex-client` tersedia, dan dicatat di sini sebagai pekerjaan wajib sebelum mint dibuka.
-- Alasan: Aturan kerja melarang menambahkan fitur atau menebak antarmuka ketika dependensi yang diwajibkan spesifikasi belum dibangun; pemeriksaan yang salah justru memberi rasa aman yang palsu.
-- Dampak: `register_citizen` tidak boleh dipanggil di jaringan publik sebelum verifikasi koleksi diimplementasikan dan diuji.
-- Komponen terkait: `programs/district/src/lib.rs`, `packages/metaplex-client` (belum ada), `docs/ARCHITECTURE.md`
+- Konteks: `register_citizen` menerima `asset: AccountInfo` apa pun dan menyimpannya sebagai citizen, sehingga progres bisa ditempelkan ke mint yang bukan bagian dari koleksi resmi. `DistrictError::InvalidCollection` sudah dideklarasikan tetapi tidak pernah dipakai — pola yang sama dengan `InvalidUtilityMint` pada D-0004.
+- Keputusan: Verifikasi keanggotaan koleksi dilakukan **di dalam program**, bukan di client. `register_citizen` membaca prefix account Metaplex Core `AssetV1` dan menolak kalau (1) account bukan asset Core yang tidak dikompresi, (2) update authority-nya bukan `Collection`, (3) collection-nya bukan `config.collection_mint`, atau (4) pemilik asset bukan signer. Account `mpl_core_program` wajib diserahkan dan `asset` diberi constraint `owner = mpl_core_program`, jadi byte yang dibaca dijamin ditulis oleh program Metaplex Core yang asli. Cara bacanya dicatat di D-0011.
+- Alasan: `packages/metaplex-client` yang diwajibkan `TECH_STACK_ID.md` §11 memang belum ada, tetapi package itu untuk pembacaan off-chain. Pemeriksaan yang melindungi skor kanonik harus terjadi on-chain; menunda sampai adapter tersedia berarti membiarkan celah yang sudah diketahui tetap terbuka.
+- Dampak: Instruksi `register_citizen` bertambah satu account wajib (`mpl_core_program`). Program belum pernah di-deploy, jadi tidak ada client lama yang rusak; `@bas/chain-client` mengekspor `MPL_CORE_PROGRAM_ID` dan `CORE_ASSET_LAYOUT` untuk calon integrasi wallet. Celah "jangan buka mint publik sebelum ini beres" sudah tertutup, tetapi tetap wajib diuji terhadap validator sebelum deploy.
+- Komponen terkait: `programs/district/src/lib.rs`, `programs/district/src/mpl_core.rs`, `programs/district/src/errors.rs`, `packages/chain-client/src/constants.ts`
 - Menggantikan: —
 
 ## D-0006 — Instruksi `set_paused` untuk urutan rilis
@@ -160,4 +160,16 @@ bukan untuk mengganti persyaratan yang sudah eksplisit.
 - Alasan: Placeholder harus cukup sah untuk dikompilasi dan diuji, tetapi tetap jelas bukan alamat asli. Menolak placeholder berdasarkan nilai (`REPO_PLACEHOLDER_ADDRESSES`) membuat gerbang rilis tetap berfungsi walaupun bentuknya kini valid.
 - Dampak: Keypair di `programs/district/keypair.json` adalah rahasia dan tidak boleh masuk Git; `.gitignore` sudah menutup `keypair.json`, `*-keypair.json`, dan `programs/*/keypair.json`. Sebelum deploy, owner wajib membuat keypair sendiri dan menjalankan `anchor keys sync`. CI job `programs` kini menjadi penjaga nyata untuk perubahan Rust.
 - Komponen terkait: `scripts/gen-program-id.mjs`, `programs/district/src/lib.rs`, `programs/Anchor.toml`, `config/*.json`, `packages/config/src/network.ts`, `.gitignore`
+- Menggantikan: —
+
+## D-0011 — Membaca prefix account Metaplex Core tanpa dependensi `mpl-core`
+
+- Tanggal: 2026-10-08
+- Status: Approved
+- Pemilik keputusan: Security
+- Konteks: Verifikasi keanggotaan koleksi (D-0005) perlu membaca account Metaplex Core. Cara lazim adalah menarik crate `mpl-core`, tetapi crate itu tidak bisa di-vendor maupun dikompilasi di lingkungan pengerjaan, dan menambah dependensi yang tidak bisa diuji justru memperbesar risiko.
+- Keputusan: `programs/district/src/mpl_core.rs` membaca langsung prefix berukuran tetap dari account `AssetV1`: `key` (1 byte, harus `Key::AssetV1 == 1`), `owner` (32 byte di offset 1), tag `UpdateAuthority` (1 byte di offset 33, harus `Collection == 2`), dan pubkey koleksi (32 byte di offset 34). Field variabel `name`, `uri`, `seq` dan seluruh data plugin tidak dibaca sama sekali, sehingga panjangnya tidak bisa menggeser hasil. Account yang terlalu pendek atau diskriminatornya salah ditolak (fail closed). Parser ini punya 8 unit test Rust terhadap byte sintetis yang dijalankan CI lewat `cargo test --lib`, dan satu test di `@bas/chain-client` yang membandingkan alamat program serta setiap offset dengan berkas Rust-nya.
+- Alasan: Seluruh nilai yang dibutuhkan berada di prefix tetap, jadi parser-nya kecil, bisa diuji di host tanpa validator maupun BPF toolchain, dan tidak menambah dependensi yang tidak bisa diverifikasi. Layout-nya diambil dari `programs/mpl-core/src/state/asset.rs` dan `state/update_authority.rs` di github.com/metaplex-foundation/mpl-core, bukan dari ingatan; alamat program diambil dari `MPL_CORE_PROGRAM_ID` di `clients/js/src/generated/programs/mplCore.ts` repo yang sama.
+- Dampak: Asset terkompresi (`Key::HashedAssetV1`) ditolak karena tidak menyimpan owner dan collection yang bisa dibaca di account-nya; mendukungnya butuh Merkle tree dan harus diputuskan terpisah. Kalau Metaplex mengubah layout `AssetV1`, parser wajib diperbarui — test offset akan gagal lebih dulu di CI. Pemeriksaan ini tetap tidak boleh menjadi satu-satunya lapisan: constraint `owner = mpl_core_program` yang membuat byte-nya bisa dipercaya.
+- Komponen terkait: `programs/district/src/mpl_core.rs`, `programs/district/src/lib.rs`, `packages/chain-client/src/constants.ts`, `.github/workflows/verify.yml`
 - Menggantikan: —

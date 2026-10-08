@@ -3,10 +3,12 @@ use anchor_spl::token::{self, Burn, Token, TokenAccount};
 
 pub mod errors;
 pub mod events;
+pub mod mpl_core;
 pub mod state;
 
 use errors::*;
 use events::*;
+use mpl_core::*;
 use state::*;
 
 declare_id!("D8HGhXUqHx7UXysCMEBDzvd3FS4XGEMNjCR6Eaj8CRbV");
@@ -53,6 +55,13 @@ pub mod district {
         Ok(())
     }
 
+    /// Register an NFT as a district citizen.
+    ///
+    /// The asset must be an uncompressed Metaplex Core asset whose update
+    /// authority is delegated to the collection bound at initialization, and
+    /// the signer must be the holder recorded on that asset. Without these
+    /// checks anyone could register an arbitrary account as a citizen and claim
+    /// a canonical score for an NFT they do not own.
     pub fn register_citizen(
         ctx: Context<RegisterCitizen>,
         initial_int: u8,
@@ -61,6 +70,19 @@ pub mod district {
     ) -> Result<()> {
         let config = &mut ctx.accounts.config;
         require!(!config.is_paused, DistrictError::ProgramPaused);
+
+        // Collection membership, read from the Core asset account itself. The
+        // `owner = mpl_core_program` constraint on `RegisterCitizen` already
+        // proved the bytes come from the real Metaplex Core program.
+        let asset_prefix = read_core_asset_prefix(&ctx.accounts.asset.try_borrow_data()?)?;
+        require!(
+            asset_prefix.is_owned_by(&ctx.accounts.owner.key()),
+            DistrictError::NotAssetOwner
+        );
+        require!(
+            asset_prefix.belongs_to_collection(&config.collection_mint),
+            DistrictError::InvalidCollection
+        );
 
         let citizen = &mut ctx.accounts.citizen_state;
         citizen.asset = ctx.accounts.asset.key();
@@ -200,8 +222,18 @@ pub struct RegisterCitizen<'info> {
         bump = config.bump
     )]
     pub config: Account<'info, DistrictConfig>,
-    /// Metaplex asset (or its metadata account) that becomes a citizen.
+    /// Metaplex Core asset account that becomes a citizen.
+    ///
+    /// `owner = mpl_core_program` is what makes the membership check
+    /// trustworthy: only the Core program can write these bytes, so a caller
+    /// cannot fabricate an account that parses as a collection member.
+    #[account(owner = mpl_core_program.key())]
     pub asset: AccountInfo<'info>,
+    /// The Metaplex Core program that owns `asset`.
+    /// CHECK: address is not hardcoded here; it is whatever the caller passes,
+    /// and its only job is to be compared against `asset.owner`. Clients use
+    /// `MPL_CORE_PROGRAM_ID`.
+    pub mpl_core_program: UncheckedAccount<'info>,
     #[account(
         init,
         payer = owner,

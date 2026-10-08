@@ -35,7 +35,8 @@ pnpm verify           # typecheck + test + lint + build
 pnpm test             # node:test suites + the asset guard
 pnpm assets           # asset guard only: no orphan and no duplicate public file
 pnpm dev:packages     # tsc --watch for packages/* (run beside pnpm dev)
-pnpm program:check    # cargo check (requires the Solana/Anchor toolchain)
+pnpm program:check    # cargo check (requires the Rust toolchain)
+pnpm program:test     # cargo test --lib, then anchor test (needs a validator)
 pnpm clean            # remove dist/, .next/ and tsbuildinfo files
 ```
 
@@ -50,7 +51,8 @@ request:
 
 - **typescript** — install (builds the packages), typecheck, unit tests, lint,
   and the asset guard.
-- **programs** — `cargo check --all-targets` for the Anchor program.
+- **programs** — `cargo check --all-targets`, then `cargo test --lib`, which runs
+  the Rust unit tests for the Metaplex Core asset parser.
 
 `next build` is deliberately not in CI because `next/font` downloads the pixel
 fonts from `fonts.googleapis.com`. Give the runner egress to
@@ -66,6 +68,7 @@ packages/config     typed cluster configuration, read from config/*.json
 packages/content    content schema, validation, and server-only loaders
 packages/chain-client  typed client for the District program
 programs/district   Anchor program (registration, pause, token-burn training)
+                    src/mpl_core.rs verifies Metaplex Core collection membership
 config/             devnet.json, mainnet.json — the canonical addresses
 content/en/         citizens.json — the authored English roster
 scripts/            check-assets.mjs — the asset guard
@@ -152,10 +155,12 @@ unpause, and only then open the NFT mint.
   placeholder. `@solana/kit` plus Wallet Standard is the mandated integration.
 - Scores in the browser are presentation state. Only `programs/district` and
   trusted server logic may write canonical progression.
-- `register_citizen` does not verify collection membership yet; it needs the
-  `packages/metaplex-client` adapter.
-- `programs/district` compiles — CI runs `cargo check --all-targets` and it is
-  green — but it has never been deployed and has no Anchor test suite yet.
+- `register_citizen` now verifies Metaplex Core collection membership on-chain
+  (D-0005, D-0011) and rejects compressed assets. `packages/metaplex-client`,
+  the off-chain adapter from `TECH_STACK_ID.md` §11, still does not exist; a
+  wallet integration will need it.
+- `programs/district` passes `cargo check --all-targets` and `cargo test --lib`
+  in CI, but it has never been deployed and has no Anchor integration suite.
   `anchor build` (BPF) and `anchor test` against a validator must still run
   before any deployment, and `set_paused` needs owner sign-off because it
   touches authority (D-0006).
