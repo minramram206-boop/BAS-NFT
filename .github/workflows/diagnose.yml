@@ -45,7 +45,13 @@ jobs:
           PY
             echo
             echo '### cargo check --all-targets'
-            cargo check --all-targets 2>&1 | tail -n 500
+            cargo check --all-targets 2>&1 | tail -n 120
+            echo
+            echo '### cargo test --lib (mpl_core unit tests)'
+            cargo test --lib 2>&1 | tail -n 120
+            echo
+            echo '### cargo test --test integration'
+            cargo test --test integration -- --nocapture --test-threads=1 2>&1 | tail -n 420
           } > /tmp/diag.txt 2>&1 || true
 
       - name: Report the output in an issue
