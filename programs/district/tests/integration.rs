@@ -32,11 +32,12 @@ use anchor_lang::{
         clock::Clock, entrypoint::ProgramResult, instruction::Instruction, program_pack::Pack,
         pubkey::Pubkey, system_program,
     },
-    // `AnchorSerialize` is only the derive macro; the trait it implements is
-    // `borsh::BorshSerialize`, and `anchor_lang` re-exports `borsh` through its
-    // prelude rather than at the crate root. The trait has to be in scope for
-    // `try_serialize` to resolve.
-    prelude::borsh::BorshSerialize, AccountDeserialize, InstructionData, ToAccountMetas,
+    // `try_serialize` comes from `AccountSerialize`, the trait Anchor's
+    // `#[account]` implements; it writes the 8-byte discriminator followed by
+    // the borsh body, which is exactly what `try_deserialize` reads back.
+    // `AnchorSerialize` at this path is only the derive macro, not the trait, so
+    // importing it does not bring the method into scope.
+    AccountDeserialize, AccountSerialize, InstructionData, ToAccountMetas,
 };
 use anchor_spl::token;
 use district::{
@@ -435,13 +436,12 @@ fn spl_account(data: Vec<u8>) -> AccountSharedData {
 /// This is a test fixture, not a way the program can be driven — the account is
 /// a PDA owned by the district program, and only the program can normally write
 /// it.
-fn install_citizen(
-    context: &mut ProgramTestContext,
-    citizen_state: Pubkey,
-    citizen: &CitizenState,
-) {
-    let mut data = vec![0u8; CitizenState::LEN];
-    citizen.try_serialize(&mut (&mut data[..])).expect("the state fits");
+fn install_citizen(context: &mut ProgramTestContext, citizen_state: Pubkey, citizen: &CitizenState) {
+    let mut data: Vec<u8> = Vec::with_capacity(CitizenState::LEN);
+    citizen
+        .try_serialize(&mut data)
+        .expect("the state must serialize into its own LEN");
+    assert_eq!(data.len(), CitizenState::LEN, "CitizenState::LEN is wrong");
     install_account(context, citizen_state, data, district::ID);
 }
 
