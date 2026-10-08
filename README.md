@@ -154,10 +154,11 @@ unpause, and only then open the NFT mint.
   trusted server logic may write canonical progression.
 - `register_citizen` does not verify collection membership yet; it needs the
   `packages/metaplex-client` adapter.
-- `programs/district` has never been compiled: the pause instruction, the
-  utility-mint checks and the events were written without a Rust toolchain
-  available. Run `pnpm program:check` and `anchor test` before trusting any of
-  it. CI only runs `cargo check`.
+- `programs/district` compiles — CI runs `cargo check --all-targets` and it is
+  green — but it has never been deployed and has no Anchor test suite yet.
+  `anchor build` (BPF) and `anchor test` against a validator must still run
+  before any deployment, and `set_paused` needs owner sign-off because it
+  touches authority (D-0006).
 - `apps/worker` and the remaining packages listed in `TECH_STACK_ID.md` §11 do
   not exist yet.
 

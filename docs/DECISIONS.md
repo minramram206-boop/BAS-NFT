@@ -86,7 +86,7 @@ bukan untuk mengganti persyaratan yang sudah eksplisit.
 - Konteks: `train_stat` membakar token melalui CPI ke `ctx.accounts.utility_mint` tanpa membandingkannya dengan `config.utility_mint`. Error `DistrictError::InvalidUtilityMint` sudah dideklarasikan tetapi tidak pernah dipakai. Pemanggil dapat meneruskan mint apa pun yang ia kendalikan, membakar token tanpa nilai, dan tetap menaikkan skor kanonik.
 - Keputusan: Menambahkan tiga pemeriksaan pada `train_stat`: `utility_mint` harus sama dengan `config.utility_mint`, `user_token_account.owner` harus sama dengan `owner` citizen, dan `user_token_account.mint` harus sama dengan `config.utility_mint`.
 - Alasan: Spesifikasi mensyaratkan pembakaran 100% token resmi pada setiap pelatihan dan melarang skor kanonik dinaikkan tanpa pembakaran yang sah.
-- Dampak: Perubahan ini belum dikompilasi maupun diuji karena lingkungan saat ini tidak memiliki toolchain Rust/Anchor. Wajib dijalankan `pnpm program:check` dan `pnpm program:test` sebelum deploy, ditambah uji regresi yang menolak mint asing.
+- Dampak: Sudah lolos `cargo check --all-targets` di CI, tetapi belum ada test Anchor dan belum pernah di-build ke BPF. Wajib `anchor build` dan `anchor test` sebelum deploy, ditambah uji regresi yang menolak mint asing.
 - Komponen terkait: `programs/district/src/lib.rs`, `programs/district/src/errors.rs`
 - Menggantikan: —
 
@@ -110,7 +110,7 @@ bukan untuk mengganti persyaratan yang sudah eksplisit.
 - Konteks: `DistrictConfig.is_paused` sudah dipakai sebagai syarat pada `register_citizen` dan `train_stat`, dan diinisialisasi `false`, tetapi tidak ada instruksi untuk mengubahnya. Urutan rilis mewajibkan mainnet di-deploy dalam keadaan paused dan utility baru dibuka setelah verifikasi binding, treasury, multisig, dan vault.
 - Keputusan: Menambahkan instruksi `set_paused(paused: bool)` yang hanya dapat dipanggil oleh `config.authority`, dijaga oleh constraint `has_one = authority` dengan error baru `DistrictError::UnauthorizedAuthority`, dan memancarkan event `DistrictPausedChanged` hanya ketika nilainya benar-benar berubah. Bersamaan dengan itu ditambahkan event `CitizenRegistered` dan `StatTrained`, serta diskriminan eksplisit pada `CitizenStat` supaya encoding on-chain stabil.
 - Alasan: Tanpa instruksi ini urutan rilis yang diwajibkan spesifikasi tidak bisa diikuti. Event membuat transisi authority dan hasil pelatihan dapat diaudit dari rantai, bukan dari state browser.
-- Dampak: Perubahan ini belum dikompilasi maupun diuji karena lingkungan pengerjaan tidak memiliki toolchain Rust/Anchor. Wajib `pnpm program:check` dan `anchor test` sebelum deploy. Karena menyentuh authority, statusnya Proposed sampai pemilik menyetujui.
+- Dampak: Sudah lolos `cargo check --all-targets` di CI, tetapi belum ada test Anchor dan belum pernah di-build ke BPF. Wajib `anchor build` dan `anchor test` sebelum deploy. Karena menyentuh authority, statusnya tetap Proposed sampai pemilik menyetujui.
 - Komponen terkait: `programs/district/src/lib.rs`, `programs/district/src/events.rs`, `programs/district/src/errors.rs`, `programs/district/src/state.rs`
 - Menggantikan: —
 

@@ -201,6 +201,7 @@ Tracked in [`DECISIONS.md`](./DECISIONS.md):
 - `apps/worker`, `packages/ai`, `packages/db`, `packages/metaplex-client`,
   `packages/mission-engine`, `packages/competition-engine`, `packages/ui` and
   `tests/` do not exist yet. They are later stages of `TECH_STACK_ID.md` §12.
-- `programs/district` now has `set_paused`, but it has never been compiled: no
-  Rust toolchain was available while it was written. Run `pnpm program:check`
-  and `anchor test` before trusting it.
+- `programs/district` passes `cargo check --all-targets` in CI, but there is no
+  Anchor test suite and no BPF build yet. Run `anchor build` and `anchor test`
+  against a validator before deploying, and get owner sign-off for
+  `set_paused`, which touches authority (D-0006).
