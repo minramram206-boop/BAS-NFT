@@ -36,7 +36,17 @@ jobs:
         run: pnpm typecheck
 
       - name: Unit tests
-        run: pnpm test
+        shell: bash
+        run: |
+          set -o pipefail
+          set +e
+          pnpm test 2>&1 | tee "$RUNNER_TEMP/pnpm-test.log"
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            diagnostics=$(tail -n 35 "$RUNNER_TEMP/pnpm-test.log" | tr '\n' '; ' || true)
+            echo "::error title=TypeScript test failure::$diagnostics"
+          fi
+          exit "$status"
 
       - name: Lint
         run: pnpm lint
