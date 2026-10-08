@@ -18,7 +18,6 @@
 //! district.
 
 use crate::errors::DistrictError;
-use crate::state::STAT_MAX;
 use anchor_lang::prelude::*;
 
 /// How many roles the registry holds (§8 Phase A).
@@ -160,6 +159,7 @@ impl CitizenRole {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::STAT_MAX;
 
     #[test]
     fn the_registry_holds_exactly_seven_roles() {
@@ -258,15 +258,15 @@ mod tests {
         }
         assert!(matches!(
             CitizenRole::from_index(ROLE_COUNT as u8),
-            Err(DistrictError::InvalidRole)
+            Err(err) if err == DistrictError::InvalidRole.into()
         ));
         assert!(matches!(
             CitizenRole::from_index(255),
-            Err(DistrictError::InvalidRole)
+            Err(err) if err == DistrictError::InvalidRole.into()
         ));
         assert!(matches!(
             role_template(ROLE_COUNT as u8),
-            Err(DistrictError::InvalidRole)
+            Err(err) if err == DistrictError::InvalidRole.into()
         ));
     }
 }

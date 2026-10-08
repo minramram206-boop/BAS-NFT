@@ -1,4 +1,4 @@
-use anchor_lang::prelude::*;
+use anchor_lang::{prelude::*, solana_program::program_pack::Pack};
 use anchor_spl::token::{self, Burn, Token, TokenAccount};
 
 pub mod errors;

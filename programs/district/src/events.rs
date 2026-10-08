@@ -1,5 +1,3 @@
-use anchor_lang::prelude::*;
-
 //! Program events.
 //!
 //! The set is the one listed in `PIXEL_DISTRICT_SPEC_V2_ID.md` §13. Names and
@@ -12,6 +10,8 @@ use anchor_lang::prelude::*;
 //! logs. `programs/district/tests/integration.rs` therefore asserts committed
 //! account state, and the payloads below still need an `anchor test` run
 //! against a real validator. Recorded as D-0012.
+
+use anchor_lang::prelude::*;
 
 /// Emitted once, by `initialize_config`.
 #[event]

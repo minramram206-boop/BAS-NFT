@@ -357,7 +357,7 @@ mod tests {
     fn training_cost_rejects_overflow_instead_of_wrapping() {
         assert!(matches!(
             training_cost_atoms(u64::MAX, 9),
-            Err(DistrictError::ArithmeticOverflow)
+            Err(err) if err == DistrictError::ArithmeticOverflow.into()
         ));
     }
 
@@ -368,11 +368,11 @@ mod tests {
         }
         assert!(matches!(
             CitizenStat::from_index(3),
-            Err(DistrictError::InvalidStat)
+            Err(err) if err == DistrictError::InvalidStat.into()
         ));
         assert!(matches!(
             CitizenStat::from_index(255),
-            Err(DistrictError::InvalidStat)
+            Err(err) if err == DistrictError::InvalidStat.into()
         ));
     }
 
@@ -402,7 +402,7 @@ mod tests {
         // An Insight credit cannot pay for Bond.
         assert!(matches!(
             citizen.consume_credit(CitizenStat::Alignment),
-            Err(DistrictError::InsufficientTrainingCredits)
+            Err(err) if err == DistrictError::InsufficientTrainingCredits.into()
         ));
         assert_eq!(citizen.insight_training_credits, 1, "nothing was consumed");
 
@@ -410,7 +410,7 @@ mod tests {
         assert_eq!(citizen.insight_training_credits, 0);
         assert!(matches!(
             citizen.consume_credit(CitizenStat::Intelligence),
-            Err(DistrictError::InsufficientTrainingCredits)
+            Err(err) if err == DistrictError::InsufficientTrainingCredits.into()
         ));
     }
 
