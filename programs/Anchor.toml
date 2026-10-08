@@ -1,0 +1,31 @@
+[toolchain]
+anchor_version = "0.30.1"
+solana_version = "1.18.26"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.devnet]
+district = "BASDistr1ct1111111111111111111111111111111"
+
+[programs.mainnet]
+district = "BASDistr1ct1111111111111111111111111111111"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "devnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "pnpm --filter \"./packages/*\" test"
+
+# NOTE
+# The program id above is still the placeholder from config/devnet.json and is
+# 42 characters long, which is not a valid Solana public key. Generate the
+# program keypair first, then put the same 43-44 character base58 pubkey here
+# and in config/*.json. `pnpm --filter @bas/config exec node -e
+# "console.log(require('@bas/config').findPlaceholderAddresses(require('@bas/config').DEVNET_CONFIG))"`
+# lists every address that still needs replacing before a launch.

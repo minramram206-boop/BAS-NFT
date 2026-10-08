@@ -1,5 +1,14 @@
 use anchor_lang::prelude::*;
 
+/// Maximum score of a single citizen stat.
+/// Mirrored by `STAT_MAX` in `packages/chain-client` and `MAX_STAT_SCORE` in
+/// `packages/content`; `packages/chain-client/test` fails when they diverge.
+pub const STAT_MAX: u8 = 20;
+
+/// Training Credits granted once, when a citizen is registered.
+/// Credits can never be transferred or purchased.
+pub const INITIAL_TRAINING_CREDITS: u16 = 1;
+
 #[account]
 pub struct DistrictConfig {
     pub authority: Pubkey,

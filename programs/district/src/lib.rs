@@ -40,10 +40,10 @@ pub mod district {
         let citizen = &mut ctx.accounts.citizen_state;
         citizen.asset = ctx.accounts.asset.key();
         citizen.owner = ctx.accounts.owner.key();
-        citizen.intelligence = initial_int.min(20);
-        citizen.alignment = initial_aln.min(20);
-        citizen.composure = initial_cmp.min(20);
-        citizen.training_credits = 1;
+        citizen.intelligence = initial_int.min(STAT_MAX);
+        citizen.alignment = initial_aln.min(STAT_MAX);
+        citizen.composure = initial_cmp.min(STAT_MAX);
+        citizen.training_credits = INITIAL_TRAINING_CREDITS;
         citizen.total_burns = 0;
         citizen.bump = ctx.bumps.citizen_state;
 
@@ -68,18 +68,34 @@ pub mod district {
             DistrictError::InsufficientTrainingCredits
         );
 
+        // The burned asset must be the one official utility token bound at
+        // initialization. Without this check a caller could pass any mint they
+        // control, burn a worthless token, and still raise a canonical score.
+        require!(
+            ctx.accounts.utility_mint.key() == config.utility_mint,
+            DistrictError::InvalidUtilityMint
+        );
+        require!(
+            ctx.accounts.user_token_account.owner == ctx.accounts.owner.key(),
+            DistrictError::UnauthorizedCitizenOwner
+        );
+        require!(
+            ctx.accounts.user_token_account.mint == config.utility_mint,
+            DistrictError::InvalidUtilityMint
+        );
+
         // Check max stat
         match stat {
             CitizenStat::Intelligence => {
-                require!(citizen.intelligence < 20, DistrictError::StatAlreadyMaxed);
+                require!(citizen.intelligence < STAT_MAX, DistrictError::StatAlreadyMaxed);
                 citizen.intelligence = citizen.intelligence.saturating_add(1);
             }
             CitizenStat::Alignment => {
-                require!(citizen.alignment < 20, DistrictError::StatAlreadyMaxed);
+                require!(citizen.alignment < STAT_MAX, DistrictError::StatAlreadyMaxed);
                 citizen.alignment = citizen.alignment.saturating_add(1);
             }
             CitizenStat::Composure => {
-                require!(citizen.composure < 20, DistrictError::StatAlreadyMaxed);
+                require!(citizen.composure < STAT_MAX, DistrictError::StatAlreadyMaxed);
                 citizen.composure = citizen.composure.saturating_add(1);
             }
         }

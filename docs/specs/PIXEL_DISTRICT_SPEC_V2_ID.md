@@ -17,7 +17,7 @@ Label keputusan:
 - **[PROPOSED]**: rekomendasi yang perlu disetujui pemilik sebelum release candidate.
 - **[DEFERRED]**: jangan dibangun pada versi terkait.
 
-Jika implementasi menemukan hal yang belum dijelaskan, gunakan pilihan paling sederhana yang tidak menambah fitur. Catat keputusan dalam `DECISIONS.md` menggunakan bahasa Indonesia untuk alasan produk dan bahasa Inggris untuk identifier teknis.
+Jika implementasi menemukan hal yang belum dijelaskan, gunakan pilihan paling sederhana yang tidak menambah fitur. Catat keputusan dalam `docs/DECISIONS.md` menggunakan bahasa Indonesia untuk alasan produk dan bahasa Inggris untuk identifier teknis.
 
 ---
 

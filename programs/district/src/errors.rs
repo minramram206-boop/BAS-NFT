@@ -10,7 +10,7 @@ pub enum DistrictError {
     InvalidUtilityMint,
     #[msg("Insufficient training credits to perform this upgrade.")]
     InsufficientTrainingCredits,
-    #[msg("Citizen stat has already reached maximum level (20).")]
+    #[msg("Citizen stat has already reached its maximum score.")]
     StatAlreadyMaxed,
     #[msg("Asset does not belong to the verified BAS District collection.")]
     InvalidCollection,

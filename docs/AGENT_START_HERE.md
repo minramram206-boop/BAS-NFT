@@ -6,13 +6,13 @@ Status: Mandatory implementation handoff. This document is agent-facing and writ
 
 Read these files before proposing architecture or writing code:
 
-1. `PIXEL_DISTRICT_SPEC_V2_ID.md`
+1. `docs/specs/PIXEL_DISTRICT_SPEC_V2_ID.md`
    - Primary source of truth for product behavior, architecture boundaries, economics, security constraints, language rules, network parity, release order, and acceptance tests.
 2. `docs/id/TECH_STACK_ID.md`
    - Required implementation languages, frameworks, infrastructure, monorepo structure, tests, and staged build order.
 3. `docs/id/PRIZE_POOL_MODEL.md`
    - Specialized source of truth for competitions, funded prize pools, bracket allocation, winner limits, payout rules, rollover, anti-cheat, and payout integrity.
-4. `DECISIONS.md`
+4. `docs/DECISIONS.md`
    - Append-only implementation decision log for omissions or ambiguities. It cannot override a `[FINAL]` requirement.
 5. `docs/id/OWNER_VALUE_FLOW_ID.html`
    - Explanatory owner-flow reference. It helps explain the intended product journey and economics, but it is not a UI design reference and does not override written requirements.
@@ -23,11 +23,11 @@ The owner controls the visual direction and will provide approved design assets 
 
 If two artifacts appear inconsistent, use this order:
 
-1. Requirements marked `[FINAL]` in `PIXEL_DISTRICT_SPEC_V2_ID.md`.
-2. Other explicit requirements in `PIXEL_DISTRICT_SPEC_V2_ID.md`.
+1. Requirements marked `[FINAL]` in `docs/specs/PIXEL_DISTRICT_SPEC_V2_ID.md`.
+2. Other explicit requirements in `docs/specs/PIXEL_DISTRICT_SPEC_V2_ID.md`.
 3. Specialized competition rules in `docs/id/PRIZE_POOL_MODEL.md`.
 4. Technology decisions in `docs/id/TECH_STACK_ID.md`.
-5. Approved entries in `DECISIONS.md`.
+5. Approved entries in `docs/DECISIONS.md`.
 6. Owner value-flow HTML.
 7. Owner-approved visual design assets, for presentation only.
 8. Agent assumptions.
@@ -57,7 +57,7 @@ An agent assumption must never override an explicit requirement.
 - Keep cash winners separate from non-cash title, badge, cosmetic, and recognition recipients.
 - All source code, comments, identifiers, tests, events, errors, logs, database identifiers, API fields, technical schemas, commits, and public UI/content must be in English.
 - Owner-facing internal product documentation is in Indonesian.
-- Do not add a new feature when a requirement is missing. Choose the simplest non-feature-expanding option and record it in `DECISIONS.md`.
+- Do not add a new feature when a requirement is missing. Choose the simplest non-feature-expanding option and record it in `docs/DECISIONS.md`.
 
 ## 4. Required delivery sequence
 
@@ -88,7 +88,7 @@ For every pull request or deliverable:
 - Link the governing specification sections.
 - Include or update automated tests.
 - Include negative/adversarial tests for security-sensitive logic.
-- Update `DECISIONS.md` only for genuine omissions or ambiguities.
+- Update `docs/DECISIONS.md` only for genuine omissions or ambiguities.
 - Do not silently alter economics or product behavior.
 - Do not claim completion unless relevant acceptance tests pass.
 
@@ -98,10 +98,10 @@ For every pull request or deliverable:
 
 Mandatory:
 
-- `AGENT_START_HERE.md`
-- `PIXEL_DISTRICT_SPEC_V2_ID.md`
+- `docs/AGENT_START_HERE.md`
+- `docs/specs/PIXEL_DISTRICT_SPEC_V2_ID.md`
 - `docs/id/TECH_STACK_ID.md`
-- `DECISIONS.md`
+- `docs/DECISIONS.md`
 
 Add `docs/id/PRIZE_POOL_MODEL.md` when working on competition programs, prize vaults, winner finalization, or claims.
 
@@ -109,11 +109,11 @@ Add `docs/id/PRIZE_POOL_MODEL.md` when working on competition programs, prize va
 
 Mandatory:
 
-- `AGENT_START_HERE.md`
-- `PIXEL_DISTRICT_SPEC_V2_ID.md`
+- `docs/AGENT_START_HERE.md`
+- `docs/specs/PIXEL_DISTRICT_SPEC_V2_ID.md`
 - `docs/id/TECH_STACK_ID.md`
 - `docs/id/OWNER_VALUE_FLOW_ID.html`
-- `DECISIONS.md`
+- `docs/DECISIONS.md`
 
 Implement the application in Next.js/React/Phaser using only visual direction and design assets approved by the owner. Do not invent or finalize a visual identity without owner approval. Regardless of presentation, browser state must never be treated as canonical blockchain state.
 
@@ -121,11 +121,11 @@ Implement the application in Next.js/React/Phaser using only visual direction an
 
 Mandatory:
 
-- `AGENT_START_HERE.md`
-- `PIXEL_DISTRICT_SPEC_V2_ID.md`
+- `docs/AGENT_START_HERE.md`
+- `docs/specs/PIXEL_DISTRICT_SPEC_V2_ID.md`
 - `docs/id/TECH_STACK_ID.md`
 - `docs/id/OWNER_VALUE_FLOW_ID.html`
-- `DECISIONS.md`
+- `docs/DECISIONS.md`
 
 The AI response is untrusted presentation data. Validate structured output and never grant the model signing, trading, mission-authority, score-authority, or payout-authority capabilities.
 
@@ -133,22 +133,22 @@ The AI response is untrusted presentation data. Validate structured output and n
 
 Mandatory:
 
-- `AGENT_START_HERE.md`
-- `PIXEL_DISTRICT_SPEC_V2_ID.md`
+- `docs/AGENT_START_HERE.md`
+- `docs/specs/PIXEL_DISTRICT_SPEC_V2_ID.md`
 - `docs/id/PRIZE_POOL_MODEL.md`
 - `docs/id/TECH_STACK_ID.md`
 - `docs/id/OWNER_VALUE_FLOW_ID.html`
-- `DECISIONS.md`
+- `docs/DECISIONS.md`
 
 ### QA/security/DevOps agent
 
 Mandatory:
 
-- `AGENT_START_HERE.md`
-- `PIXEL_DISTRICT_SPEC_V2_ID.md`
+- `docs/AGENT_START_HERE.md`
+- `docs/specs/PIXEL_DISTRICT_SPEC_V2_ID.md`
 - `docs/id/TECH_STACK_ID.md`
 - `docs/id/PRIZE_POOL_MODEL.md`
-- `DECISIONS.md`
+- `docs/DECISIONS.md`
 
 Validate network parity, authority boundaries, mint locking, transaction atomicity, replay protection, idempotency, funded-vault constraints, payout integrity, and release gates.
 

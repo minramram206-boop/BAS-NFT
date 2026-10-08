@@ -20,9 +20,9 @@
     "typecheck": "pnpm build:packages && pnpm --filter \"@bas/*\" typecheck",
     "test": "pnpm --filter \"@bas/*\" test",
     "verify": "pnpm typecheck && pnpm test && pnpm lint && pnpm build",
-    "program:check": "cargo check --manifest-path programs/Cargo.toml --all-targets",
-    "program:build": "cargo build-sbf --manifest-path programs/Cargo.toml",
-    "program:test": "cargo test-sbf --manifest-path programs/Cargo.toml",
+    "program:check": "cargo check --all-targets",
+    "program:build": "anchor build",
+    "program:test": "anchor test",
     "clean": "pnpm --filter \"@bas/*\" clean && rm -rf apps/web/.next"
   },
   "devDependencies": {
