@@ -96,14 +96,14 @@ pub enum DistrictError {
     #[msg("Arithmetic overflow.")]
     ArithmeticOverflow,
 
-    // --- additions this program needs, not named in §13 ---------------------
-    /// The asset does not carry the approved template identifier (§6.3 item 3).
-    /// Recorded in D-0013.
-    #[msg("Asset template identifier is not approved.")]
-    InvalidTemplate,
-
+    // --- addition this program needs, not named in §13 ----------------------
     /// The role is not one of the seven in the registry (§6.3 item 4).
     /// Recorded in D-0013.
+    ///
+    /// §6.3 item 3, the approved template identifier, is also an addition, but
+    /// it needs no variant of its own: it is a PDA derivation checked by
+    /// Anchor's `seeds` constraint, so a wrong identifier is reported as the
+    /// framework's `ConstraintSeeds` (2006) before any handler runs.
     #[msg("Unknown citizen role.")]
     InvalidRole,
 }

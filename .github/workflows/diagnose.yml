@@ -36,6 +36,9 @@ jobs:
             echo
             echo '### cargo test --lib'
             cargo test --lib 2>&1 | tail -n 60
+            echo
+            echo '### cargo test --test integration'
+            cargo test --test integration -- --test-threads=1 2>&1 | tail -n 700
           } > /tmp/diag.txt 2>&1 || true
 
       - name: Report the output in an issue

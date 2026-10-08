@@ -196,15 +196,11 @@ pub mod district {
             DistrictError::NotOwner
         );
 
-        // §6.3 item 3: verify the approved template identifier. The identifier
-        // is bound in the config by the admin and must be presented here, so a
-        // client cannot register an asset through an unapproved flow. Reading
-        // the asset's `uri` was rejected because its approved values are not
-        // defined anywhere in the spec; see D-0013.
-        require!(
-            ctx.accounts.template_id.key() == approved_template_address(config.approved_template_id),
-            DistrictError::InvalidTemplate
-        );
+        // §6.3 item 3, verifying the approved template identifier, is enforced
+        // by the `seeds` constraint on `template_id` above rather than here: the
+        // constraint runs before this body, so a wrong identifier never reaches
+        // it. Reading the asset's `uri` instead was rejected because the set of
+        // approved URIs is not defined anywhere in the spec; see D-0013.
 
         // §6.3 item 4: read the citizen template from the registry. An unknown
         // role is an error rather than a default.
@@ -266,13 +262,6 @@ pub mod district {
     ) -> Result<()> {
         let config = &ctx.accounts.config;
         require!(!config.is_paused, DistrictError::ProgramPaused);
-
-        // The mission authority's signature is the authorization itself; the
-        // account is a `Signer`, so reaching this line means it signed.
-        require!(
-            ctx.accounts.mission_authority.key() == config.mission_authority,
-            DistrictError::InvalidMissionClaim
-        );
 
         // Expiry is checked against the clock, so a claim cannot be held and
         // replayed later (§15.3 acceptance test 3).
@@ -644,9 +633,16 @@ pub struct RegisterCitizen<'info> {
     /// The account whose address must equal
     /// `approved_template_address(config.approved_template_id)` (§6.3 item 3).
     ///
-    /// CHECK: never read and never written. It is an unforgeable commitment to
-    /// the approved template identifier — only this program can derive the
-    /// address, so a client cannot substitute one of its own.
+    /// CHECK: never read and never written, and never created — no instruction
+    /// in this program writes an account at this address. It is an unforgeable
+    /// commitment to the approved template identifier: the address is derived
+    /// from `config.approved_template_id`, and the bare `bump` below makes
+    /// Anchor re-derive it and compare before the handler runs, so a client
+    /// cannot substitute a key of its own choosing.
+    #[account(
+        seeds = [b"approved_template", &config.approved_template_id.to_le_bytes()],
+        bump
+    )]
     pub template_id: UncheckedAccount<'info>,
     #[account(
         init,
@@ -681,8 +677,21 @@ pub struct ClaimTrainingCredit<'info> {
     pub asset: AccountInfo<'info>,
     /// CHECK: see `RegisterCitizen::mpl_core_program`.
     pub mpl_core_program: UncheckedAccount<'info>,
-    /// Signs the claim. Compared against `config.mission_authority` in the
-    /// handler.
+    /// Signs the claim.
+    ///
+    /// The comparison against the config is a constraint rather than a handler
+    /// check on purpose. An account's key is chosen by the caller, and nothing
+    /// else in this instruction is derived from `mission_authority` — the claim
+    /// receipt PDA comes from the asset, the mission and the nonce — so a check
+    /// inside the handler could be satisfied by passing the citizen owner's own
+    /// keypair here and signing it. That would let any owner grant themselves
+    /// unlimited Training Credits, which is the only thing separating "bought a
+    /// token" from "maxed a citizen" (§5.3). As a constraint it runs before the
+    /// handler and cannot be reached with a substituted key.
+    #[account(
+        constraint = mission_authority.key() == config.mission_authority
+            @ DistrictError::InvalidMissionClaim
+    )]
     pub mission_authority: Signer<'info>,
     /// The citizen's current owner, who signs (§12) and pays for the receipt.
     #[account(mut)]

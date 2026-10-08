@@ -2,44 +2,48 @@
 //!
 //! These run against `solana-program-test`, which executes the real program
 //! logic inside a simulated bank: account constraints, PDA derivation, borsh
-//! serialization and the CPI to SPL Token all really happen. No validator, no
-//! BPF build and no Anchor CLI are involved, so plain `cargo test` covers the
-//! instruction path.
+//! serialization, the clock sysvar and the CPI to SPL Token all really happen.
+//! No validator, no BPF build and no Anchor CLI are involved, so plain
+//! `cargo test` covers the instruction path.
 //!
-//! One thing this harness cannot see is `emit!`. `solana_runtime`'s log
-//! collector is built with `LogCollectorFilter::ExcludeReturnData`, and because
-//! the program runs as a native builtin rather than through the BPF VM, the
-//! `sol_log_data` call Anchor uses for events is dropped before it reaches
-//! `simulation_details.logs`. So every assertion here reads committed account
-//! state — the config PDA, the citizen PDA, token balances and the mint supply —
-//! which is what an indexer or a client would end up relying on anyway. The
-//! event payloads themselves are covered by the `anchor test` run against a real
-//! validator that `docs/ARCHITECTURE.md` section 9 still lists as a gap.
+//! What this harness cannot see is `emit!`. `solana_runtime`'s log collector is
+//! built with `LogCollectorFilter::ExcludeReturnData`, and because the program
+//! runs as a native builtin rather than through the BPF VM, the `sol_log_data`
+//! call Anchor uses for events is dropped before it reaches the returned logs.
+//! So every assertion here reads committed account state — the config PDA, the
+//! citizen PDA, claim receipts, token balances and the mint supply — which is
+//! what an indexer or a client would end up relying on anyway. The event
+//! payloads still need an `anchor test` run against a real validator (D-0012).
 //!
 //! The processor is the `entry` function that Anchor's `#[program]` macro
 //! generates — `pub fn entry(&Pubkey, &[AccountInfo], &[u8]) -> ProgramResult`,
 //! exactly the signature `ProgramTest::new` asks for.
 //!
-//! Scope: behaviour that only shows up once a whole instruction executes. That
-//! a forged asset cannot become a citizen, that a foreign mint cannot be burned
-//! for score, and that only the authority can pause. Byte-level parsing of the
-//! Metaplex Core layout is covered separately by `src/mpl_core.rs`.
+//! Scope: the acceptance tests of `PIXEL_DISTRICT_SPEC_V2_ID.md` §15.3 and
+//! §15.4 that can be expressed against a simulated bank. Byte-level parsing of
+//! the Metaplex Core layout is covered separately by `src/mpl_core.rs`, the
+//! economic formula by `src/state.rs`, and the role registry by `src/roles.rs`.
 //!
 //! Run with `pnpm program:test`, which is also what `[scripts].test` in
 //! `programs/Anchor.toml` and the CI `programs` job execute.
 
 use anchor_lang::{
     solana_program::{
-        entrypoint::ProgramResult, instruction::Instruction, program_pack::Pack, pubkey::Pubkey,
-        system_instruction::SystemError, system_program,
+        clock::Clock, entrypoint::ProgramResult, instruction::Instruction, program_pack::Pack,
+        pubkey::Pubkey, system_program,
     },
-    AccountDeserialize, InstructionData, ToAccountMetas,
+    AccountDeserialize, AnchorSerialize, InstructionData, ToAccountMetas,
 };
 use anchor_spl::token;
 use district::{
-    accounts, errors::DistrictError, instruction,
+    accounts, approved_template_address, errors::DistrictError, instruction,
     mpl_core::{self, MPL_CORE_PROGRAM_ID},
-    state::{CitizenStat, CitizenState, DistrictConfig, INITIAL_TRAINING_CREDITS, STAT_MAX},
+    roles::{CitizenRole, ROLE_COUNT, ROLE_TEMPLATES},
+    state::{
+        ClaimReceipt, CitizenStat, CitizenState, DistrictConfig, CITIZEN_STATE_VERSION,
+        DISTRICT_CONFIG_VERSION, STAT_MAX, TIER_1_SCORE, TIER_2_SCORE, TIER_3_SCORE,
+    },
+    InitializeConfigArgs, MissionClaimArgs, UpdateConfigArgs,
 };
 use solana_program_test::{processor, ProgramTest, ProgramTestContext};
 use solana_sdk::{
@@ -52,9 +56,19 @@ use solana_sdk::{
 };
 use spl_token::state::{Account as SplTokenAccount, AccountState, Mint as SplMint};
 
-const BURN_AMOUNT: u64 = 100;
+/// `base_training_cost` in token atoms (§5.3). With this value the spec's own
+/// examples hold: a score of 0 costs 100 to raise, a score of 8 costs 900.
+const BASE_TRAINING_COST: u64 = 100;
+
+/// Template identifier the district approves (§6.3 item 3).
+const APPROVED_TEMPLATE_ID: u32 = 7;
+
 const TOKEN_DECIMALS: u8 = 9;
-const TOKEN_SUPPLY: u64 = 1_000_000;
+const TOKEN_SUPPLY: u64 = 1_000_000_000;
+
+/// A fixed clock so `expires_at` comparisons are deterministic.
+const NOW: i64 = 1_700_000_000;
+const AN_HOUR: i64 = 3_600;
 
 /// Ok when the transaction committed, or the transport error it failed with.
 type SendResult = Result<(), TransportError>;
@@ -69,11 +83,18 @@ type SendResult = Result<(), TransportError>;
 // ---------------------------------------------------------------------------
 
 struct Harness {
-    authority: Keypair,
+    /// Bootstrap authority, and admin after `initialize_config`.
+    admin: Keypair,
+    /// Signs authorized mission claims (§12 `claim_training_credit`).
+    mission_authority: Keypair,
+    /// Owns the citizens these tests register.
     holder: Keypair,
+    /// Owns nothing, signs nothing it should not.
     impostor: Keypair,
-    /// The utility token mint the district burns. A keypair so the fixture can
-    /// be installed at a known address.
+    /// Successor admin for the two-step transfer.
+    successor: Keypair,
+    /// The official utility token. A keypair so the fixture can be installed at
+    /// a known address before `set_utility_mint` binds it.
     utility_mint: Keypair,
     config: Pubkey,
     collection_mint: Pubkey,
@@ -82,6 +103,7 @@ struct Harness {
     /// so this address does not have to be executable for the ownership
     /// constraint to be meaningful.
     mpl_core: Pubkey,
+    sol_treasury: Pubkey,
 }
 
 impl Harness {
@@ -97,8 +119,12 @@ impl Harness {
         self.mpl_core
     }
 
-    fn authority_key(&self) -> Pubkey {
-        self.authority.pubkey()
+    fn admin_key(&self) -> Pubkey {
+        self.admin.pubkey()
+    }
+
+    fn mission_authority_key(&self) -> Pubkey {
+        self.mission_authority.pubkey()
     }
 
     fn holder_key(&self) -> Pubkey {
@@ -109,12 +135,35 @@ impl Harness {
         self.impostor.pubkey()
     }
 
+    fn successor_key(&self) -> Pubkey {
+        self.successor.pubkey()
+    }
+
     fn utility_mint_key(&self) -> Pubkey {
         self.utility_mint.pubkey()
     }
 
+    /// The account whose address proves the approved template (§6.3 item 3).
+    fn template_key(&self) -> Pubkey {
+        approved_template_address(APPROVED_TEMPLATE_ID)
+    }
+
+    /// §6.4: seed `["citizen", asset]`.
     fn citizen_pda(&self, asset: &Pubkey) -> (Pubkey, u8) {
-        Pubkey::find_program_address(&[b"citizen_state", asset.as_ref()], &district::ID)
+        Pubkey::find_program_address(&[b"citizen", asset.as_ref()], &district::ID)
+    }
+
+    /// The single-use receipt for one mission claim.
+    fn claim_receipt_pda(&self, asset: &Pubkey, mission_id: u64, nonce: u64) -> (Pubkey, u8) {
+        Pubkey::find_program_address(
+            &[
+                b"claim",
+                asset.as_ref(),
+                &mission_id.to_le_bytes(),
+                &nonce.to_le_bytes(),
+            ],
+            &district::ID,
+        )
     }
 }
 
@@ -135,30 +184,45 @@ fn process_instruction(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8
 
 async fn start() -> (ProgramTestContext, Harness) {
     let mut program_test = ProgramTest::new("district", district::ID, processor!(process_instruction));
-    // Registration writes a PDA and emits an event; give it headroom so tests
-    // fail on logic rather than on the default 200k per-instruction budget.
+    // Registration writes a PDA and reads a Core asset; give it headroom so
+    // tests fail on logic rather than on the default 200k per-instruction
+    // budget. Not a substitute for measuring the real BPF cost.
     program_test.set_compute_max_units(1_400_000);
     let mut context = program_test.start_with_context().await;
 
+    // `claim_training_credit` compares `expires_at` against the clock, so the
+    // clock has to be a known value rather than the bank's default.
+    context.set_sysvar(&Clock {
+        slot: 1,
+        epoch_start_timestamp: NOW,
+        epoch: 1,
+        leader_schedule_epoch: 2,
+        unix_timestamp: NOW,
+    });
+
     let harness = Harness {
-        authority: Keypair::new(),
+        admin: Keypair::new(),
+        mission_authority: Keypair::new(),
         holder: Keypair::new(),
         impostor: Keypair::new(),
+        successor: Keypair::new(),
         utility_mint: Keypair::new(),
         config: Pubkey::find_program_address(&[b"district_config"], &district::ID).0,
         collection_mint: Pubkey::new_unique(),
         mpl_core: MPL_CORE_PROGRAM_ID,
+        sol_treasury: Pubkey::new_unique(),
     };
 
     // Anchor's `init` constraint funds the new account from the account named
-    // as `payer`, not from the transaction fee payer. `InitializeDistrict`
-    // declares `payer = authority` and `RegisterCitizen` declares
-    // `payer = owner`, so both keypairs need their own rent balance or the
-    // system program CPI fails with `insufficient lamports 0, need 1712160`.
+    // as `payer`, not from the transaction fee payer. `InitializeConfig`
+    // declares `payer = admin`, `RegisterCitizen` and `ClaimTrainingCredit`
+    // declare `payer = owner`, so those keypairs need their own rent balance or
+    // the system program CPI fails with `insufficient lamports 0, need ...`.
     for account in [
-        harness.authority_key(),
+        harness.admin_key(),
         harness.holder_key(),
         harness.impostor_key(),
+        harness.successor_key(),
     ] {
         context.set_account(
             &account,
@@ -238,30 +302,8 @@ fn custom_error_code(failure: &TransportError) -> u32 {
 }
 
 // ---------------------------------------------------------------------------
-// fixtures
+// account fixtures
 // ---------------------------------------------------------------------------
-
-fn initialize_instruction(harness: &Harness, burn_amount: u64) -> Instruction {
-    Instruction {
-        program_id: district::ID,
-        accounts: accounts::InitializeDistrict {
-            config: harness.config_key(),
-            utility_mint: harness.utility_mint_key(),
-            collection_mint: harness.collection_key(),
-            authority: harness.authority_key(),
-            system_program: system_program::ID,
-        }
-        .to_account_metas(None),
-        data: instruction::InitializeDistrict { burn_amount }.data(),
-    }
-}
-
-async fn initialize(context: &mut ProgramTestContext, harness: &Harness) {
-    let instruction = initialize_instruction(harness, BURN_AMOUNT);
-    if let Err(error) = send(context, instruction, &[&harness.authority]).await {
-        panic!("initialize_district must succeed, got {error}");
-    }
-}
 
 async fn read_config(context: &mut ProgramTestContext, harness: &Harness) -> DistrictConfig {
     let account = context
@@ -273,10 +315,7 @@ async fn read_config(context: &mut ProgramTestContext, harness: &Harness) -> Dis
     DistrictConfig::try_deserialize(&mut &account.data[..]).expect("the config must deserialize")
 }
 
-async fn read_citizen(
-    context: &mut ProgramTestContext,
-    citizen_state: Pubkey,
-) -> CitizenState {
+async fn read_citizen(context: &mut ProgramTestContext, citizen_state: Pubkey) -> CitizenState {
     let account = context
         .banks_client
         .get_account(citizen_state)
@@ -284,6 +323,16 @@ async fn read_citizen(
         .expect("a transport error")
         .expect("the citizen state must exist");
     CitizenState::try_deserialize(&mut &account.data[..]).expect("the state must deserialize")
+}
+
+async fn read_claim_receipt(context: &mut ProgramTestContext, receipt: Pubkey) -> ClaimReceipt {
+    let account = context
+        .banks_client
+        .get_account(receipt)
+        .await
+        .expect("a transport error")
+        .expect("the claim receipt must exist");
+    ClaimReceipt::try_deserialize(&mut &account.data[..]).expect("the receipt must deserialize")
 }
 
 /// Build the bytes of a Metaplex Core `AssetV1` account, using the same offsets
@@ -312,75 +361,27 @@ fn install_asset(context: &mut ProgramTestContext, harness: &Harness, asset: Pub
 
 /// Install an account with an arbitrary owner, used to prove that the `owner =
 /// mpl_core_program` constraint is what makes the asset bytes trustworthy.
-fn install_account(context: &mut ProgramTestContext, address: Pubkey, data: Vec<u8>, owner: Pubkey) {
+fn install_account(
+    context: &mut ProgramTestContext,
+    address: Pubkey,
+    data: Vec<u8>,
+    owner: Pubkey,
+) {
     // `ProgramTestContext::set_account` takes `&AccountSharedData`, whose data
     // setter is private; the public route is `From<solana_sdk::account::Account>`.
     let lamports = Rent::default().minimum_balance(data.len().max(1));
-    let shared = AccountSharedData::from(solana_sdk::account::Account {
-        lamports,
-        data,
-        owner,
-        executable: false,
-        rent_epoch: u64::MAX,
-    });
-    context.set_account(&address, &shared);
-}
-
-fn register_instruction(
-    harness: &Harness,
-    asset: Pubkey,
-    citizen_state: Pubkey,
-    owner: Pubkey,
-    stats: (u8, u8, u8),
-) -> Instruction {
-    Instruction {
-        program_id: district::ID,
-        accounts: accounts::RegisterCitizen {
-            config: harness.config_key(),
-            asset,
-            mpl_core_program: harness.mpl_core_key(),
-            citizen_state,
+    context.set_account(
+        &address,
+        &AccountSharedData::from(solana_sdk::account::Account {
+            lamports,
+            data,
             owner,
-            system_program: system_program::ID,
-        }
-        .to_account_metas(None),
-        data: instruction::RegisterCitizen {
-            initial_int: stats.0,
-            initial_aln: stats.1,
-            initial_cmp: stats.2,
-        }
-        .data(),
-    }
-}
-
-/// Register a genuine collection member held by `harness.holder`.
-async fn register_member(
-    context: &mut ProgramTestContext,
-    harness: &Harness,
-) -> (Pubkey, Pubkey) {
-    let asset = Pubkey::new_unique();
-    install_asset(
-        context,
-        harness,
-        asset,
-        core_asset(&harness.holder_key(), &harness.collection_key()),
+            executable: false,
+            rent_epoch: u64::MAX,
+        }),
     );
-    let (citizen_state, _) = harness.citizen_pda(&asset);
-    let holder = harness.holder_key();
-
-    send(
-        context,
-        register_instruction(harness, asset, citizen_state, holder, (1, 2, 3)),
-        &[&harness.holder],
-    )
-    .await
-    .expect("registering a genuine collection member must succeed");
-
-    (asset, citizen_state)
 }
 
-/// A mint fixture. The mint's own address is not part of `spl_token::state::Mint`,
-/// so it is not a parameter here.
 fn mint_account(authority: &Pubkey, supply: u64) -> AccountSharedData {
     let mut data = vec![0u8; SplMint::LEN];
     SplMint {
@@ -423,73 +424,41 @@ fn spl_account(data: Vec<u8>) -> AccountSharedData {
     })
 }
 
-struct Training {
-    citizen_state: Pubkey,
-    user_token_account: Pubkey,
-}
-
-/// Register a citizen and give the holder a utility token balance to burn.
-async fn setup_training(context: &mut ProgramTestContext, harness: &Harness) -> Training {
-    let (_, citizen_state) = register_member(context, harness).await;
-
-    let user_token_account = Pubkey::new_unique();
-    let utility_mint = harness.utility_mint_key();
-    let payer = context.payer.pubkey();
-    let holder = harness.holder_key();
-
-    context.set_account(
-        &utility_mint,
-        &mint_account(&payer, TOKEN_SUPPLY),
-    );
-    context.set_account(
-        &user_token_account,
-        &token_account(&utility_mint, &holder, BURN_AMOUNT * 10),
-    );
-
-    Training {
-        citizen_state,
-        user_token_account,
-    }
-}
-
-fn train_instruction(
-    harness: &Harness,
-    setup: &Training,
-    stat: CitizenStat,
-    utility_mint: Pubkey,
-    user_token_account: Pubkey,
-) -> Instruction {
-    Instruction {
-        program_id: district::ID,
-        accounts: accounts::TrainStat {
-            config: harness.config_key(),
-            citizen_state: setup.citizen_state,
-            owner: harness.holder_key(),
-            utility_mint,
-            user_token_account,
-            token_program: token::ID,
-        }
-        .to_account_metas(None),
-        data: instruction::TrainStat { stat }.data(),
-    }
-}
-
-fn set_paused_instruction(harness: &Harness, authority: Pubkey, paused: bool) -> Instruction {
-    Instruction {
-        program_id: district::ID,
-        accounts: accounts::SetPaused {
-            config: harness.config_key(),
-            authority,
-        }
-        .to_account_metas(None),
-        data: instruction::SetPaused { paused }.data(),
-    }
-}
-
-async fn token_balance(
+/// Write a `CitizenState` directly, for the cases an instruction cannot reach:
+/// a score already at the maximum, or a credit pool that would take nine claims
+/// to fill.
+///
+/// This is a test fixture, not a way the program can be driven — the account is
+/// a PDA owned by the district program, and only the program can normally write
+/// it.
+fn install_citizen(
     context: &mut ProgramTestContext,
-    account: Pubkey,
-) -> u64 {
+    citizen_state: Pubkey,
+    citizen: &CitizenState,
+) {
+    let mut data = vec![0u8; CitizenState::LEN];
+    citizen.try_serialize(&mut (&mut data[..])).expect("the state fits");
+    install_account(context, citizen_state, data, district::ID);
+}
+
+fn citizen_fixture(harness: &Harness, asset: Pubkey, role: CitizenRole) -> CitizenState {
+    let template = role.template();
+    CitizenState {
+        version: CITIZEN_STATE_VERSION,
+        bump: harness.citizen_pda(&asset).1,
+        citizen_id: 1,
+        asset,
+        role: template.index,
+        intelligence: template.initial_intelligence,
+        alignment: template.initial_alignment,
+        compute: template.initial_compute,
+        insight_training_credits: 0,
+        bond_training_credits: 0,
+        craft_training_credits: 0,
+    }
+}
+
+async fn token_balance(context: &mut ProgramTestContext, account: Pubkey) -> u64 {
     let stored = context
         .banks_client
         .get_account(account)
@@ -515,7 +484,336 @@ async fn token_supply(context: &mut ProgramTestContext, mint: Pubkey) -> u64 {
 }
 
 // ---------------------------------------------------------------------------
-// initialize_district
+// instruction builders
+// ---------------------------------------------------------------------------
+
+fn initialize_config_instruction(harness: &Harness, start_paused: bool) -> Instruction {
+    Instruction {
+        program_id: district::ID,
+        accounts: accounts::InitializeConfig {
+            config: harness.config_key(),
+            admin: harness.admin_key(),
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+        data: instruction::InitializeConfig {
+            args: InitializeConfigArgs {
+                mission_authority: harness.mission_authority_key(),
+                sol_treasury: harness.sol_treasury,
+                collection_mint: harness.collection_key(),
+                approved_template_id: APPROVED_TEMPLATE_ID,
+                base_training_cost: BASE_TRAINING_COST,
+                start_paused,
+            },
+        }
+        .data(),
+    }
+}
+
+fn set_utility_mint_instruction(harness: &Harness, admin: Pubkey, utility_mint: Pubkey) -> Instruction {
+    Instruction {
+        program_id: district::ID,
+        accounts: accounts::SetUtilityMint {
+            config: harness.config_key(),
+            utility_mint,
+            admin,
+        }
+        .to_account_metas(None),
+        data: instruction::SetUtilityMint.data(),
+    }
+}
+
+fn lock_utility_mint_instruction(harness: &Harness, admin: Pubkey) -> Instruction {
+    Instruction {
+        program_id: district::ID,
+        accounts: accounts::LockUtilityMint {
+            config: harness.config_key(),
+            admin,
+        }
+        .to_account_metas(None),
+        data: instruction::LockUtilityMint.data(),
+    }
+}
+
+fn update_config_instruction(harness: &Harness, args: UpdateConfigArgs) -> Instruction {
+    Instruction {
+        program_id: district::ID,
+        accounts: accounts::UpdateConfigAccounts {
+            config: harness.config_key(),
+            admin: harness.admin_key(),
+        }
+        .to_account_metas(None),
+        data: instruction::UpdateConfig { args }.data(),
+    }
+}
+
+fn set_paused_instruction(harness: &Harness, admin: Pubkey, paused: bool) -> Instruction {
+    Instruction {
+        program_id: district::ID,
+        accounts: accounts::SetPaused {
+            config: harness.config_key(),
+            admin,
+        }
+        .to_account_metas(None),
+        data: instruction::SetPaused { paused }.data(),
+    }
+}
+
+fn register_instruction(harness: &Harness, asset: Pubkey, owner: Pubkey, role: u8) -> Instruction {
+    Instruction {
+        program_id: district::ID,
+        accounts: accounts::RegisterCitizen {
+            config: harness.config_key(),
+            asset,
+            mpl_core_program: harness.mpl_core_key(),
+            template_id: harness.template_key(),
+            citizen_state: harness.citizen_pda(&asset).0,
+            owner,
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+        data: instruction::RegisterCitizen { role }.data(),
+    }
+}
+
+fn claim_instruction(
+    harness: &Harness,
+    asset: Pubkey,
+    citizen_state: Pubkey,
+    owner: Pubkey,
+    mission_authority: Pubkey,
+    args: MissionClaimArgs,
+    receipt: Pubkey,
+) -> Instruction {
+    Instruction {
+        program_id: district::ID,
+        accounts: accounts::ClaimTrainingCredit {
+            config: harness.config_key(),
+            citizen_state,
+            asset,
+            mpl_core_program: harness.mpl_core_key(),
+            mission_authority,
+            owner,
+            claim_receipt: receipt,
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+        data: instruction::ClaimTrainingCredit { args }.data(),
+    }
+}
+
+fn upgrade_instruction(
+    harness: &Harness,
+    asset: Pubkey,
+    citizen_state: Pubkey,
+    owner: Pubkey,
+    utility_mint: Pubkey,
+    user_token_account: Pubkey,
+    stat_index: u8,
+) -> Instruction {
+    Instruction {
+        program_id: district::ID,
+        accounts: accounts::UpgradeScore {
+            config: harness.config_key(),
+            citizen_state,
+            asset,
+            mpl_core_program: harness.mpl_core_key(),
+            owner,
+            utility_mint,
+            user_token_account,
+            token_program: token::ID,
+        }
+        .to_account_metas(None),
+        data: instruction::UpgradeScore { stat_index }.data(),
+    }
+}
+
+fn propose_admin_instruction(harness: &Harness, proposed_admin: Pubkey) -> Instruction {
+    Instruction {
+        program_id: district::ID,
+        accounts: accounts::ProposeAdmin {
+            config: harness.config_key(),
+            admin: harness.admin_key(),
+        }
+        .to_account_metas(None),
+        data: instruction::ProposeAdmin { proposed_admin }.data(),
+    }
+}
+
+fn accept_admin_instruction(harness: &Harness, new_admin: Pubkey) -> Instruction {
+    Instruction {
+        program_id: district::ID,
+        accounts: accounts::AcceptAdmin {
+            config: harness.config_key(),
+            new_admin,
+        }
+        .to_account_metas(None),
+        data: instruction::AcceptAdmin.data(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// shared setup steps
+// ---------------------------------------------------------------------------
+
+/// `initialize_config` with the test's parameters.
+async fn initialize(context: &mut ProgramTestContext, harness: &Harness) {
+    initialize_with(context, harness, false).await;
+}
+
+async fn initialize_with(context: &mut ProgramTestContext, harness: &Harness, start_paused: bool) {
+    if let Err(error) = send(
+        context,
+        initialize_config_instruction(harness, start_paused),
+        &[&harness.admin],
+    )
+    .await
+    {
+        panic!("initialize_config must succeed, got {error}");
+    }
+}
+
+/// Install the utility mint fixture, then bind it with `set_utility_mint`.
+async fn bind_utility_mint(context: &mut ProgramTestContext, harness: &Harness) {
+    context.set_account(&harness.utility_mint_key(), &mint_account(&context.payer.pubkey(), TOKEN_SUPPLY));
+    send(
+        context,
+        set_utility_mint_instruction(harness, harness.admin_key(), harness.utility_mint_key()),
+        &[&harness.admin],
+    )
+    .await
+    .expect("binding a real initialized mint must succeed");
+}
+
+/// A fully configured district: initialized, mint bound, not paused.
+async fn bootstrap(context: &mut ProgramTestContext, harness: &Harness) {
+    initialize(context, harness).await;
+    bind_utility_mint(context, harness).await;
+}
+
+/// Install a genuine collection member owned by the holder.
+fn install_member(context: &mut ProgramTestContext, harness: &Harness) -> Pubkey {
+    let asset = Pubkey::new_unique();
+    install_asset(
+        context,
+        harness,
+        asset,
+        core_asset(&harness.holder_key(), &harness.collection_key()),
+    );
+    asset
+}
+
+/// Register a genuine collection member as a Pioneer.
+async fn register_member(context: &mut ProgramTestContext, harness: &Harness) -> (Pubkey, Pubkey) {
+    register_role(context, harness, CitizenRole::Pioneer).await
+}
+
+async fn register_role(
+    context: &mut ProgramTestContext,
+    harness: &Harness,
+    role: CitizenRole,
+) -> (Pubkey, Pubkey) {
+    let asset = install_member(context, harness);
+    send(
+        context,
+        register_instruction(harness, asset, harness.holder_key(), role as u8),
+        &[&harness.holder],
+    )
+    .await
+    .expect("registering a genuine collection member must succeed");
+    (asset, harness.citizen_pda(&asset).0)
+}
+
+/// Grant the holder one credit of one kind through a real authorized claim.
+///
+/// Going through the instruction rather than writing the PDA is the point: the
+/// credit has to be one the program itself would grant.
+async fn claim_credit(
+    context: &mut ProgramTestContext,
+    harness: &Harness,
+    asset: Pubkey,
+    citizen_state: Pubkey,
+    stat: CitizenStat,
+    mission_id: u64,
+) {
+    let nonce = mission_id * 1_000 + u64::from(stat as u8);
+    let (receipt, _) = harness.claim_receipt_pda(&asset, mission_id, nonce);
+    send(
+        context,
+        claim_instruction(
+            harness,
+            asset,
+            citizen_state,
+            harness.holder_key(),
+            harness.mission_authority_key(),
+            MissionClaimArgs {
+                stat: stat as u8,
+                mission_id,
+                season_id: 1,
+                nonce,
+                expires_at: NOW + AN_HOUR,
+            },
+            receipt,
+        ),
+        &[&harness.holder, &harness.mission_authority],
+    )
+    .await
+    .expect("an authorized, unexpired claim must succeed");
+}
+
+/// A registered citizen, the bound utility mint, and a token account for the
+/// holder holding `balance` atoms.
+struct Training {
+    asset: Pubkey,
+    citizen_state: Pubkey,
+    user_token_account: Pubkey,
+}
+
+async fn setup_training(
+    context: &mut ProgramTestContext,
+    harness: &Harness,
+    balance: u64,
+) -> Training {
+    let (asset, citizen_state) = register_member(context, harness).await;
+
+    let user_token_account = Pubkey::new_unique();
+    context.set_account(
+        &user_token_account,
+        &token_account(&harness.utility_mint_key(), &harness.holder_key(), balance),
+    );
+
+    Training {
+        asset,
+        citizen_state,
+        user_token_account,
+    }
+}
+
+/// `upgrade_score` for the holder against a `Training` setup.
+async fn upgrade(
+    context: &mut ProgramTestContext,
+    harness: &Harness,
+    setup: &Training,
+    stat: CitizenStat,
+) -> SendResult {
+    send(
+        context,
+        upgrade_instruction(
+            harness,
+            setup.asset,
+            setup.citizen_state,
+            harness.holder_key(),
+            harness.utility_mint_key(),
+            setup.user_token_account,
+            stat as u8,
+        ),
+        &[&harness.holder],
+    )
+    .await
+}
+
+// ---------------------------------------------------------------------------
+// initialize_config
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -524,15 +822,251 @@ async fn initialize_writes_the_config_pda() {
     initialize(&mut context, &harness).await;
 
     let config = read_config(&mut context, &harness).await;
-    assert_eq!(config.authority, harness.authority_key());
-    assert_eq!(config.utility_mint, harness.utility_mint_key());
+    assert_eq!(config.version, DISTRICT_CONFIG_VERSION);
+    assert_eq!(config.admin, harness.admin_key());
+    assert_eq!(config.mission_authority, harness.mission_authority_key());
+    assert_eq!(config.sol_treasury, harness.sol_treasury);
     assert_eq!(config.collection_mint, harness.collection_key());
-    assert_eq!(config.burn_amount_required, BURN_AMOUNT);
+    assert_eq!(config.approved_template_id, APPROVED_TEMPLATE_ID);
+    assert_eq!(config.base_training_cost, BASE_TRAINING_COST);
     assert_eq!(config.total_registered_citizens, 0);
-    assert!(!config.is_paused, "a fresh district must not be paused");
+    assert!(!config.is_paused);
+    assert_eq!(
+        config.bump,
+        Pubkey::find_program_address(&[b"district_config"], &district::ID).1
+    );
 
-    let (_, bump) = Pubkey::find_program_address(&[b"district_config"], &district::ID);
-    assert_eq!(config.bump, bump);
+    // §5.7: the token is launched after the program, so the mint starts unset
+    // and unlocked. §15.4 test 4 depends on "unset" being distinguishable.
+    assert_eq!(config.utility_mint, Pubkey::default());
+    assert!(!config.utility_mint_locked);
+    // No admin transfer is pending.
+    assert_eq!(config.pending_admin, Pubkey::default());
+}
+
+#[tokio::test]
+async fn initialize_can_only_run_once() {
+    let (mut context, harness) = start().await;
+    initialize(&mut context, &harness).await;
+
+    // Two identical transactions would share a signature, so warp first.
+    context.warp_to_slot(2).expect("warping to slot 2");
+    context.last_blockhash = context.get_new_latest_blockhash().await.expect("a blockhash");
+
+    let result = send(
+        &mut context,
+        initialize_config_instruction(&harness, false),
+        &[&harness.admin],
+    )
+    .await;
+    expect_error_code(result, DistrictError::AlreadyInitialized);
+
+    assert_eq!(
+        read_config(&mut context, &harness).await.admin,
+        harness.admin_key(),
+        "a rejected initialization must not rewrite the config"
+    );
+}
+
+#[tokio::test]
+async fn initialize_can_start_the_district_paused() {
+    let (mut context, harness) = start().await;
+    // AGENT_START_HERE.md §4: mainnet infrastructure is deployed paused.
+    initialize_with(&mut context, &harness, true).await;
+
+    assert!(read_config(&mut context, &harness).await.is_paused);
+}
+
+// ---------------------------------------------------------------------------
+// set_utility_mint / lock_utility_mint
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn the_utility_mint_can_be_set_before_it_is_locked() {
+    let (mut context, harness) = start().await;
+    initialize(&mut context, &harness).await;
+
+    bind_utility_mint(&mut context, &harness).await;
+
+    let config = read_config(&mut context, &harness).await;
+    assert_eq!(config.utility_mint, harness.utility_mint_key());
+    assert!(!config.utility_mint_locked);
+
+    // §15.4 test 1: it can be set again while unlocked, which is what allows a
+    // devnet mirror token to be corrected before the binding is made permanent.
+    let replacement = Keypair::new();
+    context.set_account(&replacement.pubkey(), &mint_account(&context.payer.pubkey(), TOKEN_SUPPLY));
+    send(
+        &mut context,
+        set_utility_mint_instruction(&harness, harness.admin_key(), replacement.pubkey()),
+        &[&harness.admin],
+    )
+    .await
+    .expect("an unlocked mint must be replaceable");
+    assert_eq!(read_config(&mut context, &harness).await.utility_mint, replacement.pubkey());
+}
+
+#[tokio::test]
+async fn the_utility_mint_cannot_be_changed_after_the_lock() {
+    let (mut context, harness) = start().await;
+    bootstrap(&mut context, &harness).await;
+
+    send(
+        &mut context,
+        lock_utility_mint_instruction(&harness, harness.admin_key()),
+        &[&harness.admin],
+    )
+    .await
+    .expect("the admin must be able to lock the mint");
+    assert!(read_config(&mut context, &harness).await.utility_mint_locked);
+
+    // §15.4 test 2, and §5.2: never a second upgrade token.
+    let replacement = Keypair::new();
+    context.set_account(&replacement.pubkey(), &mint_account(&context.payer.pubkey(), TOKEN_SUPPLY));
+    let result = send(
+        &mut context,
+        set_utility_mint_instruction(&harness, harness.admin_key(), replacement.pubkey()),
+        &[&harness.admin],
+    )
+    .await;
+    expect_error_code(result, DistrictError::UtilityMintLocked);
+
+    // Locking twice is refused too: the flag is not a toggle.
+    context.warp_to_slot(2).expect("warping to slot 2");
+    context.last_blockhash = context.get_new_latest_blockhash().await.expect("a blockhash");
+    let result = send(
+        &mut context,
+        lock_utility_mint_instruction(&harness, harness.admin_key()),
+        &[&harness.admin],
+    )
+    .await;
+    expect_error_code(result, DistrictError::UtilityMintLocked);
+
+    assert_eq!(
+        read_config(&mut context, &harness).await.utility_mint,
+        harness.utility_mint_key(),
+        "the bound mint must survive every rejected attempt"
+    );
+}
+
+#[tokio::test]
+async fn binding_something_that_is_not_a_mint_is_refused() {
+    let (mut context, harness) = start().await;
+    initialize(&mut context, &harness).await;
+
+    // An account with the right owner but no mint inside it. Without the
+    // unpack check this would bind and every later burn would be unverifiable.
+    let empty = Keypair::new();
+    context.set_account(&empty.pubkey(), &spl_account(vec![0u8; SplMint::LEN]));
+    let result = send(
+        &mut context,
+        set_utility_mint_instruction(&harness, harness.admin_key(), empty.pubkey()),
+        &[&harness.admin],
+    )
+    .await;
+    expect_error_code(result, DistrictError::InvalidUtilityMint);
+
+    // So is an account too short to hold a mint at all.
+    let short = Keypair::new();
+    context.set_account(&short.pubkey(), &spl_account(vec![0u8; 8]));
+    let result = send(
+        &mut context,
+        set_utility_mint_instruction(&harness, harness.admin_key(), short.pubkey()),
+        &[&harness.admin],
+    )
+    .await;
+    expect_error_code(result, DistrictError::InvalidUtilityMint);
+
+    assert_eq!(read_config(&mut context, &harness).await.utility_mint, Pubkey::default());
+}
+
+#[tokio::test]
+async fn locking_before_a_mint_is_bound_is_refused() {
+    let (mut context, harness) = start().await;
+    initialize(&mut context, &harness).await;
+
+    // Locking an unset mint would permanently disable upgrading (§15.4 test 4),
+    // so it is refused rather than allowed to brick the district.
+    let result = send(
+        &mut context,
+        lock_utility_mint_instruction(&harness, harness.admin_key()),
+        &[&harness.admin],
+    )
+    .await;
+    expect_error_code(result, DistrictError::UtilityMintNotSet);
+    assert!(!read_config(&mut context, &harness).await.utility_mint_locked);
+}
+
+#[tokio::test]
+async fn only_the_admin_can_touch_the_utility_mint() {
+    let (mut context, harness) = start().await;
+    initialize(&mut context, &harness).await;
+    context.set_account(&harness.utility_mint_key(), &mint_account(&context.payer.pubkey(), TOKEN_SUPPLY));
+
+    let result = send(
+        &mut context,
+        set_utility_mint_instruction(&harness, harness.impostor_key(), harness.utility_mint_key()),
+        &[&harness.impostor],
+    )
+    .await;
+    expect_error_code(result, DistrictError::Unauthorized);
+
+    let result = send(
+        &mut context,
+        lock_utility_mint_instruction(&harness, harness.impostor_key()),
+        &[&harness.impostor],
+    )
+    .await;
+    expect_error_code(result, DistrictError::Unauthorized);
+
+    let config = read_config(&mut context, &harness).await;
+    assert_eq!(config.utility_mint, Pubkey::default());
+    assert!(!config.utility_mint_locked);
+}
+
+// ---------------------------------------------------------------------------
+// update_config
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn update_config_changes_operational_parameters_only() {
+    let (mut context, harness) = start().await;
+    bootstrap(&mut context, &harness).await;
+
+    let new_mission_authority = Pubkey::new_unique();
+    let new_treasury = Pubkey::new_unique();
+    send(
+        &mut context,
+        update_config_instruction(
+            &harness,
+            UpdateConfigArgs {
+                mission_authority: new_mission_authority,
+                sol_treasury: new_treasury,
+                approved_template_id: APPROVED_TEMPLATE_ID + 1,
+                base_training_cost: BASE_TRAINING_COST * 2,
+            },
+        ),
+        &[&harness.admin],
+    )
+    .await
+    .expect("the admin must be able to update operational parameters");
+
+    let config = read_config(&mut context, &harness).await;
+    assert_eq!(config.mission_authority, new_mission_authority);
+    assert_eq!(config.sol_treasury, new_treasury);
+    assert_eq!(config.approved_template_id, APPROVED_TEMPLATE_ID + 1);
+    assert_eq!(config.base_training_cost, BASE_TRAINING_COST * 2);
+
+    // §17: devnet and mainnet differ by addresses and config, not by
+    // architecture. An instruction that could rewrite the collection, the mint
+    // binding, the admin or the counter would be a rug vector, so none of them
+    // is reachable from here.
+    assert_eq!(config.collection_mint, harness.collection_key());
+    assert_eq!(config.utility_mint, harness.utility_mint_key());
+    assert_eq!(config.admin, harness.admin_key());
+    assert_eq!(config.total_registered_citizens, 0);
+    assert!(!config.utility_mint_locked);
+    assert!(!config.is_paused);
 }
 
 // ---------------------------------------------------------------------------
@@ -540,9 +1074,9 @@ async fn initialize_writes_the_config_pda() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn only_the_authority_can_pause() {
+async fn only_the_admin_can_pause() {
     let (mut context, harness) = start().await;
-    initialize(&mut context, &harness).await;
+    bootstrap(&mut context, &harness).await;
 
     let result = send(
         &mut context,
@@ -550,7 +1084,7 @@ async fn only_the_authority_can_pause() {
         &[&harness.impostor],
     )
     .await;
-    expect_error_code(result, DistrictError::UnauthorizedAuthority);
+    expect_error_code(result, DistrictError::Unauthorized);
 
     assert!(
         !read_config(&mut context, &harness).await.is_paused,
@@ -561,41 +1095,36 @@ async fn only_the_authority_can_pause() {
 #[tokio::test]
 async fn pauses_and_resumes_and_rewriting_the_same_value_is_harmless() {
     let (mut context, harness) = start().await;
-    initialize(&mut context, &harness).await;
-    let authority = harness.authority_key();
+    bootstrap(&mut context, &harness).await;
 
     send(
         &mut context,
-        set_paused_instruction(&harness, authority, true),
-        &[&harness.authority],
+        set_paused_instruction(&harness, harness.admin_key(), true),
+        &[&harness.admin],
     )
     .await
-    .expect("the authority must be able to pause");
+    .expect("the admin must be able to pause");
     let config = read_config(&mut context, &harness).await;
     assert!(config.is_paused);
-    assert_eq!(config.authority, authority, "pausing must not rewrite the authority");
     let before = (
-        config.is_paused,
-        config.authority,
+        config.admin,
         config.utility_mint,
         config.collection_mint,
-        config.burn_amount_required,
+        config.base_training_cost,
         config.total_registered_citizens,
         config.bump,
     );
 
-    // `set_paused` short-circuits when the value is unchanged, so repeating it
-    // has to succeed without touching the rest of the config. The slot has to
-    // move first: an identical instruction from the same payer on the same
-    // blockhash produces an identical signature, which the bank rejects as
-    // `AlreadyProcessed` before the program is ever invoked.
+    // Two identical transactions from the same payer on the same blockhash share
+    // a signature, which the bank rejects as AlreadyProcessed before the program
+    // runs, so the slot has to move between them.
     context.warp_to_slot(2).expect("warping to slot 2");
     context.last_blockhash = context.get_new_latest_blockhash().await.expect("a blockhash");
 
     send(
         &mut context,
-        set_paused_instruction(&harness, authority, true),
-        &[&harness.authority],
+        set_paused_instruction(&harness, harness.admin_key(), true),
+        &[&harness.admin],
     )
     .await
     .expect("repeating paused=true must still succeed");
@@ -603,118 +1132,210 @@ async fn pauses_and_resumes_and_rewriting_the_same_value_is_harmless() {
     let repeated = read_config(&mut context, &harness).await;
     assert_eq!(
         (
-            repeated.is_paused,
-            repeated.authority,
+            repeated.admin,
             repeated.utility_mint,
             repeated.collection_mint,
-            repeated.burn_amount_required,
+            repeated.base_training_cost,
             repeated.total_registered_citizens,
             repeated.bump,
         ),
         before,
-        "an unchanged value must leave the config exactly as it was"
+        "an unchanged value must leave the rest of the config alone"
     );
 
     send(
         &mut context,
-        set_paused_instruction(&harness, authority, false),
-        &[&harness.authority],
+        set_paused_instruction(&harness, harness.admin_key(), false),
+        &[&harness.admin],
     )
     .await
-    .expect("the authority must be able to resume");
+    .expect("the admin must be able to resume");
     assert!(!read_config(&mut context, &harness).await.is_paused);
 }
 
 #[tokio::test]
-async fn pausing_blocks_registration_and_training() {
+async fn pausing_blocks_registration_claims_and_upgrades() {
     let (mut context, harness) = start().await;
-    initialize(&mut context, &harness).await;
-    let setup = setup_training(&mut context, &harness).await;
+    bootstrap(&mut context, &harness).await;
+    let setup = setup_training(&mut context, &harness, 1_000_000).await;
+    claim_credit(
+        &mut context,
+        &harness,
+        setup.asset,
+        setup.citizen_state,
+        CitizenStat::Intelligence,
+        1,
+    )
+    .await;
 
     send(
         &mut context,
-        set_paused_instruction(&harness, harness.authority_key(), true),
-        &[&harness.authority],
+        set_paused_instruction(&harness, harness.admin_key(), true),
+        &[&harness.admin],
     )
     .await
-    .expect("the authority must be able to pause");
+    .expect("the admin must be able to pause");
 
-    let asset = Pubkey::new_unique();
-    install_asset(
-        &mut context,
-        &harness,
-        asset,
-        core_asset(&harness.holder_key(), &harness.collection_key()),
-    );
-    let (citizen_state, _) = harness.citizen_pda(&asset);
-
+    // A paused district refuses all three state-changing public instructions.
+    let asset = install_member(&mut context, &harness);
     let result = send(
         &mut context,
-        register_instruction(
+        register_instruction(&harness, asset, harness.holder_key(), CitizenRole::Pioneer as u8),
+        &[&harness.holder],
+    )
+    .await;
+    expect_error_code(result, DistrictError::ProgramPaused);
+
+    let result = upgrade(&mut context, &harness, &setup, CitizenStat::Intelligence).await;
+    expect_error_code(result, DistrictError::ProgramPaused);
+
+    let (receipt, _) = harness.claim_receipt_pda(&setup.asset, 99, 99);
+    let result = send(
+        &mut context,
+        claim_instruction(
             &harness,
-            asset,
-            citizen_state,
+            setup.asset,
+            setup.citizen_state,
             harness.holder_key(),
-            (1, 1, 1),
+            harness.mission_authority_key(),
+            MissionClaimArgs {
+                stat: CitizenStat::Intelligence as u8,
+                mission_id: 99,
+                season_id: 1,
+                nonce: 99,
+                expires_at: NOW + AN_HOUR,
+            },
+            receipt,
         ),
-        &[&harness.holder],
+        &[&harness.holder, &harness.mission_authority],
     )
     .await;
     expect_error_code(result, DistrictError::ProgramPaused);
 
-    let result = send(
-        &mut context,
-        train_instruction(
-            &harness,
-            &setup,
-            CitizenStat::Intelligence,
-            harness.utility_mint_key(),
-            setup.user_token_account,
-        ),
-        &[&harness.holder],
-    )
-    .await;
-    expect_error_code(result, DistrictError::ProgramPaused);
-
-    assert_eq!(
-        read_config(&mut context, &harness).await.total_registered_citizens,
-        1,
-        "only the registration from setup_training counts"
-    );
+    // Nothing moved.
+    let citizen = read_citizen(&mut context, setup.citizen_state).await;
+    assert_eq!(citizen.insight_training_credits, 1, "the paused claim must not grant a credit");
+    assert_eq!(citizen.intelligence, 1, "the paused upgrade must not raise the score");
+    assert_eq!(read_config(&mut context, &harness).await.total_registered_citizens, 1);
 }
 
 // ---------------------------------------------------------------------------
-// register_citizen — the collection membership gate
+// register_citizen
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
 async fn registers_a_genuine_collection_member() {
     let (mut context, harness) = start().await;
-    initialize(&mut context, &harness).await;
+    bootstrap(&mut context, &harness).await;
 
     let (asset, citizen_state) = register_member(&mut context, &harness).await;
 
     let citizen = read_citizen(&mut context, citizen_state).await;
+    assert_eq!(citizen.version, CITIZEN_STATE_VERSION);
     assert_eq!(citizen.asset, asset);
-    assert_eq!(citizen.owner, harness.holder_key());
-    assert_eq!(citizen.intelligence, 1);
-    assert_eq!(citizen.alignment, 2);
-    assert_eq!(citizen.composure, 3);
-    assert_eq!(citizen.training_credits, INITIAL_TRAINING_CREDITS);
-    assert_eq!(citizen.total_burns, 0);
-    assert_eq!(citizen.bump, harness.citizen_pda(&asset).1);
-
+    assert_eq!(citizen.citizen_id, 1);
+    assert_eq!(citizen.role, CitizenRole::Pioneer as u8);
     assert_eq!(
-        read_config(&mut context, &harness).await.total_registered_citizens,
-        1
+        citizen.bump,
+        Pubkey::find_program_address(&[b"citizen", asset.as_ref()], &district::ID).1,
+        "§6.4: the seed is [\"citizen\", asset]"
     );
+    assert_eq!(read_config(&mut context, &harness).await.total_registered_citizens, 1);
 }
 
 #[tokio::test]
-async fn clamps_stats_that_exceed_the_maximum() {
+async fn initial_stats_come_from_the_role_registry_not_from_the_caller() {
     let (mut context, harness) = start().await;
-    initialize(&mut context, &harness).await;
+    bootstrap(&mut context, &harness).await;
 
+    // This is the hole the old instruction had: it took initial_int/aln/cmp as
+    // arguments, so anyone could pass 10,10,10 and start at the maximum score
+    // without burning a token. There is no such argument now — the only thing a
+    // caller chooses is the role, and the registry decides what that is worth.
+    for role in [CitizenRole::Pioneer, CitizenRole::Scholar, CitizenRole::Artisan] {
+        let (asset, citizen_state) = register_role(&mut context, &harness, role).await;
+        let citizen = read_citizen(&mut context, citizen_state).await;
+        let template = role.template();
+
+        assert_eq!(citizen.role, template.index);
+        assert_eq!(citizen.intelligence, template.initial_intelligence);
+        assert_eq!(citizen.alignment, template.initial_alignment);
+        assert_eq!(citizen.compute, template.initial_compute);
+        assert_eq!(citizen.asset, asset);
+
+        // No role may start anywhere near the maximum (§7: max is 10).
+        for score in [citizen.intelligence, citizen.alignment, citizen.compute] {
+            assert!(score < STAT_MAX);
+        }
+    }
+
+    let config = read_config(&mut context, &harness).await;
+    assert_eq!(config.total_registered_citizens, 3);
+}
+
+#[tokio::test]
+async fn citizen_ids_count_up_from_one() {
+    let (mut context, harness) = start().await;
+    bootstrap(&mut context, &harness).await;
+
+    let mut ids = Vec::new();
+    for _ in 0..3 {
+        let (_, citizen_state) = register_member(&mut context, &harness).await;
+        ids.push(read_citizen(&mut context, citizen_state).await.citizen_id);
+    }
+
+    assert_eq!(ids, vec![1, 2, 3]);
+    assert_eq!(read_config(&mut context, &harness).await.total_registered_citizens, 3);
+}
+
+#[tokio::test]
+async fn registration_grants_no_training_credits() {
+    let (mut context, harness) = start().await;
+    bootstrap(&mut context, &harness).await;
+
+    let (_, citizen_state) = register_member(&mut context, &harness).await;
+    let citizen = read_citizen(&mut context, citizen_state).await;
+
+    // §5.3: credits cannot be bought and are earned from authorized missions or
+    // verified district events. Granting any at registration would let a citizen
+    // be trained without a single mission, which is the thing the credit exists
+    // to prevent.
+    assert_eq!(citizen.insight_training_credits, 0);
+    assert_eq!(citizen.bond_training_credits, 0);
+    assert_eq!(citizen.craft_training_credits, 0);
+}
+
+#[tokio::test]
+async fn rejects_an_asset_from_a_foreign_collection() {
+    let (mut context, harness) = start().await;
+    bootstrap(&mut context, &harness).await;
+
+    // Correct layout, correct owner, wrong collection.
+    let asset = Pubkey::new_unique();
+    install_asset(
+        &mut context,
+        &harness,
+        asset,
+        core_asset(&harness.holder_key(), &Pubkey::new_unique()),
+    );
+
+    let result = send(
+        &mut context,
+        register_instruction(&harness, asset, harness.holder_key(), CitizenRole::Pioneer as u8),
+        &[&harness.holder],
+    )
+    .await;
+    expect_error_code(result, DistrictError::InvalidCollection);
+    assert_eq!(read_config(&mut context, &harness).await.total_registered_citizens, 0);
+}
+
+#[tokio::test]
+async fn rejects_an_asset_the_signer_does_not_own() {
+    let (mut context, harness) = start().await;
+    bootstrap(&mut context, &harness).await;
+
+    // Right collection, but the asset belongs to somebody else. The impostor
+    // signs and passes their own key as `owner`.
     let asset = Pubkey::new_unique();
     install_asset(
         &mut context,
@@ -722,153 +1343,66 @@ async fn clamps_stats_that_exceed_the_maximum() {
         asset,
         core_asset(&harness.holder_key(), &harness.collection_key()),
     );
-    let (citizen_state, _) = harness.citizen_pda(&asset);
-
-    send(
-        &mut context,
-        register_instruction(
-            &harness,
-            asset,
-            citizen_state,
-            harness.holder_key(),
-            (250, 20, 99),
-        ),
-        &[&harness.holder],
-    )
-    .await
-    .expect("registration must succeed");
-
-    let citizen = read_citizen(&mut context, citizen_state).await;
-    assert_eq!(citizen.intelligence, STAT_MAX, "250 must clamp to STAT_MAX");
-    assert_eq!(citizen.alignment, STAT_MAX, "20 is already the maximum");
-    assert_eq!(citizen.composure, STAT_MAX, "99 must clamp to STAT_MAX");
-}
-
-#[tokio::test]
-async fn rejects_an_asset_from_a_foreign_collection() {
-    let (mut context, harness) = start().await;
-    initialize(&mut context, &harness).await;
-
-    let asset = Pubkey::new_unique();
-    let foreign_collection = Pubkey::new_unique();
-    install_asset(
-        &mut context,
-        &harness,
-        asset,
-        core_asset(&harness.holder_key(), &foreign_collection),
-    );
-    let (citizen_state, _) = harness.citizen_pda(&asset);
 
     let result = send(
         &mut context,
-        register_instruction(
-            &harness,
-            asset,
-            citizen_state,
-            harness.holder_key(),
-            (1, 1, 1),
-        ),
-        &[&harness.holder],
+        register_instruction(&harness, asset, harness.impostor_key(), CitizenRole::Pioneer as u8),
+        &[&harness.impostor],
     )
     .await;
-    expect_error_code(result, DistrictError::InvalidCollection);
-
-    assert!(
-        context
-            .banks_client
-            .get_account(citizen_state)
-            .await
-            .expect("a transport error")
-            .is_none(),
-        "no citizen state may be written for a rejected asset"
-    );
-    assert_eq!(
-        read_config(&mut context, &harness).await.total_registered_citizens,
-        0
-    );
-}
-
-#[tokio::test]
-async fn rejects_an_asset_the_signer_does_not_own() {
-    let (mut context, harness) = start().await;
-    initialize(&mut context, &harness).await;
-
-    // The right collection, but the Core asset records somebody else as owner.
-    let asset = Pubkey::new_unique();
-    install_asset(
-        &mut context,
-        &harness,
-        asset,
-        core_asset(&harness.impostor_key(), &harness.collection_key()),
-    );
-    let (citizen_state, _) = harness.citizen_pda(&asset);
-
-    let result = send(
-        &mut context,
-        register_instruction(
-            &harness,
-            asset,
-            citizen_state,
-            harness.holder_key(),
-            (1, 1, 1),
-        ),
-        &[&harness.holder],
-    )
-    .await;
-    expect_error_code(result, DistrictError::NotAssetOwner);
+    expect_error_code(result, DistrictError::NotOwner);
+    assert_eq!(read_config(&mut context, &harness).await.total_registered_citizens, 0);
 }
 
 #[tokio::test]
 async fn rejects_accounts_that_are_not_collection_member_assets() {
     let (mut context, harness) = start().await;
-    initialize(&mut context, &harness).await;
+    bootstrap(&mut context, &harness).await;
 
-    // A standalone asset: `UpdateAuthority::Address` instead of `Collection`.
-    let mut standalone = core_asset(&harness.holder_key(), &harness.collection_key());
-    standalone[mpl_core::UPDATE_AUTHORITY_TAG_OFFSET] = 1;
+    // Each of these is owned by the Core program, so the `owner` constraint
+    // passes and the parser is what has to refuse them.
+    let cases: Vec<(&str, Vec<u8>)> = vec![
+        ("empty", vec![]),
+        ("uninitialized key", {
+            let mut data = core_asset(&harness.holder_key(), &harness.collection_key());
+            data[0] = 0;
+            data
+        }),
+        ("compressed asset", {
+            let mut data = core_asset(&harness.holder_key(), &harness.collection_key());
+            data[0] = mpl_core::KEY_HASHED_ASSET_V1;
+            data
+        }),
+        ("collection account", {
+            let mut data = core_asset(&harness.holder_key(), &harness.collection_key());
+            data[0] = mpl_core::KEY_COLLECTION_V1;
+            data
+        }),
+        ("standalone asset", {
+            let mut data = core_asset(&harness.holder_key(), &harness.collection_key());
+            data[mpl_core::UPDATE_AUTHORITY_TAG_OFFSET] = 1;
+            data
+        }),
+        ("truncated", {
+            let data = core_asset(&harness.holder_key(), &harness.collection_key());
+            data[..mpl_core::MIN_ASSET_PREFIX_LEN - 1].to_vec()
+        }),
+    ];
 
-    // A compressed asset, and a collection account passed where an asset is
-    // expected.
-    let mut compressed = core_asset(&harness.holder_key(), &harness.collection_key());
-    compressed[0] = mpl_core::KEY_HASHED_ASSET_V1;
-
-    let mut collection_account = core_asset(&harness.holder_key(), &harness.collection_key());
-    collection_account[0] = mpl_core::KEY_COLLECTION_V1;
-
-    for (label, data, expected) in [
-        (
-            "a standalone asset",
-            standalone,
-            DistrictError::AssetNotInACollection,
-        ),
-        ("a compressed asset", compressed, DistrictError::NotACoreAsset),
-        (
-            "a collection account",
-            collection_account,
-            DistrictError::NotACoreAsset,
-        ),
-    ] {
+    for (label, data) in cases {
         let asset = Pubkey::new_unique();
         install_asset(&mut context, &harness, asset, data);
-        let (citizen_state, _) = harness.citizen_pda(&asset);
-
         let result = send(
             &mut context,
-            register_instruction(
-                &harness,
-                asset,
-                citizen_state,
-                harness.holder_key(),
-                (1, 1, 1),
-            ),
+            register_instruction(&harness, asset, harness.holder_key(), CitizenRole::Pioneer as u8),
             &[&harness.holder],
         )
         .await;
+        expect_error_code(result, DistrictError::InvalidAssetState);
         assert_eq!(
-            custom_error_code(&result.expect_err("must fail")),
-            u32::from(expected),
-            "{label} must be rejected with {:?}",
-            expected
+            read_config(&mut context, &harness).await.total_registered_citizens,
+            0,
+            "{label} must not have been registered"
         );
     }
 }
@@ -876,13 +1410,14 @@ async fn rejects_accounts_that_are_not_collection_member_assets() {
 #[tokio::test]
 async fn rejects_an_asset_that_is_not_owned_by_the_core_program() {
     let (mut context, harness) = start().await;
-    initialize(&mut context, &harness).await;
+    bootstrap(&mut context, &harness).await;
 
     // The bytes describe a perfect collection member, but the account is owned
     // by the holder instead of Metaplex Core. This is the forgery the parser
     // alone could not catch: anyone can write 66 bytes that look like an asset
-    // of the right collection into an account they own, so the `owner`
-    // constraint has to reject it before the parser is ever reached.
+    // of the right collection into an account they own. The `owner =
+    // mpl_core_program` constraint is what stops it, and it fires before the
+    // parser is reached — hence Anchor's ConstraintOwner (2004), not a §13 code.
     let asset = Pubkey::new_unique();
     install_account(
         &mut context,
@@ -890,26 +1425,14 @@ async fn rejects_an_asset_that_is_not_owned_by_the_core_program() {
         core_asset(&harness.holder_key(), &harness.collection_key()),
         harness.holder_key(),
     );
-    let (citizen_state, _) = harness.citizen_pda(&asset);
 
     let result = send(
         &mut context,
-        register_instruction(
-            &harness,
-            asset,
-            citizen_state,
-            harness.holder_key(),
-            (1, 1, 1),
-        ),
+        register_instruction(&harness, asset, harness.holder_key(), CitizenRole::Pioneer as u8),
         &[&harness.holder],
     )
     .await;
     let failure = result.expect_err("a self-owned account must not pass as a Core asset");
-
-    // 2004, not 3007: `AccountOwnedByWrongProgram` is what deserializing an
-    // `Account<T>` reports, while this field is an `UncheckedAccount` with an
-    // explicit `owner = mpl_core_program.key()` constraint, which Anchor reports
-    // as `ConstraintOwner`.
     assert_eq!(
         custom_error_code(&failure),
         u32::from(anchor_lang::error::ErrorCode::ConstraintOwner),
@@ -918,177 +1441,607 @@ async fn rejects_an_asset_that_is_not_owned_by_the_core_program() {
 }
 
 #[tokio::test]
+async fn rejects_an_unapproved_template_identifier() {
+    let (mut context, harness) = start().await;
+    bootstrap(&mut context, &harness).await;
+
+    // §6.3 item 3. The approval is an address derived from the config's
+    // template id, so a client cannot substitute one of its own: only this
+    // program can produce that address and no instruction creates an account
+    // there.
+    let asset = install_member(&mut context, &harness);
+    let mut instruction = register_instruction(
+        &harness,
+        asset,
+        harness.holder_key(),
+        CitizenRole::Pioneer as u8,
+    );
+    let wrong_template = approved_template_address(APPROVED_TEMPLATE_ID + 1);
+    for meta in instruction.accounts.iter_mut() {
+        if meta.pubkey == harness.template_key() {
+            meta.pubkey = wrong_template;
+        }
+    }
+
+    // The identifier is a PDA derived from the config, and Anchor re-derives it
+    // as a `seeds` constraint before the handler runs, so a substituted key is
+    // reported by the framework rather than by a §13 code. That is the point of
+    // doing it as a constraint: the check cannot be reached around.
+    let result = send(&mut context, instruction, &[&harness.holder]).await;
+    let failure = result.expect_err("an unapproved template must be refused");
+    assert_eq!(
+        custom_error_code(&failure),
+        u32::from(anchor_lang::error::ErrorCode::ConstraintSeeds),
+        "expected ConstraintSeeds (2006), got {failure}"
+    );
+    assert_eq!(read_config(&mut context, &harness).await.total_registered_citizens, 0);
+
+    // And changing the approved template changes which address is accepted,
+    // which is an admin decision rather than a client one.
+    send(
+        &mut context,
+        update_config_instruction(
+            &harness,
+            UpdateConfigArgs {
+                mission_authority: harness.mission_authority_key(),
+                sol_treasury: harness.sol_treasury,
+                approved_template_id: APPROVED_TEMPLATE_ID + 1,
+                base_training_cost: BASE_TRAINING_COST,
+            },
+        ),
+        &[&harness.admin],
+    )
+    .await
+    .expect("the admin must be able to move the approved template");
+
+    let mut instruction = register_instruction(
+        &harness,
+        asset,
+        harness.holder_key(),
+        CitizenRole::Pioneer as u8,
+    );
+    for meta in instruction.accounts.iter_mut() {
+        if meta.pubkey == harness.template_key() {
+            meta.pubkey = wrong_template;
+        }
+    }
+    send(&mut context, instruction, &[&harness.holder])
+        .await
+        .expect("the newly approved template must now be accepted");
+    assert_eq!(read_config(&mut context, &harness).await.total_registered_citizens, 1);
+}
+
+#[tokio::test]
+async fn rejects_a_role_that_is_not_in_the_registry() {
+    let (mut context, harness) = start().await;
+    bootstrap(&mut context, &harness).await;
+
+    // §6.3 item 4: the template is read from the registry, so a role that is
+    // not in it has no defined initial stats and must not be guessed.
+    for role in [ROLE_COUNT as u8, ROLE_COUNT as u8 + 1, 255] {
+        let asset = install_member(&mut context, &harness);
+        let result = send(
+            &mut context,
+            register_instruction(&harness, asset, harness.holder_key(), role),
+            &[&harness.holder],
+        )
+        .await;
+        expect_error_code(result, DistrictError::InvalidRole);
+    }
+    assert_eq!(read_config(&mut context, &harness).await.total_registered_citizens, 0);
+}
+
+#[tokio::test]
 async fn cannot_register_the_same_asset_twice() {
     let (mut context, harness) = start().await;
-    initialize(&mut context, &harness).await;
+    bootstrap(&mut context, &harness).await;
 
     let (asset, citizen_state) = register_member(&mut context, &harness).await;
+    let first = read_citizen(&mut context, citizen_state).await;
+
+    // Two identical transactions share a signature, so warp before replaying.
+    context.warp_to_slot(2).expect("warping to slot 2");
+    context.last_blockhash = context.get_new_latest_blockhash().await.expect("a blockhash");
+
     let result = send(
         &mut context,
-        register_instruction(
-            &harness,
-            asset,
-            citizen_state,
-            harness.holder_key(),
-            (1, 1, 1),
-        ),
+        register_instruction(&harness, asset, harness.holder_key(), CitizenRole::Scholar as u8),
         &[&harness.holder],
     )
     .await;
-    let failure = result.expect_err("the citizen PDA already exists");
+    // §13 names this CitizenAlreadyRegistered. Reporting it explicitly matters:
+    // without the check the failure would surface as the system program's
+    // AccountAlreadyInUse from the `init` CPI, which is not in the spec's error
+    // list and would not map to a user-facing message.
+    expect_error_code(result, DistrictError::CitizenAlreadyRegistered);
 
-    // `TransportError`'s Display only prints `custom program error: 0x...`, so
-    // the code has to be compared rather than the message searched.
-    //
-    // The rejection never reaches the handler. The `init` constraint CPIs into
-    // the system program to create the PDA, and because the first registration
-    // already created it, the system program refuses with its own error 0,
-    // `AccountAlreadyInUse` — which surfaces here as `Custom(0)`. A citizen
-    // therefore cannot be registered twice, and the counter cannot be inflated
-    // by replaying the instruction, even though the handler has no such check.
-    assert_eq!(
-        custom_error_code(&failure),
-        // A plain cast is right here and would be wrong for `DistrictError`:
-        // `SystemError` is a fieldless enum with implicit discriminants, while
-        // Anchor's `#[error_code]` adds a 6000 offset through a generated
-        // `From` impl, so those have to go via `u32::from`.
-        SystemError::AccountAlreadyInUse as u32,
-        "expected the system program to refuse re-creating the PDA, got {failure}"
-    );
+    let after = read_citizen(&mut context, citizen_state).await;
+    assert_eq!(after.citizen_id, first.citizen_id);
+    assert_eq!(after.role, first.role, "a replay must not change the role");
     assert_eq!(
         read_config(&mut context, &harness).await.total_registered_citizens,
-        1
+        1,
+        "a replay must not inflate the counter"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// claim_training_credit
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn an_authorized_claim_adds_exactly_one_matching_credit() {
+    let (mut context, harness) = start().await;
+    bootstrap(&mut context, &harness).await;
+    let (asset, citizen_state) = register_member(&mut context, &harness).await;
+
+    // §15.3 test 1: the credit lands in the pool of the stat it was claimed for,
+    // and nowhere else.
+    claim_credit(&mut context, &harness, asset, citizen_state, CitizenStat::Alignment, 11).await;
+
+    let citizen = read_citizen(&mut context, citizen_state).await;
+    assert_eq!(citizen.bond_training_credits, 1);
+    assert_eq!(citizen.insight_training_credits, 0);
+    assert_eq!(citizen.craft_training_credits, 0);
+
+    // The receipt records everything the claim was bound to, so an auditor can
+    // check afterwards that the credit was granted for this asset, stat,
+    // mission, season, owner and nonce.
+    let nonce = 11 * 1_000 + u64::from(CitizenStat::Alignment as u8);
+    let (receipt, _) = harness.claim_receipt_pda(&asset, 11, nonce);
+    let stored = read_claim_receipt(&mut context, receipt).await;
+    assert_eq!(stored.asset, asset);
+    assert_eq!(stored.owner, harness.holder_key());
+    assert_eq!(stored.mission_id, 11);
+    assert_eq!(stored.season_id, 1);
+    assert_eq!(stored.stat, CitizenStat::Alignment as u8);
+    assert_eq!(stored.nonce, nonce);
+    assert_eq!(stored.expires_at, NOW + AN_HOUR);
+    assert_eq!(stored.claimed_at, NOW);
+}
+
+#[tokio::test]
+async fn a_mission_claim_cannot_be_replayed() {
+    let (mut context, harness) = start().await;
+    bootstrap(&mut context, &harness).await;
+    let (asset, citizen_state) = register_member(&mut context, &harness).await;
+
+    let args = MissionClaimArgs {
+        stat: CitizenStat::Intelligence as u8,
+        mission_id: 21,
+        season_id: 1,
+        nonce: 77,
+        expires_at: NOW + AN_HOUR,
+    };
+    let (receipt, _) = harness.claim_receipt_pda(&asset, args.mission_id, args.nonce);
+    let instruction = claim_instruction(
+        &harness,
+        asset,
+        citizen_state,
+        harness.holder_key(),
+        harness.mission_authority_key(),
+        args,
+        receipt,
+    );
+
+    send(&mut context, instruction.clone(), &[&harness.holder, &harness.mission_authority])
+        .await
+        .expect("the first claim must succeed");
+    assert_eq!(read_citizen(&mut context, citizen_state).await.insight_training_credits, 1);
+
+    // §15.3 test 2. The signature is identical, so the bank would reject it as
+    // AlreadyProcessed before the program ran; warp so the replay actually
+    // reaches the instruction and is refused for the right reason.
+    context.warp_to_slot(2).expect("warping to slot 2");
+    context.last_blockhash = context.get_new_latest_blockhash().await.expect("a blockhash");
+
+    let result = send(&mut context, instruction, &[&harness.holder, &harness.mission_authority]).await;
+    expect_error_code(result, DistrictError::MissionClaimAlreadyUsed);
+    assert_eq!(
+        read_citizen(&mut context, citizen_state).await.insight_training_credits,
+        1,
+        "a replayed claim must not grant a second credit"
     );
 }
 
 #[tokio::test]
-async fn keeps_a_running_total_of_registered_citizens() {
+async fn an_expired_claim_is_rejected() {
     let (mut context, harness) = start().await;
-    initialize(&mut context, &harness).await;
+    bootstrap(&mut context, &harness).await;
+    let (asset, citizen_state) = register_member(&mut context, &harness).await;
 
-    let mut totals = Vec::new();
-    for _ in 0..3 {
-        let asset = Pubkey::new_unique();
-        install_asset(
+    // §15.3 test 3. A claim signed to expire in the past cannot be held and
+    // presented later.
+    for expires_at in [NOW - 1, NOW, i64::MIN] {
+        let nonce = 5_000 + expires_at.unsigned_abs() % 1_000;
+        let (receipt, _) = harness.claim_receipt_pda(&asset, 31, nonce);
+        let result = send(
             &mut context,
-            &harness,
-            asset,
-            core_asset(&harness.holder_key(), &harness.collection_key()),
-        );
-        let (citizen_state, _) = harness.citizen_pda(&asset);
-
-        send(
-            &mut context,
-            register_instruction(
+            claim_instruction(
                 &harness,
                 asset,
                 citizen_state,
                 harness.holder_key(),
-                (1, 1, 1),
+                harness.mission_authority_key(),
+                MissionClaimArgs {
+                    stat: CitizenStat::Intelligence as u8,
+                    mission_id: 31,
+                    season_id: 1,
+                    nonce,
+                    expires_at,
+                },
+                receipt,
             ),
-            &[&harness.holder],
+            &[&harness.holder, &harness.mission_authority],
         )
-        .await
-        .expect("each registration must succeed");
-
-        // The counter the CitizenRegistered event carries is the config field
-        // itself, so reading it back after each step checks the same sequence.
-        totals.push(read_config(&mut context, &harness).await.total_registered_citizens);
-
-        let citizen = read_citizen(&mut context, citizen_state).await;
-        assert_eq!(citizen.asset, asset);
-        assert_eq!(citizen.owner, harness.holder_key());
+        .await;
+        expect_error_code(result, DistrictError::MissionClaimExpired);
     }
 
-    assert_eq!(totals, vec![1, 2, 3]);
+    let citizen = read_citizen(&mut context, citizen_state).await;
+    assert_eq!(citizen.insight_training_credits, 0);
+}
+
+#[tokio::test]
+async fn a_claim_for_somebody_elses_citizen_is_rejected() {
+    let (mut context, harness) = start().await;
+    bootstrap(&mut context, &harness).await;
+    let (asset, citizen_state) = register_member(&mut context, &harness).await;
+
+    // The impostor signs as owner and presents a receipt PDA derived for their
+    // own key, so the only thing standing between them and a credit on somebody
+    // else's citizen is the ownership check against the Core asset.
+    let nonce = 42u64;
+    let (receipt, _) = harness.claim_receipt_pda(&asset, 41, nonce);
+    let result = send(
+        &mut context,
+        claim_instruction(
+            &harness,
+            asset,
+            citizen_state,
+            harness.impostor_key(),
+            harness.mission_authority_key(),
+            MissionClaimArgs {
+                stat: CitizenStat::Intelligence as u8,
+                mission_id: 41,
+                season_id: 1,
+                nonce,
+                expires_at: NOW + AN_HOUR,
+            },
+            receipt,
+        ),
+        // The impostor pays for the receipt they are asking for.
+        &[&harness.impostor, &harness.mission_authority],
+    )
+    .await;
+    expect_error_code(result, DistrictError::NotOwner);
+    assert_eq!(read_citizen(&mut context, citizen_state).await.insight_training_credits, 0);
+}
+
+#[tokio::test]
+async fn a_claim_the_mission_authority_did_not_sign_is_rejected() {
+    let (mut context, harness) = start().await;
+    bootstrap(&mut context, &harness).await;
+    let (asset, citizen_state) = register_member(&mut context, &harness).await;
+
+    // §12: the claim requires the authorized mission authority's signature.
+    // The impostor signs here, so what stops them is not the signature but the
+    // constraint comparing this account against `config.mission_authority`.
+    let (receipt, _) = harness.claim_receipt_pda(&asset, 51, 1);
+    let result = send(
+        &mut context,
+        claim_instruction(
+            &harness,
+            asset,
+            citizen_state,
+            harness.holder_key(),
+            harness.impostor_key(),
+            MissionClaimArgs {
+                stat: CitizenStat::Intelligence as u8,
+                mission_id: 51,
+                season_id: 1,
+                nonce: 1,
+                expires_at: NOW + AN_HOUR,
+            },
+            receipt,
+        ),
+        &[&harness.holder, &harness.impostor],
+    )
+    .await;
+    expect_error_code(result, DistrictError::InvalidMissionClaim);
+    assert_eq!(read_citizen(&mut context, citizen_state).await.insight_training_credits, 0);
+}
+
+#[tokio::test]
+async fn a_citizen_owner_cannot_appoint_themselves_mission_authority() {
+    let (mut context, harness) = start().await;
+    bootstrap(&mut context, &harness).await;
+    let (asset, citizen_state) = register_member(&mut context, &harness).await;
+
+    // The holder signs both positions: `owner` and `mission_authority`. Nothing
+    // in this instruction is derived from the mission authority — the receipt
+    // PDA comes from the asset, the mission and the nonce — so if the comparison
+    // against the config lived in the handler instead of in a constraint, this
+    // transaction would satisfy it and the holder could mint themselves
+    // unlimited Training Credits. That is the whole gate between "bought tokens"
+    // and "maxed a citizen" (§5.3), so it is worth a test of its own.
+    let (receipt, _) = harness.claim_receipt_pda(&asset, 52, 1);
+    let result = send(
+        &mut context,
+        claim_instruction(
+            &harness,
+            asset,
+            citizen_state,
+            harness.holder_key(),
+            harness.holder_key(),
+            MissionClaimArgs {
+                stat: CitizenStat::Intelligence as u8,
+                mission_id: 52,
+                season_id: 1,
+                nonce: 1,
+                expires_at: NOW + AN_HOUR,
+            },
+            receipt,
+        ),
+        &[&harness.holder],
+    )
+    .await;
+    expect_error_code(result, DistrictError::InvalidMissionClaim);
+
+    let citizen = read_citizen(&mut context, citizen_state).await;
     assert_eq!(
-        read_config(&mut context, &harness).await.total_registered_citizens,
-        3
+        (
+            citizen.insight_training_credits,
+            citizen.bond_training_credits,
+            citizen.craft_training_credits
+        ),
+        (0, 0, 0),
+        "a self-appointed authority must not be able to grant a credit"
+    );
+}
+
+#[tokio::test]
+async fn a_claim_for_an_unknown_stat_is_rejected() {
+    let (mut context, harness) = start().await;
+    bootstrap(&mut context, &harness).await;
+    let (asset, citizen_state) = register_member(&mut context, &harness).await;
+
+    // A credit of an unknown kind would have no pool to land in.
+    for stat in [3u8, 9, 255] {
+        let (receipt, _) = harness.claim_receipt_pda(&asset, 61, u64::from(stat));
+        let result = send(
+            &mut context,
+            claim_instruction(
+                &harness,
+                asset,
+                citizen_state,
+                harness.holder_key(),
+                harness.mission_authority_key(),
+                MissionClaimArgs {
+                    stat,
+                    mission_id: 61,
+                    season_id: 1,
+                    nonce: u64::from(stat),
+                    expires_at: NOW + AN_HOUR,
+                },
+                receipt,
+            ),
+            &[&harness.holder, &harness.mission_authority],
+        )
+        .await;
+        expect_error_code(result, DistrictError::InvalidStat);
+    }
+
+    let citizen = read_citizen(&mut context, citizen_state).await;
+    assert_eq!(
+        (
+            citizen.insight_training_credits,
+            citizen.bond_training_credits,
+            citizen.craft_training_credits
+        ),
+        (0, 0, 0)
     );
 }
 
 // ---------------------------------------------------------------------------
-// train_stat — the token burn gate
+// upgrade_score — §5.3 economy and §15.3 acceptance tests
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn burns_the_utility_token_and_raises_the_stat() {
+async fn an_upgrade_burns_the_formula_cost_and_raises_the_stat_by_one() {
     let (mut context, harness) = start().await;
-    initialize(&mut context, &harness).await;
-    let setup = setup_training(&mut context, &harness).await;
+    bootstrap(&mut context, &harness).await;
+    let setup = setup_training(&mut context, &harness, 1_000_000).await;
+    claim_credit(
+        &mut context,
+        &harness,
+        setup.asset,
+        setup.citizen_state,
+        CitizenStat::Intelligence,
+        71,
+    )
+    .await;
 
     let balance_before = token_balance(&mut context, setup.user_token_account).await;
+    let supply_before = token_supply(&mut context, harness.utility_mint_key()).await;
 
+    // A Pioneer starts at intelligence 1, so §5.3 puts the cost at
+    // 100 × (1 + 1) = 200 atoms.
+    upgrade(&mut context, &harness, &setup, CitizenStat::Intelligence)
+        .await
+        .expect("an owner with a matching credit and enough tokens must succeed");
+
+    let citizen = read_citizen(&mut context, setup.citizen_state).await;
+    assert_eq!(citizen.intelligence, 2, "§15.3 test 5: one stat, one level");
+    assert_eq!(citizen.alignment, 1, "the other stats are untouched");
+    assert_eq!(citizen.compute, 1);
+    assert_eq!(citizen.insight_training_credits, 0, "§15.3 test 11: exactly one credit consumed");
+
+    // §15.3 test 10: the full cost is burned. The balance dropping only proves
+    // the tokens left the account; the supply dropping proves they were burned
+    // rather than transferred, and §17 requires 100% of it.
+    let expected_cost = BASE_TRAINING_COST * 2;
+    assert_eq!(balance_before - token_balance(&mut context, setup.user_token_account).await, expected_cost);
+    assert_eq!(
+        supply_before - token_supply(&mut context, harness.utility_mint_key()).await,
+        expected_cost,
+        "100% of the training payment must be burned"
+    );
+}
+
+#[tokio::test]
+async fn the_cost_rises_with_the_score_so_tokens_alone_cannot_max_a_citizen() {
+    let (mut context, harness) = start().await;
+    bootstrap(&mut context, &harness).await;
+    let setup = setup_training(&mut context, &harness, 1_000_000).await;
+
+    // Two Insight credits, so two upgrades can be compared.
+    claim_credit(&mut context, &harness, setup.asset, setup.citizen_state, CitizenStat::Intelligence, 81).await;
+    claim_credit(&mut context, &harness, setup.asset, setup.citizen_state, CitizenStat::Intelligence, 82).await;
+
+    // 1 → 2 costs 100 × 2, then 2 → 3 costs 100 × 3. A flat price would make
+    // the two identical and §5.3's stated examples would not hold.
+    let supply_before = token_supply(&mut context, harness.utility_mint_key()).await;
+    upgrade(&mut context, &harness, &setup, CitizenStat::Intelligence)
+        .await
+        .expect("the first upgrade must succeed");
+    let after_first = token_supply(&mut context, harness.utility_mint_key()).await;
+    assert_eq!(supply_before - after_first, BASE_TRAINING_COST * 2);
+
+    upgrade(&mut context, &harness, &setup, CitizenStat::Intelligence)
+        .await
+        .expect("the second upgrade must succeed");
+    let after_second = token_supply(&mut context, harness.utility_mint_key()).await;
+    assert_eq!(after_first - after_second, BASE_TRAINING_COST * 3);
+
+    let citizen = read_citizen(&mut context, setup.citizen_state).await;
+    assert_eq!(citizen.intelligence, 3);
+    assert_eq!(citizen.tier_of(CitizenStat::Intelligence), 1, "§7: Tier 1 starts at 3");
+    assert_eq!(citizen.insight_training_credits, 0);
+    assert_eq!(
+        supply_before - after_second,
+        BASE_TRAINING_COST * 2 + BASE_TRAINING_COST * 3
+    );
+}
+
+#[tokio::test]
+async fn an_upgrade_without_a_matching_credit_is_refused() {
+    let (mut context, harness) = start().await;
+    bootstrap(&mut context, &harness).await;
+    let setup = setup_training(&mut context, &harness, 1_000_000).await;
+
+    // §15.3 test 4. Registration grants no credits, so nothing has been earned.
+    let result = upgrade(&mut context, &harness, &setup, CitizenStat::Intelligence).await;
+    expect_error_code(result, DistrictError::InsufficientTrainingCredits);
+
+    // §5.3: credits are stat-specific. A Bond credit cannot pay for Insight, so
+    // after claiming only Bond the Insight upgrade must still be refused.
+    claim_credit(&mut context, &harness, setup.asset, setup.citizen_state, CitizenStat::Alignment, 91).await;
+    let result = upgrade(&mut context, &harness, &setup, CitizenStat::Intelligence).await;
+    expect_error_code(result, DistrictError::InsufficientTrainingCredits);
+
+    // And the Bond credit is still there, unconsumed by the refused upgrade.
+    let citizen = read_citizen(&mut context, setup.citizen_state).await;
+    assert_eq!(citizen.bond_training_credits, 1);
+    assert_eq!(citizen.intelligence, 1, "no score moved");
+
+    // The matching upgrade does work, which is what proves the refusal above was
+    // about the credit kind and not about credits in general.
+    upgrade(&mut context, &harness, &setup, CitizenStat::Alignment)
+        .await
+        .expect("a Bond credit must pay for a Bond upgrade");
+    assert_eq!(read_citizen(&mut context, setup.citizen_state).await.alignment, 2);
+}
+
+#[tokio::test]
+async fn an_upgrade_is_refused_before_the_utility_mint_is_configured() {
+    let (mut context, harness) = start().await;
+    // Initialized but `set_utility_mint` never ran.
+    initialize(&mut context, &harness).await;
+    let asset = install_member(&mut context, &harness);
     send(
         &mut context,
-        train_instruction(
-            &harness,
-            &setup,
-            CitizenStat::Alignment,
-            harness.utility_mint_key(),
-            setup.user_token_account,
-        ),
+        register_instruction(&harness, asset, harness.holder_key(), CitizenRole::Pioneer as u8),
         &[&harness.holder],
     )
     .await
-    .expect("training with the bound utility token must succeed");
+    .expect("registration does not need the token");
+    let citizen_state = harness.citizen_pda(&asset).0;
+    claim_credit(&mut context, &harness, asset, citizen_state, CitizenStat::Intelligence, 101).await;
 
-    let citizen = read_citizen(&mut context, setup.citizen_state).await;
-    assert_eq!(citizen.alignment, 3, "registered at 2, trained once");
-    assert_eq!(citizen.intelligence, 1, "the other stats are untouched");
-    assert_eq!(
-        citizen.training_credits,
-        INITIAL_TRAINING_CREDITS - 1,
-        "one credit is consumed per training"
-    );
-    assert_eq!(citizen.total_burns, 1);
-
-    let balance_after = token_balance(&mut context, setup.user_token_account).await;
-    assert_eq!(
-        balance_before - balance_after,
-        BURN_AMOUNT,
-        "exactly the configured amount must be burned"
+    let user_token_account = Pubkey::new_unique();
+    context.set_account(
+        &user_token_account,
+        &token_account(&harness.utility_mint_key(), &harness.holder_key(), 1_000_000),
     );
 
-    // The balance dropping only proves the tokens left the account; the mint
-    // supply dropping is what proves they were burned rather than transferred.
-    assert_eq!(
-        token_supply(&mut context, harness.utility_mint_key()).await,
-        TOKEN_SUPPLY - BURN_AMOUNT,
-        "burning must reduce the total supply"
-    );
+    // §15.3 test 4 of §15.4: upgrade is disabled before the mint is configured,
+    // so a district can never be upgraded against an unbound token.
+    let result = send(
+        &mut context,
+        upgrade_instruction(
+            &harness,
+            asset,
+            citizen_state,
+            harness.holder_key(),
+            harness.utility_mint_key(),
+            user_token_account,
+            CitizenStat::Intelligence as u8,
+        ),
+        &[&harness.holder],
+    )
+    .await;
+    expect_error_code(result, DistrictError::UtilityMintNotSet);
+    assert_eq!(read_citizen(&mut context, citizen_state).await.intelligence, 1);
+    assert_eq!(read_citizen(&mut context, citizen_state).await.insight_training_credits, 1);
 }
 
 #[tokio::test]
 async fn refuses_a_foreign_mint_even_when_it_is_burnable() {
     let (mut context, harness) = start().await;
-    initialize(&mut context, &harness).await;
-    let setup = setup_training(&mut context, &harness).await;
+    bootstrap(&mut context, &harness).await;
+    let setup = setup_training(&mut context, &harness, 1_000_000).await;
+    claim_credit(&mut context, &harness, setup.asset, setup.citizen_state, CitizenStat::Intelligence, 111).await;
 
     // A second mint the holder controls, holding a real balance. Burning it
     // would succeed as far as SPL Token is concerned, which is exactly why the
-    // program has to compare it against config.utility_mint.
-    let foreign_mint = Pubkey::new_unique();
-    let foreign_token_account = Pubkey::new_unique();
-    let payer = context.payer.pubkey();
-
+    // program has to compare the mint against the bound one first.
+    let foreign_mint = Keypair::new();
+    context.set_account(&foreign_mint.pubkey(), &mint_account(&context.payer.pubkey(), TOKEN_SUPPLY));
+    let foreign_account = Pubkey::new_unique();
     context.set_account(
-        &foreign_mint,
-        &mint_account(&payer, TOKEN_SUPPLY),
-    );
-    context.set_account(
-        &foreign_token_account,
-        &token_account(&foreign_mint, &harness.holder_key(), BURN_AMOUNT * 10),
+        &foreign_account,
+        &token_account(&foreign_mint.pubkey(), &harness.holder_key(), 1_000_000),
     );
 
+    // Against the bound mint in the instruction but a foreign token account.
     let result = send(
         &mut context,
-        train_instruction(
+        upgrade_instruction(
             &harness,
-            &setup,
-            CitizenStat::Intelligence,
-            foreign_mint,
-            foreign_token_account,
+            setup.asset,
+            setup.citizen_state,
+            harness.holder_key(),
+            harness.utility_mint_key(),
+            foreign_account,
+            CitizenStat::Intelligence as u8,
+        ),
+        &[&harness.holder],
+    )
+    .await;
+    expect_error_code(result, DistrictError::InvalidUtilityMint);
+
+    // And with the foreign mint named outright.
+    let result = send(
+        &mut context,
+        upgrade_instruction(
+            &harness,
+            setup.asset,
+            setup.citizen_state,
+            harness.holder_key(),
+            foreign_mint.pubkey(),
+            setup.user_token_account,
+            CitizenStat::Intelligence as u8,
         ),
         &[&harness.holder],
     )
@@ -1096,171 +2049,466 @@ async fn refuses_a_foreign_mint_even_when_it_is_burnable() {
     expect_error_code(result, DistrictError::InvalidUtilityMint);
 
     let citizen = read_citizen(&mut context, setup.citizen_state).await;
-    assert_eq!(citizen.intelligence, 1, "the canonical score must not move");
-    assert_eq!(citizen.training_credits, INITIAL_TRAINING_CREDITS);
-    assert_eq!(citizen.total_burns, 0);
-
+    assert_eq!(citizen.intelligence, 1, "no score moved");
+    assert_eq!(citizen.insight_training_credits, 1, "no credit consumed");
     assert_eq!(
-        token_balance(&mut context, foreign_token_account).await,
-        BURN_AMOUNT * 10,
-        "the foreign balance must not be burned either"
+        token_supply(&mut context, foreign_mint.pubkey()).await,
+        TOKEN_SUPPLY,
+        "the foreign mint must not have been burned"
+    );
+    assert_eq!(
+        token_supply(&mut context, harness.utility_mint_key()).await,
+        TOKEN_SUPPLY,
+        "nor the real one"
     );
 }
 
 #[tokio::test]
 async fn refuses_a_token_account_belonging_to_somebody_else() {
     let (mut context, harness) = start().await;
-    initialize(&mut context, &harness).await;
-    let setup = setup_training(&mut context, &harness).await;
+    bootstrap(&mut context, &harness).await;
+    let setup = setup_training(&mut context, &harness, 1_000_000).await;
+    claim_credit(&mut context, &harness, setup.asset, setup.citizen_state, CitizenStat::Intelligence, 121).await;
 
-    let impostor_token_account = Pubkey::new_unique();
+    // The impostor holds a real balance of the real token. Burning somebody
+    // else's tokens to raise your own citizen's score has to be refused.
+    let impostor_account = Pubkey::new_unique();
     context.set_account(
-        &impostor_token_account,
-        &token_account(
-            &harness.utility_mint_key(),
-            &harness.impostor_key(),
-            BURN_AMOUNT * 10,
-        ),
+        &impostor_account,
+        &token_account(&harness.utility_mint_key(), &harness.impostor_key(), 1_000_000),
     );
 
     let result = send(
         &mut context,
-        train_instruction(
+        upgrade_instruction(
             &harness,
-            &setup,
-            CitizenStat::Intelligence,
+            setup.asset,
+            setup.citizen_state,
+            harness.holder_key(),
             harness.utility_mint_key(),
-            impostor_token_account,
+            impostor_account,
+            CitizenStat::Intelligence as u8,
         ),
         &[&harness.holder],
     )
     .await;
-    expect_error_code(result, DistrictError::UnauthorizedCitizenOwner);
+    expect_error_code(result, DistrictError::NotOwner);
 
+    assert_eq!(read_citizen(&mut context, setup.citizen_state).await.intelligence, 1);
     assert_eq!(
-        read_citizen(&mut context, setup.citizen_state).await.intelligence,
-        1
-    );
-    assert_eq!(
-        token_balance(&mut context, impostor_token_account).await,
-        BURN_AMOUNT * 10,
-        "somebody else's balance must stay untouched"
+        token_balance(&mut context, impostor_account).await,
+        1_000_000,
+        "the impostor's balance must be untouched"
     );
 }
 
 #[tokio::test]
-async fn refuses_a_second_training_once_credits_run_out() {
+async fn refuses_to_raise_a_stat_that_is_already_at_the_maximum() {
     let (mut context, harness) = start().await;
-    initialize(&mut context, &harness).await;
-    let setup = setup_training(&mut context, &harness).await;
+    bootstrap(&mut context, &harness).await;
+    let setup = setup_training(&mut context, &harness, 1_000_000).await;
 
-    // Top the balance up so the failure can only come from the credit check.
-    context.set_account(
-        &setup.user_token_account,
-        &token_account(
-            &harness.utility_mint_key(),
-            &harness.holder_key(),
-            BURN_AMOUNT * 100,
-        ),
+    // Drive the score to STAT_MAX through a fixture, because reaching it by
+    // instruction would take nine claims and nine upgrades.
+    let mut citizen = citizen_fixture(&harness, setup.asset, CitizenRole::Pioneer);
+    citizen.intelligence = STAT_MAX;
+    citizen.insight_training_credits = 1;
+    install_citizen(&mut context, setup.citizen_state, &citizen);
+
+    // §15.3 test 13.
+    let supply_before = token_supply(&mut context, harness.utility_mint_key()).await;
+    let result = upgrade(&mut context, &harness, &setup, CitizenStat::Intelligence).await;
+    expect_error_code(result, DistrictError::MaxScore);
+
+    let after = read_citizen(&mut context, setup.citizen_state).await;
+    assert_eq!(after.intelligence, STAT_MAX, "the score must not wrap to 0");
+    assert_eq!(after.insight_training_credits, 1, "the credit must not be consumed");
+    assert_eq!(
+        token_supply(&mut context, harness.utility_mint_key()).await,
+        supply_before,
+        "a refused upgrade must not burn anything"
     );
+    assert_eq!(after.tier_of(CitizenStat::Intelligence), 3, "§7: Tier 3 is 10");
+
+    // A different stat of the same citizen is still trainable, so the refusal is
+    // about this stat and not about the citizen.
+    claim_credit(&mut context, &harness, setup.asset, setup.citizen_state, CitizenStat::Compute, 131).await;
+    upgrade(&mut context, &harness, &setup, CitizenStat::Compute)
+        .await
+        .expect("Craft is not maxed");
+    assert_eq!(read_citizen(&mut context, setup.citizen_state).await.compute, 2);
+}
+
+#[tokio::test]
+async fn refuses_a_balance_that_cannot_cover_the_cost() {
+    let (mut context, harness) = start().await;
+    bootstrap(&mut context, &harness).await;
+    // Enough for a 100 atom upgrade, not for the 200 this one actually costs.
+    let setup = setup_training(&mut context, &harness, BASE_TRAINING_COST).await;
+    claim_credit(&mut context, &harness, setup.asset, setup.citizen_state, CitizenStat::Intelligence, 141).await;
+
+    // §15.3 test 9: the cost is computed in atoms and checked, so an
+    // unaffordable upgrade reports the §13 error rather than a raw token
+    // program failure.
+    let result = upgrade(&mut context, &harness, &setup, CitizenStat::Intelligence).await;
+    expect_error_code(result, DistrictError::InsufficientTokenBalance);
+
+    let citizen = read_citizen(&mut context, setup.citizen_state).await;
+    assert_eq!(citizen.intelligence, 1);
+    assert_eq!(citizen.insight_training_credits, 1, "the credit must survive a refused burn");
+    assert_eq!(
+        token_balance(&mut context, setup.user_token_account).await,
+        BASE_TRAINING_COST
+    );
+}
+
+#[tokio::test]
+async fn refuses_an_unknown_stat_index() {
+    let (mut context, harness) = start().await;
+    bootstrap(&mut context, &harness).await;
+    let setup = setup_training(&mut context, &harness, 1_000_000).await;
+    claim_credit(&mut context, &harness, setup.asset, setup.citizen_state, CitizenStat::Intelligence, 151).await;
+
+    for stat_index in [3u8, 9, 255] {
+        let result = send(
+            &mut context,
+            upgrade_instruction(
+                &harness,
+                setup.asset,
+                setup.citizen_state,
+                harness.holder_key(),
+                harness.utility_mint_key(),
+                setup.user_token_account,
+                stat_index,
+            ),
+            &[&harness.holder],
+        )
+        .await;
+        expect_error_code(result, DistrictError::InvalidStat);
+    }
+
+    let citizen = read_citizen(&mut context, setup.citizen_state).await;
+    assert_eq!(citizen.insight_training_credits, 1);
+    assert_eq!((citizen.intelligence, citizen.alignment, citizen.compute), (1, 1, 1));
+}
+
+#[tokio::test]
+async fn refuses_to_upgrade_a_citizen_somebody_else_owns() {
+    let (mut context, harness) = start().await;
+    bootstrap(&mut context, &harness).await;
+    let setup = setup_training(&mut context, &harness, 1_000_000).await;
+    claim_credit(&mut context, &harness, setup.asset, setup.citizen_state, CitizenStat::Intelligence, 161).await;
+
+    // The impostor signs and points at the holder's citizen. Ownership is read
+    // from the Core asset on every upgrade, not from stored state.
+    let impostor_account = Pubkey::new_unique();
+    context.set_account(
+        &impostor_account,
+        &token_account(&harness.utility_mint_key(), &harness.impostor_key(), 1_000_000),
+    );
+    let result = send(
+        &mut context,
+        upgrade_instruction(
+            &harness,
+            setup.asset,
+            setup.citizen_state,
+            harness.impostor_key(),
+            harness.utility_mint_key(),
+            impostor_account,
+            CitizenStat::Intelligence as u8,
+        ),
+        &[&harness.impostor],
+    )
+    .await;
+    expect_error_code(result, DistrictError::NotOwner);
+    assert_eq!(read_citizen(&mut context, setup.citizen_state).await.intelligence, 1);
+}
+
+#[tokio::test]
+async fn a_transferred_citizen_can_only_be_upgraded_by_the_new_owner() {
+    let (mut context, harness) = start().await;
+    bootstrap(&mut context, &harness).await;
+    let setup = setup_training(&mut context, &harness, 1_000_000).await;
+
+    // §15.3 test 14. The Core asset is rewritten to name the successor as owner,
+    // which is what a transfer does. `CitizenState` stores no owner, so there is
+    // nothing to migrate — and the old owner must lose access immediately.
+    install_asset(
+        &mut context,
+        &harness,
+        setup.asset,
+        core_asset(&harness.successor_key(), &harness.collection_key()),
+    );
+
+    let result = upgrade(&mut context, &harness, &setup, CitizenStat::Intelligence).await;
+    expect_error_code(result, DistrictError::NotOwner);
+
+    // The new owner still needs a credit of their own; credits belong to the
+    // citizen, not to whoever registered it, and they were never granted here.
+    let (receipt, _) = harness.claim_receipt_pda(&setup.asset, 171, 1);
+    send(
+        &mut context,
+        claim_instruction(
+            &harness,
+            setup.asset,
+            setup.citizen_state,
+            harness.successor_key(),
+            harness.mission_authority_key(),
+            MissionClaimArgs {
+                stat: CitizenStat::Intelligence as u8,
+                mission_id: 171,
+                season_id: 1,
+                nonce: 1,
+                expires_at: NOW + AN_HOUR,
+            },
+            receipt,
+        ),
+        &[&harness.successor, &harness.mission_authority],
+    )
+    .await
+    .expect("the new owner must be able to claim for their own citizen");
+
+    let successor_account = Pubkey::new_unique();
+    context.set_account(
+        &successor_account,
+        &token_account(&harness.utility_mint_key(), &harness.successor_key(), 1_000_000),
+    );
+    send(
+        &mut context,
+        upgrade_instruction(
+            &harness,
+            setup.asset,
+            setup.citizen_state,
+            harness.successor_key(),
+            harness.utility_mint_key(),
+            successor_account,
+            CitizenStat::Intelligence as u8,
+        ),
+        &[&harness.successor],
+    )
+    .await
+    .expect("the new owner must be able to train the citizen they now hold");
+
+    assert_eq!(read_citizen(&mut context, setup.citizen_state).await.intelligence, 2);
+}
+
+#[tokio::test]
+async fn a_citizen_from_a_foreign_collection_cannot_be_upgraded() {
+    let (mut context, harness) = start().await;
+    bootstrap(&mut context, &harness).await;
+    let setup = setup_training(&mut context, &harness, 1_000_000).await;
+    claim_credit(&mut context, &harness, setup.asset, setup.citizen_state, CitizenStat::Intelligence, 181).await;
+
+    // §15.3 test 7 is listed under Training, not just under Mint: collection
+    // membership is re-checked on every upgrade, so an asset that left the
+    // collection cannot keep being trained.
+    install_asset(
+        &mut context,
+        &harness,
+        setup.asset,
+        core_asset(&harness.holder_key(), &Pubkey::new_unique()),
+    );
+
+    let result = upgrade(&mut context, &harness, &setup, CitizenStat::Intelligence).await;
+    expect_error_code(result, DistrictError::InvalidCollection);
+    assert_eq!(read_citizen(&mut context, setup.citizen_state).await.intelligence, 1);
+    assert_eq!(read_citizen(&mut context, setup.citizen_state).await.insight_training_credits, 1);
+}
+
+// ---------------------------------------------------------------------------
+// propose_admin / accept_admin
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn admin_moves_only_through_propose_then_accept() {
+    let (mut context, harness) = start().await;
+    bootstrap(&mut context, &harness).await;
 
     send(
         &mut context,
-        train_instruction(
-            &harness,
-            &setup,
-            CitizenStat::Intelligence,
-            harness.utility_mint_key(),
-            setup.user_token_account,
-        ),
-        &[&harness.holder],
+        propose_admin_instruction(&harness, harness.successor_key()),
+        &[&harness.admin],
     )
     .await
-    .expect("the first training must succeed");
+    .expect("the admin must be able to propose a successor");
+    assert_eq!(read_config(&mut context, &harness).await.pending_admin, harness.successor_key());
+    assert_eq!(read_config(&mut context, &harness).await.admin, harness.admin_key());
 
+    // Proposing is not enough: until the successor accepts, the old admin is
+    // still the admin, so a typo cannot hand the district to a dead address.
+    send(
+        &mut context,
+        set_paused_instruction(&harness, harness.admin_key(), true),
+        &[&harness.admin],
+    )
+    .await
+    .expect("the current admin keeps authority until acceptance");
+    send(
+        &mut context,
+        set_paused_instruction(&harness, harness.admin_key(), false),
+        &[&harness.admin],
+    )
+    .await
+    .expect("and can still resume");
+
+    // Somebody else cannot accept on the successor's behalf. `new_admin` is
+    // declared as a signer in the account metas, so the impostor not signing is
+    // caught by the runtime before the program is invoked at all — which is the
+    // strongest form of this refusal, and why it is not a §13 error code.
+    context.warp_to_slot(2).expect("warping to slot 2");
+    context.last_blockhash = context.get_new_latest_blockhash().await.expect("a blockhash");
     let result = send(
         &mut context,
-        train_instruction(
-            &harness,
-            &setup,
-            CitizenStat::Composure,
-            harness.utility_mint_key(),
-            setup.user_token_account,
-        ),
-        &[&harness.holder],
+        accept_admin_instruction(&harness, harness.impostor_key()),
+        &[&harness.impostor],
     )
     .await;
-    expect_error_code(result, DistrictError::InsufficientTrainingCredits);
+    let failure = result.expect_err("an unrelated key must not be able to accept");
+    assert!(
+        matches!(
+            &failure,
+            TransportError::TransactionError(TransactionError::InstructionError(
+                _,
+                InstructionError::MissingRequiredSignature
+            ))
+        ),
+        "expected MissingRequiredSignature, got {failure:?}"
+    );
+    assert_eq!(read_config(&mut context, &harness).await.admin, harness.admin_key());
 
-    let citizen = read_citizen(&mut context, setup.citizen_state).await;
-    // Registered at (1, 2, 3): the first training raised intelligence to 2 and
-    // the rejected one must leave composure at the value it was registered with.
-    assert_eq!(citizen.intelligence, 2);
-    assert_eq!(citizen.composure, 3, "the second stat must not move");
-    assert_eq!(citizen.alignment, 2, "an untrained stat must not move either");
-    assert_eq!(citizen.training_credits, 0);
-    assert_eq!(citizen.total_burns, 1);
+    send(
+        &mut context,
+        accept_admin_instruction(&harness, harness.successor_key()),
+        &[&harness.successor],
+    )
+    .await
+    .expect("the proposed successor must be able to accept");
+
+    let config = read_config(&mut context, &harness).await;
+    assert_eq!(config.admin, harness.successor_key());
+    assert_eq!(config.pending_admin, Pubkey::default(), "the proposal is cleared");
+
+    // The old admin has no authority any more, and the new one does.
+    let result = send(
+        &mut context,
+        set_paused_instruction(&harness, harness.admin_key(), true),
+        &[&harness.admin],
+    )
+    .await;
+    expect_error_code(result, DistrictError::Unauthorized);
+
+    send(
+        &mut context,
+        set_paused_instruction(&harness, harness.successor_key(), true),
+        &[&harness.successor],
+    )
+    .await
+    .expect("the new admin must have authority");
+    assert!(read_config(&mut context, &harness).await.is_paused);
 }
 
 #[tokio::test]
-async fn refuses_to_train_a_citizen_owned_by_somebody_else() {
+async fn accepting_without_a_pending_proposal_is_refused() {
     let (mut context, harness) = start().await;
-    initialize(&mut context, &harness).await;
-    let setup = setup_training(&mut context, &harness).await;
+    bootstrap(&mut context, &harness).await;
 
-    // The impostor signs and brings a perfectly valid token account of their
-    // own, so every Anchor account constraint passes and the failure can only
-    // come from the `citizen.owner == owner` check in the handler. Without
-    // installing this account the transaction would be rejected earlier, while
-    // deserializing `Account<TokenAccount>`, and the test would pass for the
-    // wrong reason.
-    let impostor_token_account = Pubkey::new_unique();
-    context.set_account(
-        &impostor_token_account,
-        &token_account(
-            &harness.utility_mint_key(),
-            &harness.impostor_key(),
-            BURN_AMOUNT * 10,
-        ),
-    );
+    // `pending_admin` is the default pubkey, so the constraint that the signer
+    // equals it cannot be satisfied by any real keypair.
+    let result = send(
+        &mut context,
+        accept_admin_instruction(&harness, harness.successor_key()),
+        &[&harness.successor],
+    )
+    .await;
+    expect_error_code(result, DistrictError::Unauthorized);
+    assert_eq!(read_config(&mut context, &harness).await.admin, harness.admin_key());
+}
 
-    let mut instruction = train_instruction(
-        &harness,
-        &setup,
-        CitizenStat::Intelligence,
-        harness.utility_mint_key(),
-        impostor_token_account,
-    );
-    let holder = harness.holder_key();
-    let impostor = harness.impostor_key();
-    for meta in &mut instruction.accounts {
-        if meta.pubkey == holder {
-            meta.pubkey = impostor;
+#[tokio::test]
+async fn proposing_yourself_or_nobody_is_refused() {
+    let (mut context, harness) = start().await;
+    bootstrap(&mut context, &harness).await;
+
+    // Proposing yourself would write a pending_admin that accept_admin could
+    // then use to emit a transfer that never happened.
+    let result = send(
+        &mut context,
+        propose_admin_instruction(&harness, harness.admin_key()),
+        &[&harness.admin],
+    )
+    .await;
+    expect_error_code(result, DistrictError::Unauthorized);
+
+    // And an empty proposal would let anyone satisfy accept_admin's signer check
+    // by passing the default pubkey.
+    let result = send(
+        &mut context,
+        propose_admin_instruction(&harness, Pubkey::default()),
+        &[&harness.admin],
+    )
+    .await;
+    expect_error_code(result, DistrictError::Unauthorized);
+
+    assert_eq!(read_config(&mut context, &harness).await.pending_admin, Pubkey::default());
+}
+
+#[tokio::test]
+async fn only_the_admin_can_propose_a_successor() {
+    let (mut context, harness) = start().await;
+    bootstrap(&mut context, &harness).await;
+
+    let mut instruction = propose_admin_instruction(&harness, harness.impostor_key());
+    for meta in instruction.accounts.iter_mut() {
+        if meta.pubkey == harness.admin_key() {
+            meta.pubkey = harness.impostor_key();
+            meta.is_signer = true;
         }
     }
-
     let result = send(&mut context, instruction, &[&harness.impostor]).await;
-    expect_error_code(result, DistrictError::UnauthorizedCitizenOwner);
-
-    assert_eq!(
-        token_balance(&mut context, impostor_token_account).await,
-        BURN_AMOUNT * 10,
-        "nothing may be burned from the impostor either"
-    );
-
-    assert_eq!(
-        read_citizen(&mut context, setup.citizen_state).await.intelligence,
-        1
-    );
+    expect_error_code(result, DistrictError::Unauthorized);
+    assert_eq!(read_config(&mut context, &harness).await.pending_admin, Pubkey::default());
 }
 
+// ---------------------------------------------------------------------------
+// parity with the TypeScript clients
+// ---------------------------------------------------------------------------
+
 #[tokio::test]
-async fn the_stat_model_stays_in_parity_with_the_typescript_clients() {
-    // `packages/chain-client/test` mirrors these values into TypeScript; this
-    // is the on-chain half of the same contract.
-    assert_eq!(STAT_MAX, 20);
-    assert_eq!(INITIAL_TRAINING_CREDITS, 1);
+async fn the_stat_and_role_models_stay_in_parity_with_the_typescript_clients() {
+    // These values are duplicated in `packages/chain-client` and
+    // `packages/content`, whose own tests grep this crate's source. Asserting
+    // them here too means a change to one side without the other fails on both.
+    assert_eq!(STAT_MAX, 10, "SPEC §7: Maximum score: 10");
+    assert_eq!((TIER_1_SCORE, TIER_2_SCORE, TIER_3_SCORE), (3, 6, 10));
+    assert_eq!(TIER_3_SCORE, STAT_MAX);
+
     assert_eq!(CitizenStat::Intelligence as u8, 0);
     assert_eq!(CitizenStat::Alignment as u8, 1);
-    assert_eq!(CitizenStat::Composure as u8, 2);
+    assert_eq!(CitizenStat::Compute as u8, 2);
+
+    // §7: the internal code names are fixed, the public labels are the ones the
+    // UI is allowed to show.
+    assert_eq!(CitizenStat::Intelligence.public_label(), "Insight");
+    assert_eq!(CitizenStat::Alignment.public_label(), "Bond");
+    assert_eq!(CitizenStat::Compute.public_label(), "Craft");
+
+    assert_eq!(ROLE_TEMPLATES.len(), ROLE_COUNT);
+    assert_eq!(ROLE_COUNT, 7, "SPEC §8 Phase A: Seven role registry");
+    assert_eq!(CitizenRole::Pioneer as u8, 0);
+    assert_eq!(CitizenRole::Mentor as u8, 6);
+
+    // §5.3's own worked examples, so a change to the formula fails here.
+    assert_eq!(district::state::training_cost_atoms(BASE_TRAINING_COST, 1).unwrap(), 200);
+    assert_eq!(district::state::training_cost_atoms(BASE_TRAINING_COST, 8).unwrap(), 900);
+    assert_eq!(district::state::training_cost_atoms(BASE_TRAINING_COST, 9).unwrap(), 1_000);
+
+    // The approved-template address is part of the client contract too.
+    assert_eq!(
+        approved_template_address(APPROVED_TEMPLATE_ID),
+        Pubkey::find_program_address(
+            &[b"approved_template", &APPROVED_TEMPLATE_ID.to_le_bytes()],
+            &district::ID
+        )
+        .0
+    );
 }
