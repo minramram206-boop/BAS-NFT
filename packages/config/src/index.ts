@@ -1,39 +1,37 @@
-export interface DistrictNetworkConfig {
-  network: 'devnet' | 'mainnet-beta';
-  rpcUrl: string;
-  programId: string;
-  collectionMint: string;
-  candyMachine: string;
-  utilityTokenMint: string;
-  tokenBurnRequired: number;
-  maxSupply: number;
-  treasuryAddress: string;
+import { loadRepoJson } from './repo-json.ts';
+import { NETWORK_CONFIG_FILES, parseNetworkConfig } from './network.ts';
+import { resolveNetwork } from './env.ts';
+import type { DistrictNetworkConfig, NetworkConfigFile, SupportedNetwork } from './types.ts';
+
+export type { DistrictNetworkConfig, SupportedNetwork };
+export {
+  NETWORK_CONFIG_FIELDS,
+  NETWORK_CONFIG_FILES,
+  PRODUCTION_CRITICAL_ADDRESS_FIELDS,
+  findPlaceholderAddresses,
+  parseNetworkConfig,
+  validateProductionReadiness,
+} from './network.ts';
+export { DEFAULT_NETWORK, NETWORK_ENV_VAR, resolveNetwork } from './env.ts';
+export { findRepoRoot, loadRepoJson } from './repo-json.ts';
+
+function loadConfig(network: SupportedNetwork): DistrictNetworkConfig {
+  const file = NETWORK_CONFIG_FILES[network];
+  return parseNetworkConfig(loadRepoJson<NetworkConfigFile>(file), network);
 }
 
-export const DEVNET_CONFIG: DistrictNetworkConfig = {
-  network: 'devnet',
-  rpcUrl: 'https://api.devnet.solana.com',
-  programId: 'BASDistr1ct1111111111111111111111111111111',
-  collectionMint: 'BASCo11ect1onDevnet1111111111111111111111111',
-  candyMachine: 'BASCandyMach1neDevnet1111111111111111111111',
-  utilityTokenMint: 'BASTokenM1rr0rDevnet111111111111111111111111',
-  tokenBurnRequired: 1,
-  maxSupply: 100,
-  treasuryAddress: 'BASTreasuryDevnet11111111111111111111111111'
-};
+/** Validated devnet configuration, loaded from `config/devnet.json`. */
+export const DEVNET_CONFIG: DistrictNetworkConfig = loadConfig('devnet');
 
-export const MAINNET_CONFIG: DistrictNetworkConfig = {
-  network: 'mainnet-beta',
-  rpcUrl: 'https://api.mainnet-beta.solana.com',
-  programId: 'BASDistr1ct1111111111111111111111111111111',
-  collectionMint: 'BASCo11ect1onMa1nnet111111111111111111111111',
-  candyMachine: 'BASCandyMach1neMa1nnet111111111111111111111',
-  utilityTokenMint: 'BASTokenOff1c1alPumpFun11111111111111111111',
-  tokenBurnRequired: 1,
-  maxSupply: 100,
-  treasuryAddress: 'BASTreasuryMa1nnet1111111111111111111111111'
-};
+/** Validated mainnet configuration, loaded from `config/mainnet.json`. */
+export const MAINNET_CONFIG: DistrictNetworkConfig = loadConfig('mainnet-beta');
 
-export function getNetworkConfig(networkEnv = process.env.NEXT_PUBLIC_SOLANA_NETWORK || 'devnet'): DistrictNetworkConfig {
-  return networkEnv === 'mainnet-beta' ? MAINNET_CONFIG : DEVNET_CONFIG;
+/**
+ * Return the configuration of one cluster, defaulting to the cluster selected
+ * by `NEXT_PUBLIC_SOLANA_NETWORK` and falling back to devnet.
+ */
+export function getNetworkConfig(
+  network: string | null | undefined = undefined,
+): DistrictNetworkConfig {
+  return resolveNetwork(network) === 'mainnet-beta' ? MAINNET_CONFIG : DEVNET_CONFIG;
 }

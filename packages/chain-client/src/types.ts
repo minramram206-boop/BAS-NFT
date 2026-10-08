@@ -1,5 +1,13 @@
+/** Trainable citizen stat. Mirrors `CitizenStat` in `programs/district`. */
 export type StatType = 'intelligence' | 'alignment' | 'composure';
 
+export const STAT_TYPES: readonly StatType[] = ['intelligence', 'alignment', 'composure'];
+
+export function isStatType(value: unknown): value is StatType {
+  return typeof value === 'string' && (STAT_TYPES as readonly string[]).includes(value);
+}
+
+/** Canonical citizen progression state as stored by the District program. */
 export interface CitizenStateOnChain {
   asset: string;
   owner: string;
@@ -14,6 +22,7 @@ export interface CitizenStateOnChain {
   lastTrainedSlot: number;
 }
 
+/** Receipt returned after one atomic training transaction. */
 export interface TrainingReceipt {
   signature: string;
   statUpgraded: StatType;
@@ -22,6 +31,7 @@ export interface TrainingReceipt {
   timestamp: number;
 }
 
+/** Receipt returned after one successful citizen mint. */
 export interface MintResult {
   signature: string;
   assetAddress: string;

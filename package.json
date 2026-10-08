@@ -3,14 +3,26 @@
   "version": "1.0.0",
   "private": true,
   "description": "BAS - Living Pixel Art World & Citizen Progression on Solana",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.6.0",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.15.9",
   "scripts": {
     "dev": "pnpm --filter @bas/web dev",
     "build": "pnpm --filter \"@bas/*\" build",
     "lint": "pnpm --filter \"@bas/*\" lint",
     "typecheck": "pnpm --filter \"@bas/*\" typecheck",
-    "test": "pnpm --filter \"@bas/*\" test"
+    "test": "pnpm --filter \"@bas/*\" test",
+    "verify": "pnpm typecheck && pnpm test",
+    "program:check": "cargo check --manifest-path programs/Cargo.toml --all-targets",
+    "program:build": "cargo build-sbf --manifest-path programs/Cargo.toml",
+    "program:test": "cargo test-sbf --manifest-path programs/Cargo.toml",
+    "clean": "pnpm --filter \"@bas/*\" exec rm -rf dist .next *.tsbuildinfo"
   },
   "devDependencies": {
+    "@types/node": "^22.13.4",
     "typescript": "^5.7.3"
   }
 }

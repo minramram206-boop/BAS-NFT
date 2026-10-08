@@ -70,12 +70,34 @@ importers:
         specifier: workspace:*
         version: link:../config
     devDependencies:
+      '@bas/content':
+        specifier: workspace:*
+        version: link:../content
+      '@types/node':
+        specifier: ^22.13.4
+        version: 22.20.5
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
 
   packages/config:
     devDependencies:
+      '@types/node':
+        specifier: ^22.13.4
+        version: 22.20.5
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
+  packages/content:
+    dependencies:
+      '@bas/config':
+        specifier: workspace:*
+        version: link:../config
+    devDependencies:
+      '@types/node':
+        specifier: ^22.13.4
+        version: 22.20.5
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
