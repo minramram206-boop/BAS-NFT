@@ -1150,13 +1150,28 @@ async fn refuses_to_train_a_citizen_owned_by_somebody_else() {
     initialize(&mut context, &harness).await;
     let setup = setup_training(&mut context, &harness).await;
 
-    // The impostor signs, but the citizen state belongs to the holder.
+    // The impostor signs and brings a perfectly valid token account of their
+    // own, so every Anchor account constraint passes and the failure can only
+    // come from the `citizen.owner == owner` check in the handler. Without
+    // installing this account the transaction would be rejected earlier, while
+    // deserializing `Account<TokenAccount>`, and the test would pass for the
+    // wrong reason.
+    let impostor_token_account = Pubkey::new_unique();
+    context.set_account(
+        &impostor_token_account,
+        &token_account(
+            &harness.utility_mint_key(),
+            &harness.impostor_key(),
+            BURN_AMOUNT * 10,
+        ),
+    );
+
     let mut instruction = train_instruction(
         &harness,
         &setup,
         CitizenStat::Intelligence,
         harness.utility_mint_key(),
-        setup.user_token_account,
+        impostor_token_account,
     );
     let holder = harness.holder_key();
     let impostor = harness.impostor_key();
@@ -1168,6 +1183,12 @@ async fn refuses_to_train_a_citizen_owned_by_somebody_else() {
 
     let result = send(&mut context, instruction, &[&harness.impostor]).await;
     expect_error_code(result, DistrictError::UnauthorizedCitizenOwner);
+
+    assert_eq!(
+        token_balance(&mut context, impostor_token_account).await,
+        BURN_AMOUNT * 10,
+        "nothing may be burned from the impostor either"
+    );
 
     assert_eq!(
         read_citizen(&mut context, setup.citizen_state).await.intelligence,

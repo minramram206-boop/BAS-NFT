@@ -1,0 +1,56 @@
+name: diagnose
+
+on: [workflow_dispatch]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # rust-cache is skipped on purpose: the failure may be in resolution, and
+      # a poisoned cache would hide it.
+      - name: Collect cargo output
+        run: |
+          {
+            echo '### rustc / cargo'
+            rustc --version
+            cargo --version
+            echo
+            echo '### cargo metadata --filter-platform x86_64-unknown-linux-gnu (resolution)'
+            cargo metadata --format-version 1 --filter-platform x86_64-unknown-linux-gnu > /tmp/meta.json 2>/tmp/meta.err
+            echo "exit=$?"
+            head -c 4000 /tmp/meta.err
+            python3 - <<'PY'
+          import json
+          try:
+              meta = json.load(open('/tmp/meta.json'))
+          except Exception as exc:
+              print('could not parse metadata:', exc)
+              raise SystemExit(0)
+          for pkg in sorted(meta['packages'], key=lambda p: p['name']):
+              if any(k in pkg['name'] for k in ('solana-program', 'solana-sdk', 'spl-token', 'anchor-', 'district', 'tokio')):
+                  print(f"{pkg['name']} {pkg['version']}")
+          PY
+            echo
+            echo '### cargo check --all-targets'
+            cargo check --all-targets 2>&1 | tail -n 500
+          } > /tmp/diag.txt 2>&1 || true
+
+      - name: Open an issue with the output
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head -c 60000 /tmp/diag.txt > /tmp/diag-trim.txt
+          gh issue create \
+            --title "DIAGNOSTIC (temporary): cargo check output for run ${{ github.run_id }}" \
+            --body-file /tmp/diag-trim.txt \
+            --label "" || gh issue create \
+            --title "DIAGNOSTIC (temporary): cargo check output for run ${{ github.run_id }}" \
+            --body-file /tmp/diag-trim.txt
