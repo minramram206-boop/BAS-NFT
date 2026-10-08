@@ -6,7 +6,6 @@ name: diagnose
 on:
   push:
     branches: [arena/671307ff-bas-nft]
-    paths: ['.github/workflows/diagnose.yml']
 
 permissions:
   contents: write
