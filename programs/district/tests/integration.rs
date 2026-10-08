@@ -32,7 +32,9 @@ use anchor_lang::{
         clock::Clock, entrypoint::ProgramResult, instruction::Instruction, program_pack::Pack,
         pubkey::Pubkey, system_program,
     },
-    AccountDeserialize, AnchorSerialize, InstructionData, ToAccountMetas,
+    // `AnchorSerialize` is a re-export of `borsh::BorshSerialize`; the trait has
+    // to be in scope by that name for `try_serialize` to resolve.
+    borsh::BorshSerialize, AccountDeserialize, InstructionData, ToAccountMetas,
 };
 use anchor_spl::token;
 use district::{
