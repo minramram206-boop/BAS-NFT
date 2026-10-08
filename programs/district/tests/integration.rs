@@ -149,15 +149,18 @@ async fn start() -> (ProgramTestContext, Harness) {
 
 /// Send one instruction.
 ///
-/// `Transaction::new_signed_with_payer` always adds the payer as the first
-/// signature, so `signers` must not contain it again or the transaction carries
-/// a duplicate signature.
+/// `Transaction::new_signed_with_payer` puts the payer in the message's signer
+/// positions but then calls `sign(keypairs, ..)` with exactly the keypairs it is
+/// given, so the payer has to be in that list or signing fails with
+/// `KeypairPubkeyMismatch`. Passing the same keypair twice is explicitly allowed
+/// and gets deduplicated, so extra signers are simply appended.
 async fn send(
     context: &mut ProgramTestContext,
     instruction: Instruction,
     signers: &[&Keypair],
 ) -> SendResult {
-    let mut message_signers: Vec<&Keypair> = Vec::with_capacity(signers.len());
+    let mut message_signers: Vec<&Keypair> = Vec::with_capacity(signers.len() + 1);
+    message_signers.push(&context.payer);
     for signer in signers {
         if signer.pubkey() != context.payer.pubkey() {
             message_signers.push(signer);
