@@ -1,6 +1,12 @@
 name: diagnose
 
-on: [workflow_dispatch]
+# Temporary. `workflow_dispatch` cannot be used because it resolves the
+# workflow file from the default branch, and this branch must not be merged or
+# pushed anywhere else. So it triggers on push and is deleted again afterwards.
+on:
+  push:
+    branches: [arena/671307ff-bas-nft]
+    paths: ['.github/workflows/diagnose.yml']
 
 permissions:
   contents: read
