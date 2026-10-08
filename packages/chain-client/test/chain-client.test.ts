@@ -219,7 +219,10 @@ describe('@bas/chain-client protocol parity', () => {
     const prefix = DEVNET_CONFIG.approvedTemplateUriPrefix;
 
     assert.match(program, /pub approved_template: Account<'info, ApprovedTemplate>/);
-    assert.match(program, /seeds = \[b"approved_template", &config\.approved_template_id\.to_le_bytes\(\)\]/);
+    assert.match(
+      program,
+      /seeds = \[\s*b"approved_template"\.as_ref\(\),\s*config\.approved_template_id\.to_le_bytes\(\)\.as_ref\(\)\s*\]/,
+    );
     assert.match(program, /ctx\.accounts\.approved_template\.approves_uri\(asset_uri\)/);
     assert.match(coreReader, /pub fn read_core_asset_uri\(data: &\[u8\]\) -> Result<&str>/);
     assert.match(state, /pub fn approves_uri\(&self, uri: &str\) -> bool/);
