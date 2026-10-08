@@ -53,7 +53,7 @@ scripts/
 
 docs/                      this directory
 tests/                     reserved for e2e and integration suites (TECH_STACK_ID.md §11)
-.github/workflows/         verify.yml: TypeScript checks, cargo check and cargo test
+.github/workflows/         verify.yml: TypeScript checks, then cargo check and both Rust test suites
 ```
 
 ## 2. Package boundaries
@@ -191,7 +191,7 @@ pull request:
 | Job | Steps | Notes |
 | --- | --- | --- |
 | `typescript` | install (runs `postinstall` → `build:packages`), `pnpm typecheck`, `pnpm test`, `pnpm lint`, `node scripts/check-assets.mjs` | `next build` is deliberately excluded: `next/font` needs egress to `fonts.googleapis.com`. Enable it once the runner has network access or `NEXT_FONT_GOOGLE_MOCKED_RESPONSES` is provided |
-| `programs` | `cargo check --all-targets`, then `cargo test --lib` | Catches Rust syntax and type errors, and runs the host-side unit tests for the Metaplex Core asset parser — the only automated proof that the collection check reads the right offsets. A real `anchor build` / `anchor test` against a validator must still run before deployment |
+| `programs` | `cargo check --all-targets`, then `cargo test --lib`, then `cargo test --test integration -- --test-threads=1` | Catches Rust syntax and type errors, runs the 9 host-side unit tests for the Metaplex Core asset parser — the only automated proof that the collection check reads the right offsets — and then the 18 instruction-level tests (D-0012). The job sets `RUSTFLAGS: -A unexpected_cfgs` and `RUST_LOG: error`, without which anchor macro warnings and runtime debug logs bury the summary. A real `anchor build` / `anchor test` against a validator must still run before deployment |
 
 ## 9. Known gaps
 
@@ -207,10 +207,14 @@ Tracked in [`DECISIONS.md`](./DECISIONS.md):
 - `apps/worker`, `packages/ai`, `packages/db`, `packages/metaplex-client`,
   `packages/mission-engine`, `packages/competition-engine`, `packages/ui` and
   `tests/` do not exist yet. They are later stages of `TECH_STACK_ID.md` §12.
-- `programs/district` passes `cargo check --all-targets` and `cargo test --lib`
-  in CI, but there is no Anchor integration suite and no BPF build yet. Run
-  `anchor build` and `anchor test` against a validator before deploying, and get
-  owner sign-off for `set_paused`, which touches authority (D-0006).
+- `programs/district` now has an instruction-level suite: 18 tests in
+  `programs/district/tests/integration.rs` run the real program logic inside
+  `solana-program-test`, next to `cargo check --all-targets` and the 9 host-side
+  unit tests (D-0012). Two things still need `anchor build` and `anchor test`
+  against a real validator before deploying: the emitted event payloads, which
+  this harness structurally cannot observe, and everything specific to the BPF
+  target, including real compute-unit limits. `set_paused` also still needs
+  owner sign-off, because it touches authority (D-0006).
 - `packages/metaplex-client`, the off-chain adapter required by
   `TECH_STACK_ID.md` §11, still does not exist. On-chain verification does not
   depend on it, but a wallet integration will.

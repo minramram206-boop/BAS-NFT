@@ -35,8 +35,8 @@ pnpm verify           # typecheck + test + lint + build
 pnpm test             # node:test suites + the asset guard
 pnpm assets           # asset guard only: no orphan and no duplicate public file
 pnpm dev:packages     # tsc --watch for packages/* (run beside pnpm dev)
-pnpm program:check    # cargo check (requires the Rust toolchain)
-pnpm program:test     # cargo test --lib, then anchor test (needs a validator)
+pnpm program:check    # cargo check --all-targets (requires the Rust toolchain)
+pnpm program:test     # cargo test: 9 unit tests + 18 instruction-level tests
 pnpm clean            # remove dist/, .next/ and tsbuildinfo files
 ```
 
@@ -51,8 +51,11 @@ request:
 
 - **typescript** — install (builds the packages), typecheck, unit tests, lint,
   and the asset guard.
-- **programs** — `cargo check --all-targets`, then `cargo test --lib`, which runs
-  the Rust unit tests for the Metaplex Core asset parser.
+- **programs** — `cargo check --all-targets`, then `cargo test --lib` (the Rust
+  unit tests for the Metaplex Core asset parser), then `cargo test --test
+  integration` (18 instruction-level tests that run the real program logic
+  inside `solana-program-test`). No validator, no BPF build and no Anchor CLI
+  are involved; see D-0012 for what that can and cannot prove.
 
 `next build` is deliberately not in CI because `next/font` downloads the pixel
 fonts from `fonts.googleapis.com`. Give the runner egress to
@@ -159,11 +162,13 @@ unpause, and only then open the NFT mint.
   (D-0005, D-0011) and rejects compressed assets. `packages/metaplex-client`,
   the off-chain adapter from `TECH_STACK_ID.md` §11, still does not exist; a
   wallet integration will need it.
-- `programs/district` passes `cargo check --all-targets` and `cargo test --lib`
-  in CI, but it has never been deployed and has no Anchor integration suite.
-  `anchor build` (BPF) and `anchor test` against a validator must still run
-  before any deployment, and `set_paused` needs owner sign-off because it
-  touches authority (D-0006).
+- `programs/district` passes `cargo check --all-targets`, 9 unit tests and 18
+  instruction-level tests in CI, but it has never been deployed. The
+  instruction tests run inside `solana-program-test`, which cannot observe
+  `emit!` and does not exercise the BPF target, so the emitted event payloads
+  and the real compute-unit limits are unverified: `anchor build` and
+  `anchor test` against a validator must still run before any deployment.
+  `set_paused` also needs owner sign-off because it touches authority (D-0006).
 - `apps/worker` and the remaining packages listed in `TECH_STACK_ID.md` §11 do
   not exist yet.
 
