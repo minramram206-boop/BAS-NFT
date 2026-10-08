@@ -1208,8 +1208,11 @@ async fn refuses_a_second_training_once_credits_run_out() {
     expect_error_code(result, DistrictError::InsufficientTrainingCredits);
 
     let citizen = read_citizen(&mut context, setup.citizen_state).await;
+    // Registered at (1, 2, 3): the first training raised intelligence to 2 and
+    // the rejected one must leave composure at the value it was registered with.
     assert_eq!(citizen.intelligence, 2);
-    assert_eq!(citizen.composure, 1, "the second stat must not move");
+    assert_eq!(citizen.composure, 3, "the second stat must not move");
+    assert_eq!(citizen.alignment, 2, "an untrained stat must not move either");
     assert_eq!(citizen.training_credits, 0);
     assert_eq!(citizen.total_burns, 1);
 }

@@ -54,8 +54,8 @@ jobs:
             # Drop the anchor/solana `unexpected cfg` macro warnings, which
             # otherwise push the actual test output out of the captured tail.
             cargo test --test integration -- --nocapture --test-threads=1 2>&1 \
-              | grep -vE '^(warning|note|help|error: unexpected|\s*=|\s*\||\s*-->|\s*$|[0-9]+ \|)' \
-              | tail -n 500
+              | grep -vE 'unexpected .cfg. condition|note: expected values for|note: using a cfg inside|note: this warning originates|help: try referring|^\s*=|^\s*\||^\s*-->|^[0-9]+ \||^warning:|^\s*$' \
+              | tail -n 900
           } > /tmp/diag.txt 2>&1 || true
 
       - name: Report the output in an issue
