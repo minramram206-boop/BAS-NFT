@@ -26,7 +26,7 @@ jobs:
           # The anchor and solana macros emit cfg values the compiler does not
           # know about; those warnings are hundreds of lines and push the actual
           # test output out of any reasonable tail.
-          RUSTFLAGS: --check-cfg=values(feature, "custom-heap") --check-cfg=values(feature, "custom-panic") --check-cfg=values(feature, "anchor-debug") --check-cfg=values(target_os, "solana") -A unexpected_cfgs
+          RUSTFLAGS: -A unexpected_cfgs
         run: |
           {
             echo '### cargo test --lib'
