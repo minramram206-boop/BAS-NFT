@@ -32,9 +32,11 @@ use anchor_lang::{
         clock::Clock, entrypoint::ProgramResult, instruction::Instruction, program_pack::Pack,
         pubkey::Pubkey, system_program,
     },
-    // `AnchorSerialize` is a re-export of `borsh::BorshSerialize`; the trait has
-    // to be in scope by that name for `try_serialize` to resolve.
-    borsh::BorshSerialize, AccountDeserialize, InstructionData, ToAccountMetas,
+    // `AnchorSerialize` is only the derive macro; the trait it implements is
+    // `borsh::BorshSerialize`, and `anchor_lang` re-exports `borsh` through its
+    // prelude rather than at the crate root. The trait has to be in scope for
+    // `try_serialize` to resolve.
+    prelude::borsh::BorshSerialize, AccountDeserialize, InstructionData, ToAccountMetas,
 };
 use anchor_spl::token;
 use district::{
