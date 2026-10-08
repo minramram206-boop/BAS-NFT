@@ -928,7 +928,11 @@ async fn cannot_register_the_same_asset_twice() {
     // by replaying the instruction, even though the handler has no such check.
     assert_eq!(
         custom_error_code(&failure),
-        u32::from(SystemError::AccountAlreadyInUse),
+        // A plain cast is right here and would be wrong for `DistrictError`:
+        // `SystemError` is a fieldless enum with implicit discriminants, while
+        // Anchor's `#[error_code]` adds a 6000 offset through a generated
+        // `From` impl, so those have to go via `u32::from`.
+        SystemError::AccountAlreadyInUse as u32,
         "expected the system program to refuse re-creating the PDA, got {failure}"
     );
     assert_eq!(
