@@ -9,7 +9,7 @@ use errors::*;
 use events::*;
 use state::*;
 
-declare_id!("BASDistr1ct1111111111111111111111111111111");
+declare_id!("D8HGhXUqHx7UXysCMEBDzvd3FS4XGEMNjCR6Eaj8CRbV");
 
 #[program]
 pub mod district {

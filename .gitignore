@@ -28,3 +28,8 @@ Thumbs.db
 # Anchor / Solana
 .anchor/
 test-ledger/
+
+# Program deploy keypairs are secrets, never commit them
+keypair.json
+*-keypair.json
+programs/*/keypair.json

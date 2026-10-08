@@ -71,10 +71,10 @@ bukan untuk mengganti persyaratan yang sudah eksplisit.
 - Tanggal: 2026-10-08
 - Status: Approved
 - Pemilik keputusan: Engineering
-- Konteks: `programId` pada `config/devnet.json` dan `config/mainnet.json` panjangnya 42 karakter, dan beberapa alamat lain 43 karakter dengan karakter non-base58. Nilai-nilai ini belum bisa menjadi public key Solana yang sah karena program belum pernah di-deploy.
-- Keputusan: Validasi dibagi dua tingkat. Saat load, `parseNetworkConfig` memastikan setiap field ada, tidak kosong, dan berbentuk benar. Kesiapan rilis diperiksa terpisah oleh `findPlaceholderAddresses` dan `validateProductionReadiness`, yang menolak alamat yang bukan base58 43–44 karakter. `resolveNetwork` tidak pernah jatuh ke mainnet.
-- Alasan: Aplikasi tetap bisa dibangun dan dijalankan sebelum deployment, sementara rilis tidak bisa lolos tanpa alamat asli. Pemeriksaan yang terlalu ketat saat load akan membuat repositori tidak bisa dibangun sama sekali.
-- Dampak: Skrip deployment dan pemeriksaan rilis wajib memanggil `validateProductionReadiness`. Setelah keypair program dibuat, public key yang sama harus ditulis ke `config/devnet.json`, `config/mainnet.json`, dan `programs/Anchor.toml`.
+- Konteks: `programId` pada `config/devnet.json` dan `config/mainnet.json` panjangnya 42 karakter, dan beberapa alamat lain memakai karakter non-base58 (`0` dan `O`). Nilai-nilai ini belum bisa menjadi public key Solana yang sah karena program belum pernah di-deploy.
+- Keputusan: Validasi dibagi dua tingkat. Saat load, `parseNetworkConfig` memastikan setiap field ada, tidak kosong, dan berbentuk public key yang benar: base58, 43–44 karakter, dan tepat 32 byte setelah di-decode. Kesiapan rilis diperiksa terpisah oleh `findPlaceholderAddresses` dan `validateProductionReadiness`, yang menolak alamat yang bentuknya salah **atau** yang nilainya ada di `REPO_PLACEHOLDER_ADDRESSES`. `resolveNetwork` tidak pernah jatuh ke mainnet.
+- Alasan: Alamat yang bentuknya cacat bukan sekadar placeholder, melainkan bug: `declare_id!` memarse program id saat kompilasi sehingga `cargo check` gagal tanpa pesan yang jelas. Membedakan "bentuk benar tapi belum di-deploy" dari "bentuk salah" membuat kedua masalah itu terdeteksi di tempat yang tepat.
+- Dampak: Skrip deployment dan pemeriksaan rilis wajib memanggil `validateProductionReadiness`. Public key yang sama harus ditulis ke `config/devnet.json`, `config/mainnet.json`, `programs/Anchor.toml`, dan `declare_id!`; `pnpm test` gagal kalau keempatnya berbeda.
 - Komponen terkait: `packages/config/src/network.ts`, `packages/config/test/config.test.ts`, `config/*.json`, `programs/Anchor.toml`
 - Menggantikan: —
 
@@ -131,7 +131,7 @@ bukan untuk mengganti persyaratan yang sudah eksplisit.
 - Tanggal: 2026-10-08
 - Status: Approved
 - Pemilik keputusan: Engineering
-- Konteks: Header dan status bar menulis `SOLANA MAINNET`, `PROGRAM: Bas1...7SoL`, latensi `24ms`, dan `SYNCHRONIZED` sebagai teks tetap. Nilai-nilai itu tidak berasal dari konfigurasi mana pun: aplikasi berjalan di devnet, program id yang sebenarnya `BASDistr1ct111...`, dan tidak ada pengukuran latensi.
+- Konteks: Header dan status bar menulis `SOLANA MAINNET`, `PROGRAM: Bas1...7SoL`, latensi `24ms`, dan `SYNCHRONIZED` sebagai teks tetap. Nilai-nilai itu tidak berasal dari konfigurasi mana pun: aplikasi berjalan di devnet, program id yang sebenarnya adalah placeholder repo, dan tidak ada pengukuran latensi.
 - Keputusan: Menambahkan `apps/web/src/config/telemetry.ts` (server-only) yang membangun `DistrictTelemetry` dari `@bas/config`, meneruskannya melalui `DistrictTelemetryProvider` di `app/layout.tsx`, dan membuat seluruh label cluster, program id pendek, serta `maxSupply` dirender dari sana. Klaim yang tidak diukur (`24ms`, `SYNCHRONIZED`) dihapus.
 - Alasan: Spesifikasi melarang state browser diperlakukan sebagai kebenaran dan meminta paritas perilaku antar cluster. UI yang mengklaim mainnet sementara konfigurasi menunjuk devnet adalah bentuk lain dari masalah yang sama.
 - Dampak: `UI.networkBadge` dan `PROGRAM_LABEL` dihapus; `BROADCAST` berubah dari objek string menjadi fungsi yang menerima nilai telemetri. Mengganti cluster kini otomatis mengganti seluruh label di shell.
@@ -148,4 +148,16 @@ bukan untuk mengganti persyaratan yang sudah eksplisit.
 - Alasan: Aturan yang hanya tertulis di dokumentasi sudah terbukti tidak cukup; pemeriksaan yang berjalan otomatis membuat duplikasi gagal di CI, bukan ditemukan manual berbulan-bulan kemudian.
 - Dampak: `next build` sengaja tidak dijalankan di CI karena `next/font` mengunduh font dari `fonts.googleapis.com`; alasan dan cara mengaktifkannya kembali dicatat di workflow dan `docs/ARCHITECTURE.md`. Job Rust hanya menjalankan `cargo check`, bukan `anchor build`, karena BPF toolchain tidak tersedia di runner.
 - Komponen terkait: `scripts/check-assets.mjs`, `.github/workflows/verify.yml`, `apps/web/package.json`, `package.json`
+- Menggantikan: —
+
+## D-0010 — Program id placeholder harus berbentuk public key yang sah
+
+- Tanggal: 2026-10-08
+- Status: Approved
+- Pemilik keputusan: Engineering
+- Konteks: CI pertama yang benar-benar mengompilasi program (`cargo check`) gagal. Penyebabnya bukan kode baru, melainkan `declare_id!("BASDistr1ct111...")`: string itu hanya 42 karakter dan men-decode ke 31 byte, sedangkan `Pubkey::from_str` mewajibkan 32 byte. Program ini tidak pernah bisa di-build sejak awal. Dua alamat lain juga memakai karakter non-base58 (`0` dan `O`).
+- Keputusan: Program id diganti dengan public half dari keypair ed25519 yang dibuat baru dan tidak pernah di-deploy (`scripts/gen-program-id.mjs`), keypair-nya ditulis ke `programs/district/keypair.json` dan di-gitignore. Nilai yang sama dipasang di `declare_id!`, `[programs.devnet]`, `[programs.mainnet]`, dan kedua `config/*.json`. Placeholder mint diturunkan secara deterministik dari `sha256("bas:placeholder:utility-token-mint")`. Ditambah test yang membandingkan keempat salinan program id dan test yang menolak alamat 31 byte serta alamat non-base58.
+- Alasan: Placeholder harus cukup sah untuk dikompilasi dan diuji, tetapi tetap jelas bukan alamat asli. Menolak placeholder berdasarkan nilai (`REPO_PLACEHOLDER_ADDRESSES`) membuat gerbang rilis tetap berfungsi walaupun bentuknya kini valid.
+- Dampak: Keypair di `programs/district/keypair.json` adalah rahasia dan tidak boleh masuk Git; `.gitignore` sudah menutup `keypair.json`, `*-keypair.json`, dan `programs/*/keypair.json`. Sebelum deploy, owner wajib membuat keypair sendiri dan menjalankan `anchor keys sync`. CI job `programs` kini menjadi penjaga nyata untuk perubahan Rust.
+- Komponen terkait: `scripts/gen-program-id.mjs`, `programs/district/src/lib.rs`, `programs/Anchor.toml`, `config/*.json`, `packages/config/src/network.ts`, `.gitignore`
 - Menggantikan: —

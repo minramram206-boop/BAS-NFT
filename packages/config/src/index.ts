@@ -8,6 +8,7 @@ export {
   NETWORK_CONFIG_FIELDS,
   NETWORK_CONFIG_FILES,
   PRODUCTION_CRITICAL_ADDRESS_FIELDS,
+  REPO_PLACEHOLDER_ADDRESSES,
   findPlaceholderAddresses,
   parseNetworkConfig,
   validateProductionReadiness,

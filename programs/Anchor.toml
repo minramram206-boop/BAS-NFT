@@ -7,10 +7,10 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-district = "BASDistr1ct1111111111111111111111111111111"
+district = "D8HGhXUqHx7UXysCMEBDzvd3FS4XGEMNjCR6Eaj8CRbV"
 
 [programs.mainnet]
-district = "BASDistr1ct1111111111111111111111111111111"
+district = "D8HGhXUqHx7UXysCMEBDzvd3FS4XGEMNjCR6Eaj8CRbV"
 
 [registry]
 url = "https://api.apr.dev"
@@ -23,9 +23,12 @@ wallet = "~/.config/solana/id.json"
 test = "pnpm --filter \"./packages/*\" test"
 
 # NOTE
-# The program id above is still the placeholder from config/devnet.json and is
-# 42 characters long, which is not a valid Solana public key. Generate the
-# program keypair first, then put the same 43-44 character base58 pubkey here
-# and in config/*.json. `pnpm --filter @bas/config exec node -e
-# "console.log(require('@bas/config').findPlaceholderAddresses(require('@bas/config').DEVNET_CONFIG))"`
-# lists every address that still needs replacing before a launch.
+# The program id above is the public half of a generated, NEVER DEPLOYED
+# keypair, and it is identical to the one in declare_id! and config/*.json so
+# that `cargo check` succeeds. It controls nothing. Before deploying:
+#   solana-keygen new -o programs/district/keypair.json   (gitignored)
+#   anchor keys sync
+# then write the new pubkey into config/devnet.json and config/mainnet.json.
+# `pnpm test` fails if the four copies drift apart;
+# `findPlaceholderAddresses(DEVNET_CONFIG)` lists every address still to be
+# replaced before a launch.

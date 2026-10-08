@@ -1,10 +1,10 @@
 {
   "network": "devnet",
   "rpcUrl": "https://api.devnet.solana.com",
-  "programId": "BASDistr1ct1111111111111111111111111111111",
+  "programId": "D8HGhXUqHx7UXysCMEBDzvd3FS4XGEMNjCR6Eaj8CRbV",
   "collectionMint": "BASCo11ect1onDevnet1111111111111111111111111",
   "candyMachine": "BASCandyMach1neDevnet1111111111111111111111",
-  "utilityTokenMint": "BASTokenM1rr0rDevnet111111111111111111111111",
+  "utilityTokenMint": "6yv2K6n1pczbSdWNZGfEvkQuS5rgHhq5RwKD64PQ7TcG",
   "tokenBurnRequired": 1,
   "maxSupply": 100,
   "treasuryAddress": "BASTreasuryDevnet11111111111111111111111111"

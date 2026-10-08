@@ -14,6 +14,9 @@ const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvw
 /** A 32 byte public key encodes to 43 or 44 base58 characters. */
 const PUBKEY_LENGTH_RANGE = { min: 43, max: 44 } as const;
 
+/** Solana public keys are always 32 bytes. */
+const PUBLIC_KEY_BYTES = 32;
+
 const ADDRESS_FIELDS = [
   'programId',
   'collectionMint',
@@ -52,16 +55,27 @@ function requireUrl(source: NetworkConfigFile, field: ConfigField): string {
 }
 
 /**
- * Structural address check: a single non-empty token.
+ * Structural address check: base58, 43-44 characters, exactly 32 bytes decoded.
  *
- * The repository ships placeholder addresses before deployment, so base58 and
- * key-length correctness are enforced by {@link validateProductionReadiness}
- * instead of at load time.
+ * Being well-formed is not the same as being deployed, so the placeholder
+ * addresses the repository ships still pass this check. Whether an address is
+ * real is decided by {@link validateProductionReadiness}.
+ *
+ * Enforcing the shape at load time matters because `declare_id!` parses the
+ * program id at compile time: a 31 byte placeholder used to make `cargo check`
+ * fail with an opaque error instead of a clear one.
  */
 function requireAddress(source: NetworkConfigFile, field: ConfigField): string {
   const value = requireString(source, field);
   if (/\s/.test(value)) {
     invalid(field, 'must not contain whitespace');
+  }
+  if (!isWellFormedPublicKey(value)) {
+    invalid(
+      field,
+      `expected a ${PUBKEY_LENGTH_RANGE.min}-${PUBKEY_LENGTH_RANGE.max} character base58 public key ` +
+        `(${PUBLIC_KEY_BYTES} bytes decoded), received "${value}"`,
+    );
   }
   return value;
 }
@@ -73,6 +87,57 @@ function isBase58(value: string): boolean {
 function hasValidPublicKeyLength(value: string): boolean {
   return value.length >= PUBKEY_LENGTH_RANGE.min && value.length <= PUBKEY_LENGTH_RANGE.max;
 }
+
+/**
+ * Decoded byte length of a base58 string.
+ *
+ * Leading `1` characters are the base58 encoding of leading zero bytes and
+ * carry no value, so they have to be counted separately: a public key whose
+ * first byte is zero would otherwise look one byte short.
+ */
+function decodedByteLength(value: string): number {
+  let leadingZeros = 0;
+  for (const character of value) {
+    if (character !== BASE58_ALPHABET[0]) break;
+    leadingZeros += 1;
+  }
+
+  let bits = 0n;
+  for (const character of value) {
+    bits = bits * 58n + BigInt(BASE58_ALPHABET.indexOf(character));
+  }
+  let significantBytes = 0;
+  while (bits > 0n) {
+    bits >>= 8n;
+    significantBytes += 1;
+  }
+  return leadingZeros + significantBytes;
+}
+
+function isWellFormedPublicKey(value: string): boolean {
+  return isBase58(value) && hasValidPublicKeyLength(value) && decodedByteLength(value) === PUBLIC_KEY_BYTES;
+}
+
+/**
+ * Placeholder addresses that ship with the repository.
+ *
+ * They are well-formed 32 byte public keys so that `declare_id!`, Anchor and
+ * the client all compile and run, but none of them is deployed and none of them
+ * is controlled by this project. {@link findPlaceholderAddresses} rejects them
+ * by value, not by shape, so the release gate still blocks a launch.
+ */
+export const REPO_PLACEHOLDER_ADDRESSES = new Set<string>([
+  // programs/district/keypair.json public half, generated and never deployed
+  'D8HGhXUqHx7UXysCMEBDzvd3FS4XGEMNjCR6Eaj8CRbV',
+  // sha256("bas:placeholder:utility-token-mint")
+  '6yv2K6n1pczbSdWNZGfEvkQuS5rgHhq5RwKD64PQ7TcG',
+  'BASCo11ect1onDevnet111111111111111111111',
+  'BASCandyMach1neDevnet1111111111111111111111',
+  'BASCandyMach1neMa1nnet111111111111111111111',
+  'BASCo11ect1onMa1nnetBeta1111111111111111111',
+  'BASTreasuryDevnet11111111111111111111111111',
+  'BASTreasuryMa1nnetBeta111111111111111111111',
+]);
 
 function requireNonNegativeInteger(source: NetworkConfigFile, field: ConfigField): number {
   const value = source[field];
@@ -123,17 +188,11 @@ export function findPlaceholderAddresses(
 ): Array<{ field: ConfigField; value: string; reason: string }> {
   return PRODUCTION_CRITICAL_ADDRESS_FIELDS.flatMap((field) => {
     const value = config[field];
-    if (!isBase58(value)) {
-      return [{ field, value, reason: 'not base58' }];
+    if (!isWellFormedPublicKey(value)) {
+      return [{ field, value, reason: 'not a well-formed 32 byte base58 public key' }];
     }
-    if (!hasValidPublicKeyLength(value)) {
-      return [
-        {
-          field,
-          value,
-          reason: `expected ${PUBKEY_LENGTH_RANGE.min}-${PUBKEY_LENGTH_RANGE.max} characters, received ${value.length}`,
-        },
-      ];
+    if (REPO_PLACEHOLDER_ADDRESSES.has(value)) {
+      return [{ field, value, reason: 'repository placeholder, never deployed' }];
     }
     return [];
   });
@@ -154,7 +213,7 @@ export function validateProductionReadiness(config: DistrictNetworkConfig): Dist
       .join(', ');
     throw new Error(
       `[@bas/config] ${config.network} configuration is not launch ready. ` +
-        `Replace these placeholders with deployed 43-44 character public keys: ${details}`,
+        `Replace these placeholders with deployed public keys: ${details}`,
     );
   }
   return config;

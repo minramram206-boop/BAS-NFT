@@ -111,9 +111,11 @@ not measured — latency, sync state — are not displayed at all.
 
 ## Launch gate
 
-`config/*.json` ships placeholder addresses — `programId` is 42 characters,
-which is not a valid Solana public key. `@bas/config` validates structure at
-load time and exposes a separate gate for launch:
+`config/*.json` ships placeholder addresses. They are all well-formed 32 byte
+base58 public keys — `@bas/config` rejects anything else at load time, because
+`declare_id!` parses the program id at compile time — but none of them is
+deployed, and none is controlled by this project. Readiness for launch is a
+separate check:
 
 ```ts
 import { DEVNET_CONFIG, findPlaceholderAddresses, validateProductionReadiness } from '@bas/config';
@@ -121,6 +123,21 @@ import { DEVNET_CONFIG, findPlaceholderAddresses, validateProductionReadiness } 
 findPlaceholderAddresses(DEVNET_CONFIG);   // what still has to be replaced
 validateProductionReadiness(DEVNET_CONFIG); // throws until every address is real
 ```
+
+The `programId` is the public half of a generated, never-deployed keypair, so
+the Anchor program compiles and CI can run `cargo check`. Replace it before any
+deployment:
+
+```bash
+solana-keygen new -o programs/district/keypair.json   # gitignored
+anchor keys sync                                      # rewrites declare_id! and Anchor.toml
+```
+
+Then write the same public key into `config/devnet.json` and
+`config/mainnet.json`. `pnpm test` fails if `declare_id!`, `Anchor.toml` and the
+two config files disagree, and `validateProductionReadiness` keeps throwing
+while any address is still one of the shipped placeholders
+(`REPO_PLACEHOLDER_ADDRESSES`).
 
 Generate the program keypair, deploy, then write the same 43–44 character
 base58 public key into `config/devnet.json`, `config/mainnet.json` and
