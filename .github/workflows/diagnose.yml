@@ -51,7 +51,11 @@ jobs:
             cargo test --lib 2>&1 | tail -n 120
             echo
             echo '### cargo test --test integration'
-            cargo test --test integration -- --nocapture --test-threads=1 2>&1 | tail -n 420
+            # Drop the anchor/solana `unexpected cfg` macro warnings, which
+            # otherwise push the actual test output out of the captured tail.
+            cargo test --test integration -- --nocapture --test-threads=1 2>&1 \
+              | grep -vE '^(warning|note|help|error: unexpected|\s*=|\s*\||\s*-->|\s*$|[0-9]+ \|)' \
+              | tail -n 500
           } > /tmp/diag.txt 2>&1 || true
 
       - name: Report the output in an issue

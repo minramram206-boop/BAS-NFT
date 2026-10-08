@@ -51,6 +51,23 @@ const TOKEN_SUPPLY: u64 = 1_000_000;
 /// The transaction logs on success, or the transport error on failure.
 type SendResult = Result<Vec<String>, TransportError>;
 
+thread_local! {
+    /// Program logs of the most recent `send`, kept so a failure can show what
+    /// the program actually said instead of only a numeric error code.
+    static LAST_LOGS: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn dump_last_logs(what: &str) {
+    LAST_LOGS.with(|logs| {
+        let logs = logs.borrow();
+        println!("--- program logs for {what} ({} lines) ---", logs.len());
+        for line in logs.iter() {
+            println!("| {line}");
+        }
+        println!("--- end of logs for {what} ---");
+    });
+}
+
 // ---------------------------------------------------------------------------
 // harness
 //
@@ -181,11 +198,14 @@ async fn send(
 
     // `BanksTransactionResultWithMetadata` carries the execution result plus an
     // optional metadata blob; the logs are `metadata.log_messages`.
+    let logs = with_metadata
+        .metadata
+        .map(|metadata| metadata.log_messages)
+        .unwrap_or_default();
+    LAST_LOGS.with(|slot| *slot.borrow_mut() = logs.clone());
+
     match with_metadata.result {
-        Ok(()) => Ok(with_metadata
-            .metadata
-            .map(|metadata| metadata.log_messages)
-            .unwrap_or_default()),
+        Ok(()) => Ok(logs),
         Err(transaction_error) => Err(TransportError::TransactionError(transaction_error)),
     }
 }
@@ -240,13 +260,17 @@ fn initialize_instruction(harness: &Harness, burn_amount: u64) -> Instruction {
 }
 
 async fn initialize(context: &mut ProgramTestContext, harness: &Harness) {
-    send(
-        context,
-        initialize_instruction(harness, BURN_AMOUNT),
-        &[&harness.authority],
-    )
-    .await
-    .expect("initialize_district must succeed");
+    let instruction = initialize_instruction(harness, BURN_AMOUNT);
+    println!(
+        "initialize_district discriminator+args = {:?}",
+        instruction.data
+    );
+    println!("account metas = {:?}", instruction.accounts);
+
+    if let Err(error) = send(context, instruction, &[&harness.authority]).await {
+        dump_last_logs("initialize_district");
+        panic!("initialize_district must succeed, got {error}");
+    }
 }
 
 async fn read_config(context: &mut ProgramTestContext, harness: &Harness) -> DistrictConfig {
