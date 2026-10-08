@@ -879,8 +879,10 @@ async fn rejects_an_asset_that_is_not_owned_by_the_core_program() {
     initialize(&mut context, &harness).await;
 
     // The bytes describe a perfect collection member, but the account is owned
-    // by the holder instead of Metaplex Core, so Anchor's `owner` constraint
-    // must reject it before the parser is ever reached.
+    // by the holder instead of Metaplex Core. This is the forgery the parser
+    // alone could not catch: anyone can write 66 bytes that look like an asset
+    // of the right collection into an account they own, so the `owner`
+    // constraint has to reject it before the parser is ever reached.
     let asset = Pubkey::new_unique();
     install_account(
         &mut context,
@@ -904,10 +906,14 @@ async fn rejects_an_asset_that_is_not_owned_by_the_core_program() {
     .await;
     let failure = result.expect_err("a self-owned account must not pass as a Core asset");
 
+    // 2004, not 3007: `AccountOwnedByWrongProgram` is what deserializing an
+    // `Account<T>` reports, while this field is an `UncheckedAccount` with an
+    // explicit `owner = mpl_core_program.key()` constraint, which Anchor reports
+    // as `ConstraintOwner`.
     assert_eq!(
         custom_error_code(&failure),
-        u32::from(anchor_lang::error::ErrorCode::AccountOwnedByWrongProgram),
-        "expected AccountOwnedByWrongProgram (3007), got {failure}"
+        u32::from(anchor_lang::error::ErrorCode::ConstraintOwner),
+        "expected ConstraintOwner (2004), got {failure}"
     );
 }
 
