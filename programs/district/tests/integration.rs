@@ -210,19 +210,18 @@ async fn send(
     // transaction. Simulating does not commit, and it runs against the same bank
     // state the execution then sees, so the outcome it reports matches.
     let simulated = context.banks_client.simulate_transaction(transaction.clone()).await?;
-    println!(
-        "simulate: simulation_details={} result={:?} units={:?}",
-        simulated.simulation_details.is_some(),
-        simulated.result.as_ref().map(|r| r.is_ok()),
-        simulated.simulation_details.as_ref().map(|d| d.units_consumed),
-    );
     let logs = simulated
         .simulation_details
         .map(|details| details.logs)
         .unwrap_or_default();
-    println!("simulate: {} log lines", logs.len());
+    println!(
+        ">> send: simulated_ok={:?} executed_ok={:?} log_lines={}",
+        simulated.result.as_ref().map(|r| r.is_ok()),
+        simulated.simulation_details.as_ref().map(|d| d.units_consumed),
+        logs.len(),
+    );
     for line in logs.iter().take(25) {
-        println!("simulate| {line}");
+        println!(">> {line}");
     }
     LAST_LOGS.with(|slot| *slot.borrow_mut() = logs.clone());
 
