@@ -22,9 +22,17 @@ pub enum DistrictError {
     #[msg("District program is currently paused.")]
     ProgramPaused,
 
-    /// The config PDA already exists; initialization runs once.
-    #[msg("District config is already initialized.")]
-    AlreadyInitialized,
+    // §13 also lists `AlreadyInitialized`. It is deliberately absent: the
+    // `init` constraint on the config PDA is what refuses a second
+    // initialization, and it does so before any handler runs, so no code of this
+    // program can ever report it. Declaring a variant nothing can return would
+    // be a lie in the error list. Anchor reports the case as its own
+    // `AccountDiscriminatorAlreadySet` (3000), which the integration test
+    // asserts.
+    //
+    // Removing a variant shifts every code below it, and these codes are part of
+    // the on-chain contract. This is safe only because nothing has been
+    // deployed; see D-0013.
 
     /// `upgrade_score` refuses to run before a utility mint is configured
     /// (§15.4 acceptance test 4).

@@ -39,14 +39,6 @@ pub mod district {
         ctx: Context<InitializeConfig>,
         args: InitializeConfigArgs,
     ) -> Result<()> {
-        // `init` already refuses to run twice, but that surfaces as Anchor's
-        // generic discriminator error. §13 names this case, so report it.
-        let existing = ctx.accounts.config.to_account_info();
-        require!(
-            existing.lamports() == 0 || existing.data_is_empty(),
-            DistrictError::AlreadyInitialized
-        );
-
         let config = &mut ctx.accounts.config;
         config.version = DISTRICT_CONFIG_VERSION;
         config.admin = ctx.accounts.admin.key();

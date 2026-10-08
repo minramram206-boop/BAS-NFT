@@ -863,7 +863,16 @@ async fn initialize_can_only_run_once() {
         &[&harness.admin],
     )
     .await;
-    expect_error_code(result, DistrictError::AlreadyInitialized);
+    // §13 lists `AlreadyInitialized`, but this program cannot report it: the
+    // `init` constraint on the config PDA refuses the second initialization
+    // before any handler runs, and Anchor's own code is what surfaces. Declaring
+    // an unreachable variant would put a lie in the error list.
+    let failure = result.expect_err("initialization must not run twice");
+    assert_eq!(
+        custom_error_code(&failure),
+        u32::from(anchor_lang::error::ErrorCode::AccountDiscriminatorAlreadySet),
+        "expected AccountDiscriminatorAlreadySet (3000), got {failure}"
+    );
 
     assert_eq!(
         read_config(&mut context, &harness).await.admin,
