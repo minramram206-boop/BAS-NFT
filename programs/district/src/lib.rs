@@ -598,6 +598,7 @@ pub struct MissionClaimArgs {
 // ---------------------------------------------------------------------------
 
 #[derive(Accounts)]
+#[instruction(args: InitializeConfigArgs)]
 pub struct InitializeConfig<'info> {
     #[account(
         init,
