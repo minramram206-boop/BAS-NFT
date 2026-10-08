@@ -30,7 +30,7 @@
 use anchor_lang::{
     solana_program::{
         clock::Clock, entrypoint::ProgramResult, instruction::Instruction, program_pack::Pack,
-        pubkey::Pubkey, system_program,
+        pubkey::Pubkey, system_instruction::SystemError, system_program,
     },
     // `try_serialize` comes from `AccountSerialize`, the trait Anchor's
     // `#[account]` implements; it writes the 8-byte discriminator followed by
@@ -865,13 +865,15 @@ async fn initialize_can_only_run_once() {
     .await;
     // §13 lists `AlreadyInitialized`, but this program cannot report it: the
     // `init` constraint on the config PDA refuses the second initialization
-    // before any handler runs, and Anchor's own code is what surfaces. Declaring
-    // an unreachable variant would put a lie in the error list.
+    // before any handler runs, and what surfaces is the system program's own
+    // `AccountAlreadyInUse` from the create-account CPI. Declaring an
+    // unreachable variant would put a lie in the error list, so the test asserts
+    // the code that really comes back.
     let failure = result.expect_err("initialization must not run twice");
     assert_eq!(
         custom_error_code(&failure),
-        u32::from(anchor_lang::error::ErrorCode::AccountDiscriminatorAlreadySet),
-        "expected AccountDiscriminatorAlreadySet (3000), got {failure}"
+        SystemError::AccountAlreadyInUse as u32,
+        "expected the system program to refuse re-creating the PDA, got {failure}"
     );
 
     assert_eq!(
@@ -1507,6 +1509,12 @@ async fn rejects_an_unapproved_template_identifier() {
     .await
     .expect("the admin must be able to move the approved template");
 
+    // The registration below is byte-identical to the one that was just refused,
+    // so without a new blockhash it would share a signature and the bank would
+    // answer AlreadyProcessed without invoking the program.
+    context.warp_to_slot(2).expect("warping to slot 2");
+    context.last_blockhash = context.get_new_latest_blockhash().await.expect("a blockhash");
+
     let mut instruction = register_instruction(
         &harness,
         asset,
@@ -1562,11 +1570,17 @@ async fn cannot_register_the_same_asset_twice() {
         &[&harness.holder],
     )
     .await;
-    // §13 names this CitizenAlreadyRegistered. Reporting it explicitly matters:
-    // without the check the failure would surface as the system program's
-    // AccountAlreadyInUse from the `init` CPI, which is not in the spec's error
-    // list and would not map to a user-facing message.
-    expect_error_code(result, DistrictError::CitizenAlreadyRegistered);
+    // A replay cannot reach the handler: the `init` constraint on the citizen PDA
+    // CPIs into the system program to create it, and the system program refuses
+    // because it already exists. §13 names this `CitizenAlreadyRegistered`, but
+    // no code of this program can report it, so the variant is not declared —
+    // what a client really sees is the system program's own error 0.
+    let failure = result.expect_err("a replayed registration must fail");
+    assert_eq!(
+        custom_error_code(&failure),
+        SystemError::AccountAlreadyInUse as u32,
+        "expected the system program to refuse re-creating the citizen PDA, got {failure}"
+    );
 
     let after = read_citizen(&mut context, citizen_state).await;
     assert_eq!(after.citizen_id, first.citizen_id);
@@ -2364,10 +2378,12 @@ async fn admin_moves_only_through_propose_then_accept() {
     .await
     .expect("and can still resume");
 
-    // Somebody else cannot accept on the successor's behalf. `new_admin` is
-    // declared as a signer in the account metas, so the impostor not signing is
-    // caught by the runtime before the program is invoked at all — which is the
-    // strongest form of this refusal, and why it is not a §13 error code.
+    // Somebody else cannot accept on the successor's behalf. The impostor does
+    // sign here, so what stops them is the constraint that `new_admin` equals
+    // the pending admin — which is worth knowing about, because Anchor evaluates
+    // account constraints *before* the runtime verifies signatures against them.
+    // An account that is not signed is therefore reported as `Unauthorized` from
+    // the constraint, not as `MissingRequiredSignature`.
     context.warp_to_slot(2).expect("warping to slot 2");
     context.last_blockhash = context.get_new_latest_blockhash().await.expect("a blockhash");
     let result = send(
@@ -2376,17 +2392,7 @@ async fn admin_moves_only_through_propose_then_accept() {
         &[&harness.impostor],
     )
     .await;
-    let failure = result.expect_err("an unrelated key must not be able to accept");
-    assert!(
-        matches!(
-            &failure,
-            TransportError::TransactionError(TransactionError::InstructionError(
-                _,
-                InstructionError::MissingRequiredSignature
-            ))
-        ),
-        "expected MissingRequiredSignature, got {failure:?}"
-    );
+    expect_error_code(result, DistrictError::Unauthorized);
     assert_eq!(read_config(&mut context, &harness).await.admin, harness.admin_key());
 
     send(

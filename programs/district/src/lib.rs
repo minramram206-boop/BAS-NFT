@@ -198,14 +198,14 @@ pub mod district {
         // role is an error rather than a default.
         let template = role_template(role)?;
 
-        // §12: cannot run twice for the same asset. `init` on the PDA would
-        // refuse anyway, but that surfaces as the system program's
-        // `AccountAlreadyInUse`; §13 names this case, so report it explicitly.
-        let citizen_info = ctx.accounts.citizen_state.to_account_info();
-        require!(
-            citizen_info.data_is_empty(),
-            DistrictError::CitizenAlreadyRegistered
-        );
+        // §12: cannot run twice for the same asset. That is enforced by the
+        // `init` constraint on `citizen_state` and not by a check here, because
+        // `init` creates the account before this body runs — so any "is it still
+        // empty?" test written here would see a fresh account and refuse every
+        // first registration. §13 lists `CitizenAlreadyRegistered`, but a variant
+        // no code path can return is a lie in the error list; the framework's own
+        // code is what a replay actually produces, and the integration test
+        // asserts it.
 
         let citizen = &mut ctx.accounts.citizen_state;
         citizen.version = CITIZEN_STATE_VERSION;
@@ -280,27 +280,83 @@ pub mod district {
         );
 
         // §12: the claim is bound to asset, stat type, mission ID, season ID,
-        // owner, nonce and expiry. The receipt PDA is derived from the asset,
-        // the mission and the nonce, so presenting the same signed claim again
-        // targets an account that now exists — which `init` refuses, and which
-        // is reported as the named error rather than a system one.
-        let receipt_info = ctx.accounts.claim_receipt.to_account_info();
+        // owner, nonce and expiry. The receipt is what makes a signed claim
+        // single-use, and §15.3 acceptance test 2 requires a replay to be
+        // reported as `MissionClaimAlreadyUsed`.
+        //
+        // That is why this account is created here rather than by an `init`
+        // constraint. `init` would refuse a replay too, but as Anchor's own
+        // `AccountDiscriminatorAlreadySet` (3000) before the handler ran, and
+        // the spec names the error. Creating it by hand costs one system CPI and
+        // buys an error a client can actually map to a message.
+        let (expected_receipt, receipt_bump) = Pubkey::find_program_address(
+            &[
+                b"claim",
+                ctx.accounts.asset.key().as_ref(),
+                &args.mission_id.to_le_bytes(),
+                &args.nonce.to_le_bytes(),
+            ],
+            ctx.program_id,
+        );
         require!(
-            receipt_info.data_is_empty(),
-            DistrictError::MissionClaimAlreadyUsed
+            ctx.accounts.claim_receipt.key() == expected_receipt,
+            DistrictError::InvalidMissionClaim
         );
 
-        let receipt = &mut ctx.accounts.claim_receipt;
-        receipt.version = CLAIM_RECEIPT_VERSION;
-        receipt.bump = ctx.bumps.claim_receipt;
-        receipt.asset = ctx.accounts.asset.key();
-        receipt.owner = ctx.accounts.owner.key();
-        receipt.mission_id = args.mission_id;
-        receipt.season_id = args.season_id;
-        receipt.stat = stat as u8;
-        receipt.nonce = args.nonce;
-        receipt.expires_at = args.expires_at;
-        receipt.claimed_at = clock.unix_timestamp;
+        let receipt_info = ctx.accounts.claim_receipt.to_account_info();
+        {
+            // Anything already here means this claim was used. A wrong
+            // discriminator is also a replay attempt against an address the
+            // caller chose, so it is reported the same way rather than being
+            // silently overwritten.
+            let existing = receipt_info.try_borrow_data()?;
+            if !existing.is_empty() {
+                return Err(error!(DistrictError::MissionClaimAlreadyUsed));
+            }
+        }
+        let rent_lamports = Rent::get()?.minimum_balance(ClaimReceipt::LEN);
+
+        anchor_lang::system_program::create_account(
+            CpiContext::new_with_signer(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::CreateAccount {
+                    from: ctx.accounts.owner.to_account_info(),
+                    to: receipt_info.clone(),
+                },
+                &[&[
+                    b"claim",
+                    ctx.accounts.asset.key().as_ref(),
+                    &args.mission_id.to_le_bytes(),
+                    &args.nonce.to_le_bytes(),
+                    &[receipt_bump],
+                ]],
+            ),
+            rent_lamports,
+            ClaimReceipt::LEN as u64,
+            ctx.program_id,
+        )?;
+
+        // Written through the account's data slice because the field is an
+        // `UncheckedAccount`: the address was just verified by derivation and the
+        // account was just created by this program, so the bytes are ours to
+        // shape, and `try_serialize` writes the discriminator plus the body.
+        let mut receipt_bytes = vec![0u8; ClaimReceipt::LEN];
+        let receipt_body = ClaimReceipt {
+            version: CLAIM_RECEIPT_VERSION,
+            bump: receipt_bump,
+            asset: ctx.accounts.asset.key(),
+            owner: ctx.accounts.owner.key(),
+            mission_id: args.mission_id,
+            season_id: args.season_id,
+            stat: stat as u8,
+            nonce: args.nonce,
+            expires_at: args.expires_at,
+            claimed_at: clock.unix_timestamp,
+        };
+        AccountSerialize::try_serialize(&receipt_body, &mut &mut receipt_bytes[..])
+            .map_err(|_| error!(DistrictError::ArithmeticOverflow))?;
+        let mut receipt_data = receipt_info.try_borrow_mut_data()?;
+        receipt_data.copy_from_slice(&receipt_bytes);
 
         // §12: adds exactly one stat-specific credit, and mints or distributes
         // no tokens.
@@ -652,7 +708,6 @@ pub struct RegisterCitizen<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(args: MissionClaimArgs)]
 pub struct ClaimTrainingCredit<'info> {
     #[account(
         seeds = [b"district_config"],
@@ -688,21 +743,16 @@ pub struct ClaimTrainingCredit<'info> {
     /// The citizen's current owner, who signs (§12) and pays for the receipt.
     #[account(mut)]
     pub owner: Signer<'info>,
-    /// Makes a signed claim single-use. The seeds bind it to the asset, the
-    /// mission and the nonce.
-    #[account(
-        init,
-        payer = owner,
-        space = ClaimReceipt::LEN,
-        seeds = [
-            b"claim",
-            asset.key().as_ref(),
-            &args.mission_id.to_le_bytes(),
-            &args.nonce.to_le_bytes(),
-        ],
-        bump
-    )]
-    pub claim_receipt: Account<'info, ClaimReceipt>,
+    /// Makes a signed claim single-use.
+    ///
+    /// CHECK: created and written by the handler rather than by an `init`
+    /// constraint, so that a replay reports `MissionClaimAlreadyUsed` (§15.3
+    /// acceptance test 2) instead of Anchor's own discriminator error. The
+    /// handler derives the address itself from the asset, the mission and the
+    /// nonce and refuses anything else, so the caller cannot choose where the
+    /// receipt lands.
+    #[account(mut)]
+    pub claim_receipt: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
 }
 

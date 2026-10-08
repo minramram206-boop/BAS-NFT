@@ -60,10 +60,13 @@ pub enum DistrictError {
     #[msg("Asset account is not a readable Core asset.")]
     InvalidAssetState,
 
-    /// This asset already has a canonical citizen state (§12: `register_citizen`
-    /// cannot run twice for the same asset).
-    #[msg("Citizen is already registered.")]
-    CitizenAlreadyRegistered,
+    // §13 also lists `CitizenAlreadyRegistered`, deliberately absent for the
+    // same reason as `AlreadyInitialized`: the `init` constraint on the citizen
+    // PDA refuses a second registration before any handler runs, so no code of
+    // this program can report it. §15.3 does not name an expected error for that
+    // case — unlike the mission-claim replay in acceptance test 2 — so the
+    // framework's own code is acceptable there, and `claim_receipt` is the only
+    // account this program creates by hand in order to report a §13 name.
 
     /// The signer is not the asset's current owner (§15.3 test 6).
     #[msg("Only the current owner can act on this citizen.")]
