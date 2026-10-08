@@ -353,8 +353,10 @@ pub mod district {
             expires_at: args.expires_at,
             claimed_at: clock.unix_timestamp,
         };
+        // Infallible for a fixed-size borsh struct like this one; the error arm
+        // exists only because `try_serialize` returns a Result.
         AccountSerialize::try_serialize(&receipt_body, &mut &mut receipt_bytes[..])
-            .map_err(|_| error!(DistrictError::ArithmeticOverflow))?;
+            .map_err(|_| error!(DistrictError::InvalidAssetState))?;
         let mut receipt_data = receipt_info.try_borrow_mut_data()?;
         receipt_data.copy_from_slice(&receipt_bytes);
 
@@ -365,7 +367,7 @@ pub mod district {
 
         emit!(TrainingCreditClaimed {
             asset: citizen.asset,
-            owner: receipt.owner,
+            owner: receipt_body.owner,
             stat: stat as u8,
             mission_id: args.mission_id,
             season_id: args.season_id,
