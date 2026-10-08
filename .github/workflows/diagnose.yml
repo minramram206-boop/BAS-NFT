@@ -22,42 +22,18 @@ jobs:
       # rust-cache is skipped on purpose: the failure may be in resolution, and
       # a poisoned cache would hide it.
       - name: Collect cargo output
+        env:
+          # The anchor and solana macros emit cfg values the compiler does not
+          # know about; those warnings are hundreds of lines and push the actual
+          # test output out of any reasonable tail.
+          RUSTFLAGS: --check-cfg=values(feature, "custom-heap") --check-cfg=values(feature, "custom-panic") --check-cfg=values(feature, "anchor-debug") --check-cfg=values(target_os, "solana") -A unexpected_cfgs
         run: |
           {
-            echo '### rustc / cargo'
-            rustc --version
-            cargo --version
-            echo
-            echo '### cargo metadata --filter-platform x86_64-unknown-linux-gnu (resolution)'
-            cargo metadata --format-version 1 --filter-platform x86_64-unknown-linux-gnu > /tmp/meta.json 2>/tmp/meta.err
-            echo "exit=$?"
-            head -c 4000 /tmp/meta.err
-            python3 - <<'PY'
-          import json
-          try:
-              meta = json.load(open('/tmp/meta.json'))
-          except Exception as exc:
-              print('could not parse metadata:', exc)
-              raise SystemExit(0)
-          for pkg in sorted(meta['packages'], key=lambda p: p['name']):
-              if any(k in pkg['name'] for k in ('solana-program', 'solana-sdk', 'spl-token', 'anchor-', 'district', 'tokio')):
-                  print(f"{pkg['name']} {pkg['version']}")
-          PY
-            echo
-            echo '### cargo check --all-targets'
-            cargo check --all-targets 2>&1 | tail -n 120
-            echo
-            echo '### cargo test --lib (mpl_core unit tests)'
-            cargo test --lib 2>&1 | tail -n 120
+            echo '### cargo test --lib'
+            cargo test --lib 2>&1 | tail -n 40
             echo
             echo '### cargo test --test integration'
-            # Drop the anchor/solana `unexpected cfg` macro warnings, which
-            # otherwise push the actual test output out of the captured tail.
-            # Only the first test matters here: it prints what the simulation
-            # returns, which is what the event assertions depend on.
-            cargo test --test integration -- --nocapture --test-threads=1 2>&1 \
-              | grep -E '^>>|^test |^test result|^failures|^thread |^assertion|^error|^\s+(left|right):' \
-              | tail -n 900
+            cargo test --test integration -- --nocapture --test-threads=1 2>&1 | tail -n 1200
           } > /tmp/diag.txt 2>&1 || true
 
       - name: Report the output in an issue
