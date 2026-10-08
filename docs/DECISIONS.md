@@ -190,7 +190,7 @@ bukan untuk mengganti persyaratan yang sudah eksplisit.
 ## D-0013 — Registry URI template Metaplex Core yang disetujui
 
 - Tanggal: 2026-10-09
-- Status: Implemented (menunggu validasi Rust dan review keamanan)
+- Status: Implemented (Rust check, unit tests, dan integration tests lulus; review keamanan tetap wajib sebelum deploy)
 - Pemilik keputusan: Security
 - Konteks: SPEC v2 §6.3 mensyaratkan template citizen yang disetujui, tetapi PDA kosong yang diturunkan dari `approved_template_id` tidak membuktikan bahwa URI metadata asset benar-benar berasal dari template itu. Asset dapat berasal dari koleksi yang benar tetapi memakai JSON arbitrer.
 - Keputusan: `initialize_config` membuat akun program-owned `ApprovedTemplate` pada PDA `approved_template` + little-endian template ID, menyimpan versi, bump, ID, dan prefix URI HTTPS yang berakhir `/templates/{id}/`. Prefix ini immutable karena tidak ada instruksi update; `update_config` tidak lagi menerima perubahan template ID. `register_citizen` membaca field URI Borsh `AssetV1` dan menerima hanya satu nama file ASCII aman yang berakhiran `.json` di bawah prefix tersimpan. Slash tambahan, backslash, query, fragment, whitespace, path traversal, URI tidak valid, dan asset yang memakai template ID lain ditolak. `config/*.json` memasok prefix yang sama untuk TypeScript; gerbang produksi menolak host reserved placeholder.
