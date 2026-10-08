@@ -19,21 +19,26 @@
 //! `programs/Anchor.toml` and the CI `programs` job execute.
 
 use anchor_lang::{
-    solana_program::{instruction::Instruction, program_pack::Pack, pubkey::Pubkey, system_program},
-    AccountDeserialize, Discriminator, InstructionData, ToAccountMetas,
+    solana_program::{
+        entrypoint::ProgramResult, instruction::Instruction, program_pack::Pack, pubkey::Pubkey,
+        system_program,
+    },
+    AccountDeserialize, AccountInfo, AnchorDeserialize, Discriminator, InstructionData,
+    ToAccountMetas,
 };
 use anchor_spl::token;
 use district::{
-    errors::DistrictError,
+    accounts, errors::DistrictError,
     events::{CitizenRegistered, DistrictPausedChanged, StatTrained},
+    instruction,
     mpl_core::{self, MPL_CORE_PROGRAM_ID},
     state::{CitizenStat, CitizenState, DistrictConfig, INITIAL_TRAINING_CREDITS, STAT_MAX},
-    InitializeDistrict, RegisterCitizen, SetPaused, TrainStat,
 };
 use solana_program_test::{processor, ProgramTest, ProgramTestContext};
 use solana_sdk::{
-    instruction::InstructionError, rent::Rent, signature::Keypair, signer::Signer,
-    transaction::Transaction, transport::TransportError,
+    account::AccountSharedData, instruction::InstructionError, rent::Rent, signature::Keypair,
+    signer::Signer, transaction::Transaction, transaction::TransactionError,
+    transport::TransportError,
 };
 use spl_token::state::{Account as SplTokenAccount, AccountState, Mint as SplMint};
 
@@ -103,8 +108,23 @@ impl Harness {
     }
 }
 
+/// Adapter between Anchor's `entry` and what `ProgramTest` asks for.
+///
+/// `invoke_builtin_function` takes a `ProcessInstruction`, whose higher-ranked
+/// type is `for<'a, 'b, 'c, 'd> fn(&'a Pubkey, &'b [AccountInfo<'c>], &'d [u8])`.
+/// Anchor's generated `entry` is `for<'a, 'b, 'info> fn(&'a Pubkey,
+/// &'info [AccountInfo<'info>], &'b [u8])`: one lifetime appears twice.
+/// `AccountInfo<'x>` holds `Rc<RefCell<&'x mut u64>>`, so it is invariant in
+/// `'x` and the compiler cannot make the found type more general. Bridging the
+/// lifetimes is the standard workaround; it is sound here because the bank
+/// builds every `AccountInfo` for one instruction and drops them all before
+/// returning.
+fn process_instruction(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> ProgramResult {
+    district::entry(program_id, unsafe { std::mem::transmute(accounts) }, data)
+}
+
 async fn start() -> (ProgramTestContext, Harness) {
-    let mut program_test = ProgramTest::new("district", district::ID, processor!(district::entry));
+    let mut program_test = ProgramTest::new("district", district::ID, processor!(process_instruction));
     // Registration writes a PDA and emits an event; give it headroom so tests
     // fail on logic rather than on the default 200k per-instruction budget.
     program_test.set_compute_max_units(1_400_000);
@@ -149,11 +169,20 @@ async fn send(
         context.last_blockhash,
     );
 
-    context
+    let with_metadata = context
         .banks_client
         .process_transaction_with_metadata(transaction)
-        .await
-        .map(|metadata| metadata.logs)
+        .await?;
+
+    // `BanksTransactionResultWithMetadata` carries the execution result plus an
+    // optional metadata blob; the logs are `metadata.log_messages`.
+    match with_metadata.result {
+        Ok(()) => Ok(with_metadata
+            .metadata
+            .map(|metadata| metadata.log_messages)
+            .unwrap_or_default()),
+        Err(transaction_error) => Err(TransportError::TransactionError(transaction_error)),
+    }
 }
 
 /// The Anchor error code of a transaction that was supposed to fail.
@@ -176,11 +205,13 @@ fn expect_error_code(result: SendResult, expected: DistrictError) -> u32 {
 
 fn custom_error_code(failure: &TransportError) -> u32 {
     match failure {
-        TransportError::TransactionError(transaction_error) => match transaction_error.unwrap() {
-            InstructionError::Custom(code) => code,
-            other => panic!("expected a custom program error, got {other:?}"),
-        },
-        other => panic!("expected a transaction error, got {other:?}"),
+        TransportError::TransactionError(TransactionError::InstructionError(_, instruction_error)) => {
+            match instruction_error {
+                InstructionError::Custom(code) => *code,
+                other => panic!("expected a custom program error, got {other:?}"),
+            }
+        }
+        other => panic!("expected an instruction error, got {other:?}"),
     }
 }
 
@@ -191,7 +222,7 @@ fn custom_error_code(failure: &TransportError) -> u32 {
 fn initialize_instruction(harness: &Harness, burn_amount: u64) -> Instruction {
     Instruction {
         program_id: district::ID,
-        accounts: InitializeDistrict {
+        accounts: accounts::InitializeDistrict {
             config: harness.config_key(),
             utility_mint: harness.utility_mint_key(),
             collection_mint: harness.collection_key(),
@@ -199,7 +230,7 @@ fn initialize_instruction(harness: &Harness, burn_amount: u64) -> Instruction {
             system_program: system_program::ID,
         }
         .to_account_metas(None),
-        data: district::instruction::InitializeDistrict { burn_amount }.data(),
+        data: instruction::InitializeDistrict { burn_amount }.data(),
     }
 }
 
@@ -262,23 +293,13 @@ fn install_asset(context: &mut ProgramTestContext, harness: &Harness, asset: Pub
 
 /// Install an account with an arbitrary owner, used to prove that the `owner =
 /// mpl_core_program` constraint is what makes the asset bytes trustworthy.
-fn install_account(
-    context: &mut ProgramTestContext,
-    address: Pubkey,
-    data: Vec<u8>,
-    owner: Pubkey,
-) {
+fn install_account(context: &mut ProgramTestContext, address: Pubkey, data: Vec<u8>, owner: Pubkey) {
+    // `ProgramTestContext::set_account` takes `&AccountSharedData`, not the
+    // `solana_sdk::account::Account` that BanksClient hands back.
     let lamports = Rent::default().minimum_balance(data.len().max(1));
-    context.set_account(
-        &address,
-        &solana_sdk::account::Account {
-            lamports,
-            data,
-            owner,
-            executable: false,
-            rent_epoch: u64::MAX,
-        },
-    );
+    let mut shared = AccountSharedData::new(lamports, data.len(), &owner);
+    shared.set_data(data);
+    context.set_account(&address, &shared);
 }
 
 fn register_instruction(
@@ -290,7 +311,7 @@ fn register_instruction(
 ) -> Instruction {
     Instruction {
         program_id: district::ID,
-        accounts: RegisterCitizen {
+        accounts: accounts::RegisterCitizen {
             config: harness.config_key(),
             asset,
             mpl_core_program: harness.mpl_core_key(),
@@ -299,7 +320,7 @@ fn register_instruction(
             system_program: system_program::ID,
         }
         .to_account_metas(None),
-        data: district::instruction::RegisterCitizen {
+        data: instruction::RegisterCitizen {
             initial_int: stats.0,
             initial_aln: stats.1,
             initial_cmp: stats.2,
@@ -338,7 +359,7 @@ async fn register_member(
     (asset, citizen_state)
 }
 
-fn mint_account(mint: &Pubkey, authority: &Pubkey, supply: u64) -> solana_sdk::account::Account {
+fn mint_account(mint: &Pubkey, authority: &Pubkey, supply: u64) -> AccountSharedData {
     let mut data = vec![0u8; SplMint::LEN];
     SplMint {
         mint_authority: Option::<Pubkey>::from(*authority).into(),
@@ -349,10 +370,10 @@ fn mint_account(mint: &Pubkey, authority: &Pubkey, supply: u64) -> solana_sdk::a
     }
     .pack_into_slice(&mut data);
 
-    token_account_at(data, token::ID)
+    spl_account(data)
 }
 
-fn token_account(mint: &Pubkey, owner: &Pubkey, amount: u64) -> solana_sdk::account::Account {
+fn token_account(mint: &Pubkey, owner: &Pubkey, amount: u64) -> AccountSharedData {
     let mut data = vec![0u8; SplTokenAccount::LEN];
     SplTokenAccount {
         mint: *mint,
@@ -366,17 +387,14 @@ fn token_account(mint: &Pubkey, owner: &Pubkey, amount: u64) -> solana_sdk::acco
     }
     .pack_into_slice(&mut data);
 
-    token_account_at(data, token::ID)
+    spl_account(data)
 }
 
-fn token_account_at(data: Vec<u8>, owner: Pubkey) -> solana_sdk::account::Account {
-    solana_sdk::account::Account {
-        lamports: 10_000_000_000,
-        data,
-        owner,
-        executable: false,
-        rent_epoch: u64::MAX,
-    }
+/// An SPL Token account: fixed data, owned by the token program.
+fn spl_account(data: Vec<u8>) -> AccountSharedData {
+    let mut shared = AccountSharedData::new(10_000_000_000, data.len(), &token::ID);
+    shared.set_data(data);
+    shared
 }
 
 struct Training {
@@ -417,7 +435,7 @@ fn train_instruction(
 ) -> Instruction {
     Instruction {
         program_id: district::ID,
-        accounts: TrainStat {
+        accounts: accounts::TrainStat {
             config: harness.config_key(),
             citizen_state: setup.citizen_state,
             owner: harness.holder_key(),
@@ -426,19 +444,19 @@ fn train_instruction(
             token_program: token::ID,
         }
         .to_account_metas(None),
-        data: district::instruction::TrainStat { stat }.data(),
+        data: instruction::TrainStat { stat }.data(),
     }
 }
 
 fn set_paused_instruction(harness: &Harness, authority: Pubkey, paused: bool) -> Instruction {
     Instruction {
         program_id: district::ID,
-        accounts: SetPaused {
+        accounts: accounts::SetPaused {
             config: harness.config_key(),
             authority,
         }
         .to_account_metas(None),
-        data: district::instruction::SetPaused { paused }.data(),
+        data: instruction::SetPaused { paused }.data(),
     }
 }
 
