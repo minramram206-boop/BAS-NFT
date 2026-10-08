@@ -27,6 +27,10 @@ jobs:
           # know about; those warnings are hundreds of lines and push the actual
           # test output out of any reasonable tail.
           RUSTFLAGS: -A unexpected_cfgs
+          # solana-program-test turns on env_logger, and at the default level
+          # every instruction produces dozens of stable_log DEBUG lines that
+          # drown the test summary.
+          RUST_LOG: error
         run: |
           {
             echo '### cargo test --lib'
