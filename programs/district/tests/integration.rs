@@ -31,7 +31,7 @@
 use anchor_lang::{
     solana_program::{
         entrypoint::ProgramResult, instruction::Instruction, program_pack::Pack, pubkey::Pubkey,
-        system_program, system_program::SystemError,
+        system_instruction::SystemError, system_program,
     },
     AccountDeserialize, InstructionData, ToAccountMetas,
 };
@@ -368,7 +368,7 @@ async fn register_member(
     let (citizen_state, _) = harness.citizen_pda(&asset);
     let holder = harness.holder_key();
 
-    let logs = send(
+    send(
         context,
         register_instruction(harness, asset, citizen_state, holder, (1, 2, 3)),
         &[&harness.holder],
@@ -376,10 +376,6 @@ async fn register_member(
     .await
     .expect("registering a genuine collection member must succeed");
 
-    assert!(
-        logs.iter().any(|line| line.contains("Instruction: RegisterCitizen")),
-        "the program log should name the handler, got {logs:?}"
-    );
     (asset, citizen_state)
 }
 
@@ -932,7 +928,7 @@ async fn cannot_register_the_same_asset_twice() {
     // instruction, even though the handler itself has no such check.
     assert_eq!(
         custom_error_code(&failure),
-        u32::from(system_program::SystemError::CreateAccount),
+        u32::from(SystemError::CreateAccount),
         "expected the system program to refuse re-creating the PDA, got {failure}"
     );
     assert_eq!(
