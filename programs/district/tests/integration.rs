@@ -130,7 +130,7 @@ async fn start() -> (ProgramTestContext, Harness) {
     // Registration writes a PDA and emits an event; give it headroom so tests
     // fail on logic rather than on the default 200k per-instruction budget.
     program_test.set_compute_max_units(1_400_000);
-    let mut context = program_test.start_with_context().await;
+    let context = program_test.start_with_context().await;
 
     let harness = Harness {
         authority: Keypair::new(),
@@ -366,7 +366,9 @@ async fn register_member(
     (asset, citizen_state)
 }
 
-fn mint_account(mint: &Pubkey, authority: &Pubkey, supply: u64) -> AccountSharedData {
+/// A mint fixture. The mint's own address is not part of `spl_token::state::Mint`,
+/// so it is not a parameter here.
+fn mint_account(authority: &Pubkey, supply: u64) -> AccountSharedData {
     let mut data = vec![0u8; SplMint::LEN];
     SplMint {
         mint_authority: Option::<Pubkey>::from(*authority).into(),
@@ -424,7 +426,7 @@ async fn setup_training(context: &mut ProgramTestContext, harness: &Harness) -> 
 
     context.set_account(
         &utility_mint,
-        &mint_account(&utility_mint, &payer, TOKEN_SUPPLY),
+        &mint_account(&payer, TOKEN_SUPPLY),
     );
     context.set_account(
         &user_token_account,
@@ -1048,7 +1050,7 @@ async fn refuses_a_foreign_mint_even_when_it_is_burnable() {
 
     context.set_account(
         &foreign_mint,
-        &mint_account(&foreign_mint, &payer, TOKEN_SUPPLY),
+        &mint_account(&payer, TOKEN_SUPPLY),
     );
     context.set_account(
         &foreign_token_account,
