@@ -74,7 +74,16 @@ jobs:
       # toolchain. A real `anchor build` / `anchor test` still has to run
       # before any deployment.
       - name: cargo check
-        run: cargo check --all-targets
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo check --all-targets --message-format=short 2>&1 | tee "$RUNNER_TEMP/cargo-check.log"
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            diagnostics=$(grep -F 'error' "$RUNNER_TEMP/cargo-check.log" | head -n 20 | tr '\n' '; ' || true)
+            echo "::error title=Cargo check::$diagnostics"
+          fi
+          exit "$status"
 
       # Host-side unit tests for the Metaplex Core asset parser in
       # programs/district/src/mpl_core.rs, against synthetic account bytes.
