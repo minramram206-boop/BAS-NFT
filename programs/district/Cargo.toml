@@ -1,0 +1,21 @@
+[package]
+name = "district"
+version = "0.1.0"
+description = "BAS District 01 - Citizen Progression and Token Burn Anchor Program"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "district"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+
+[dependencies]
+anchor-lang = "0.30.1"
+anchor-spl = "0.30.1"
+solana-program = "=1.18.26"

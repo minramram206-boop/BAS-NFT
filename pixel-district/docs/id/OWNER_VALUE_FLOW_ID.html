@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Pixel District — Alur Pemilik, Prize Pool, dan Nilai NFT</title>
+  <style>
+    :root{
+      --ink:#17130f;
+      --paper:#f5edda;
+      --cream:#fff8e7;
+      --mustard:#e5ae27;
+      --gold:#f4ca62;
+      --brown:#6c4927;
+      --green:#bed65b;
+      --red:#ee7155;
+      --blue:#7db6bd;
+      --muted:#8f806a;
+      --line:3px solid var(--ink);
+      --shadow:7px 7px 0 var(--ink);
+    }
+    *{box-sizing:border-box}
+    html{scroll-behavior:smooth}
+    body{
+      margin:0;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+      background:
+        linear-gradient(rgba(23,19,15,.06) 1px,transparent 1px),
+        linear-gradient(90deg,rgba(23,19,15,.06) 1px,transparent 1px),
+        var(--paper);
+      background-size:24px 24px;
+    }
+    header{background:var(--ink);color:var(--cream);padding:34px max(22px,calc((100vw - 1320px)/2));border-bottom:7px solid var(--mustard)}
+    .label{display:inline-block;padding:5px 8px;border:1px solid currentColor;font-size:10px;letter-spacing:1.5px;text-transform:uppercase}
+    h1{font-family:Impact,"Arial Black",sans-serif;font-size:clamp(42px,7vw,90px);line-height:.83;letter-spacing:-2px;text-transform:uppercase;margin:18px 0 15px;max-width:1000px}
+    header p{max-width:800px;color:#ddd1bb;line-height:1.65;font-size:13px}
+    .top-note{background:var(--mustard);color:var(--ink);border:2px solid var(--cream);padding:10px 13px;display:inline-block;font-size:10px;font-weight:bold;transform:rotate(-1deg)}
+    main{max-width:1320px;margin:auto;padding:32px 22px 70px}
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:28px;position:sticky;top:12px;z-index:20;background:rgba(245,237,218,.9);padding:9px;border:2px solid var(--ink);backdrop-filter:blur(8px)}
+    .filter{border:2px solid var(--ink);background:var(--cream);padding:10px 13px;font:700 10px ui-monospace,monospace;text-transform:uppercase;cursor:pointer;box-shadow:3px 3px 0 var(--ink)}
+    .filter.active{background:var(--mustard);transform:translate(2px,2px);box-shadow:1px 1px 0 var(--ink)}
+    .section{margin:48px 0}
+    .section-head{display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:center;margin-bottom:22px}
+    .section-num{font:48px Impact,"Arial Black",sans-serif;background:var(--ink);color:var(--gold);padding:3px 13px;transform:rotate(-2deg)}
+    h2{font:42px/.9 Impact,"Arial Black",sans-serif;text-transform:uppercase;letter-spacing:-1px;margin:0}
+    .section-head p{grid-column:2;margin:0;color:#695e4e;font-size:11px;line-height:1.6}
+
+    .flow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:26px 30px;align-items:stretch}
+    .step{position:relative;border:var(--line);background:var(--cream);padding:17px;min-height:205px;box-shadow:var(--shadow);transition:.18s ease}
+    .step:hover{transform:translateY(-4px)}
+    .step:after{content:"→";position:absolute;right:-28px;top:45%;font:28px Impact,sans-serif;color:var(--brown)}
+    .step:nth-child(4n):after,.step:last-child:after{display:none}
+    .step.user{border-top:10px solid var(--mustard)}
+    .step.chain{border-top:10px solid var(--blue)}
+    .step.value{border-top:10px solid var(--green)}
+    .step.money{border-top:10px solid var(--red)}
+    .step.dim{opacity:.18;filter:grayscale(.85)}
+    .step-no{display:flex;justify-content:space-between;align-items:center;font-size:9px;color:var(--muted);text-transform:uppercase}
+    .step-no b{font:27px Impact,sans-serif;color:var(--ink)}
+    .step h3{font:25px/.95 Impact,"Arial Black",sans-serif;text-transform:uppercase;margin:13px 0 10px}
+    .step p{font-size:10px;line-height:1.6;margin:0;color:#5d5142}
+    .step ul{padding-left:17px;margin:10px 0 0;font-size:9px;line-height:1.7}
+    .pill{display:inline-block;margin-top:11px;padding:4px 6px;border:1px solid var(--ink);background:var(--gold);font-size:8px;font-weight:bold;text-transform:uppercase}
+
+    .merge{margin:26px auto;border:var(--line);background:var(--ink);color:var(--cream);padding:17px 20px;max-width:900px;box-shadow:7px 7px 0 var(--mustard);text-align:center}
+    .merge code{color:var(--gold);font-size:12px;line-height:1.8;white-space:normal}
+
+    .lanes{display:grid;grid-template-columns:1fr 1fr;gap:23px}
+    .lane{border:var(--line);background:var(--cream);box-shadow:var(--shadow);padding:22px;position:relative}
+    .lane h3{font:31px/.9 Impact,"Arial Black",sans-serif;text-transform:uppercase;margin:0 0 16px}
+    .lane.user-lane{border-left:12px solid var(--mustard)}
+    .lane.project-lane{border-left:12px solid var(--blue)}
+    .lane-flow{display:grid;gap:9px}
+    .lane-node{border:2px solid var(--ink);padding:12px;background:white;font-size:10px;line-height:1.5;position:relative}
+    .lane-node:not(:last-child):after{content:"↓";display:block;position:absolute;bottom:-18px;left:50%;font-weight:bold;z-index:2}
+    .lane-node.highlight{background:var(--green);font-weight:bold}
+    .lane-node.cash{background:var(--red);color:var(--ink)}
+    .lane-node.fund{background:var(--gold)}
+
+    .brackets{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;align-items:end;margin-top:25px}
+    .bracket{border:var(--line);background:var(--cream);padding:14px 10px;text-align:center;box-shadow:4px 4px 0 var(--ink);font-size:9px;line-height:1.5}
+    .bracket b{display:block;font:22px Impact,sans-serif;text-transform:uppercase;margin-bottom:5px}
+    .bracket:nth-child(1){height:130px}.bracket:nth-child(2){height:150px;background:#f5dc96}.bracket:nth-child(3){height:175px;background:var(--gold)}.bracket:nth-child(4){height:200px;background:var(--mustard)}.bracket:nth-child(5){height:225px;background:var(--ink);color:var(--cream)}
+    .bracket strong{display:block;font:28px Impact,sans-serif;margin-top:12px}
+
+    .equation{border:var(--line);background:var(--green);box-shadow:var(--shadow);padding:24px;margin-top:24px}
+    .equation h3{font:30px Impact,sans-serif;text-transform:uppercase;margin:0 0 15px}
+    .equation-grid{display:flex;gap:8px;align-items:stretch;flex-wrap:wrap}
+    .factor{border:2px solid var(--ink);background:var(--cream);padding:12px;flex:1;min-width:140px;font-size:10px;text-align:center;display:grid;place-items:center;min-height:65px}
+    .plus{display:grid;place-items:center;font:26px Impact,sans-serif}
+
+    .outcomes{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+    .outcome{border:var(--line);padding:21px;box-shadow:var(--shadow)}
+    .outcome h3{font:30px Impact,sans-serif;text-transform:uppercase;margin:0 0 12px}
+    .outcome.good{background:var(--green)}.outcome.caution{background:var(--gold)}
+    .outcome ul{font-size:10px;line-height:1.75;padding-left:18px}
+    .formula{background:var(--ink);color:var(--cream);padding:15px;font-size:10px;line-height:1.8;margin-top:12px}
+    .formula strong{color:var(--gold)}
+
+    .legend{display:flex;gap:15px;flex-wrap:wrap;margin-top:20px;font-size:9px}
+    .legend span{display:flex;align-items:center;gap:7px}.legend i{width:18px;height:10px;border:1px solid var(--ink)}
+    .footer-note{margin-top:48px;border:3px dashed var(--ink);background:var(--cream);padding:19px;font-size:11px;line-height:1.7}
+    .footer-note strong{font-size:13px}
+
+    @media(max-width:1000px){
+      .flow{grid-template-columns:repeat(2,1fr)}
+      .step:nth-child(4n):after{display:block}.step:nth-child(2n):after{display:none}
+      .brackets{grid-template-columns:repeat(2,1fr);align-items:stretch}.bracket{height:auto!important}.bracket:last-child{grid-column:1/-1}
+    }
+    @media(max-width:700px){
+      header{padding:28px 17px}main{padding:24px 14px 55px}.toolbar{top:4px}
+      .flow,.lanes,.outcomes{grid-template-columns:1fr}.step:after{content:"↓";right:auto;top:auto;bottom:-27px;left:48%}.step:nth-child(2n):after{display:block}.step:last-child:after{display:none}
+      .section-head{grid-template-columns:auto 1fr}.section-num{font-size:35px}.section-head p{grid-column:1/-1}.section h2{font-size:33px}
+      .brackets{grid-template-columns:1fr}.bracket:last-child{grid-column:auto}.equation-grid{display:grid;grid-template-columns:1fr}.plus{height:18px}
+    }
+    @media print{.toolbar{display:none}.step,.lane,.outcome,.equation{box-shadow:none}body{background:white}}
+  </style>
+</head>
+<body>
+  <header>
+    <span class="label">Dokumen internal // Flow v1</span>
+    <h1>Dari pengunjung hingga prize dan nilai citizen</h1>
+    <p>Alur produk, token, progression, kompetisi, prize pool, serta faktor yang dapat membuat Citizen NFT lebih menarik bagi pembeli berikutnya.</p>
+    <div class="top-note">PENTING: penghasilan dan harga jual tidak otomatis atau dijamin. Pengguna harus aktif berkompetisi atau menemukan pembeli.</div>
+    <div class="legend">
+      <span><i style="background:var(--mustard)"></i>User action</span>
+      <span><i style="background:var(--blue)"></i>On-chain action</span>
+      <span><i style="background:var(--green)"></i>Value creation</span>
+      <span><i style="background:var(--red)"></i>Money outcome</span>
+    </div>
+  </header>
+
+  <main>
+    <div class="toolbar" aria-label="Filter visual">
+      <button class="filter active" data-filter="all">Semua alur</button>
+      <button class="filter" data-filter="user">User action</button>
+      <button class="filter" data-filter="chain">On-chain</button>
+      <button class="filter" data-filter="value">Value creation</button>
+      <button class="filter" data-filter="money">Money flow</button>
+    </div>
+
+    <section class="section">
+      <div class="section-head"><span class="section-num">01</span><h2>Alur utama pemilik</h2><p>Dari pertama mengenal Pixel District sampai citizen berkembang, masuk kompetisi, memperoleh prize, atau dijual.</p></div>
+      <div class="flow">
+        <article class="step user"><div class="step-no"><span>User action</span><b>01</b></div><h3>Discover</h3><p>Pengguna datang melalui website, komunitas, marketplace, atau profil citizen yang dibagikan.</p><span class="pill">No wallet required</span></article>
+        <article class="step user"><div class="step-no"><span>User action</span><b>02</b></div><h3>Free preview</h3><p>Pengguna melihat pixel art, role, public scores, public history, dan mencoba authored JSON dialogue.</p><span class="pill">Try before owning</span></article>
+        <article class="step money"><div class="step-no"><span>Acquisition</span><b>03</b></div><h3>Own a citizen</h3><p>Pengguna mint dari Core Candy Machine atau membeli Citizen NFT dari pemilik lain melalui marketplace.</p><span class="pill">Ownership begins</span></article>
+        <article class="step chain"><div class="step-no"><span>On-chain</span><b>04</b></div><h3>Verify ownership</h3><p>Aplikasi memverifikasi official collection, current owner, canonical CitizenState, role, scores, dan unlocks.</p><span class="pill">Official citizen</span></article>
+
+        <article class="step user"><div class="step-no"><span>Owner utility</span><b>05</b></div><h3>Talk & explore</h3><p>Pemilik membuka free-form LLM chat, private relationship memory, dan owner-only district interactions.</p><span class="pill">20 messages / UTC day</span></article>
+        <article class="step value"><div class="step-no"><span>Progress</span><b>06</b></div><h3>Complete activity</h3><p>Citizen menyelesaikan authored mission, puzzle, role task, atau verified district event.</p><span class="pill">Skill + activity</span></article>
+        <article class="step chain"><div class="step-no"><span>On-chain claim</span><b>07</b></div><h3>Earn training credit</h3><p>Verified activity memberi Insight, Bond, atau Craft Training Credit yang melekat pada citizen dan tidak bisa diperdagangkan.</p><span class="pill">Not purchasable</span></article>
+        <article class="step user"><div class="step-no"><span>Token action</span><b>08</b></div><h3>Acquire official token</h3><p>Jika belum memiliki token, pemilik memperolehnya melalui pasar resmi. Aplikasi selalu memverifikasi official mint address.</p><span class="pill">Never send manually</span></article>
+
+        <article class="step chain"><div class="step-no"><span>Atomic transaction</span><b>09</b></div><h3>Train a stat</h3><p>Official token dibakar 100%, satu matching Training Credit dikonsumsi, lalu score naik satu level.</p><span class="pill">Token + effort</span></article>
+        <article class="step value"><div class="step-no"><span>Visible value</span><b>10</b></div><h3>Unlock utility</h3><p>Score tier membuka dialogue, lore, role ability, expression, animation, achievement route, atau competition bracket.</p><span class="pill">Must be visible</span></article>
+        <article class="step value"><div class="step-no"><span>Persistent value</span><b>11</b></div><h3>Build biography</h3><p>Scores, public achievements, titles, permanent cosmetics, role mastery, dan event history mengikuti NFT.</p><span class="pill">Private memory excluded</span></article>
+        <article class="step money"><div class="step-no"><span>Two outcomes</span><b>12</b></div><h3>Compete or sell</h3><p>Pemilik dapat terus bermain dan mengikuti kompetisi, atau menawarkan citizen yang telah berkembang kepada pembeli lain.</p><span class="pill">No guaranteed result</span></article>
+      </div>
+      <div class="merge"><code>MISSION → TRAINING CREDIT + OFFICIAL TOKEN BURN → SCORE → UNLOCK → ACHIEVEMENT → HIGHER BRACKET → ACTIVE COMPETITION</code></div>
+    </section>
+
+    <section class="section">
+      <div class="section-head"><span class="section-num">02</span><h2>Dari trading fee ke prize</h2><p>Prize tidak dicetak dari udara. Pool baru disebut funded setelah creator fees benar-benar diterima dan dialokasikan.</p></div>
+      <div class="lanes">
+        <article class="lane project-lane money">
+          <h3>Funding lane</h3>
+          <div class="lane-flow">
+            <div class="lane-node">Official token diperdagangkan di Pump.fun/PumpSwap.</div>
+            <div class="lane-node">Pump.fun memotong platform trading fees sesuai jadwal platform.</div>
+            <div class="lane-node">Project menerima hanya <b>creator fee share</b> yang berlaku—bukan seluruh trading fee.</div>
+            <div class="lane-node">Creator fees yang benar-benar diterima dicatat oleh treasury.</div>
+            <div class="lane-node fund"><b>Proposed allocation:</b><br>50% prize pool · 30% operations/AI · 20% security reserve</div>
+            <div class="lane-node highlight">50% dipindahkan ke transparent PrizePoolVault.</div>
+            <div class="lane-node">Season pool diumumkan hanya setelah dana berada di vault.</div>
+          </div>
+        </article>
+        <article class="lane user-lane value">
+          <h3>Competition lane</h3>
+          <div class="lane-flow">
+            <div class="lane-node">Owner memilih satu eligible citizen.</div>
+            <div class="lane-node">Level + achievement membuka bracket.</div>
+            <div class="lane-node">Owner menyelesaikan skill-based seasonal challenge.</div>
+            <div class="lane-node">Server-authoritative scoring + anti-cheat + top-winner review.</div>
+            <div class="lane-node">Leaderboard ditutup; result dan funded pool difinalkan.</div>
+            <div class="lane-node cash"><b>Verified winners receive SOL/USDC prize.</b></div>
+            <div class="lane-node highlight">Achievement dan season title ditambahkan ke public NFT biography.</div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head"><span class="section-num">03</span><h2>Competition brackets</h2><p>Level membuka peluang berkompetisi pada tingkat lebih tinggi. Level atau rarity tidak otomatis memenangkan uang.</p></div>
+      <div class="brackets">
+        <div class="bracket"><b>Open</b>Semua eligible citizen<br>maks. 10 pemenang<strong>30%</strong></div>
+        <div class="bracket"><b>Rookie</b>Highest stat 1–3<br>maks. 10 pemenang<strong>10%</strong></div>
+        <div class="bracket"><b>Skilled</b>Highest stat 4–6<br>maks. 7 pemenang<strong>15%</strong></div>
+        <div class="bracket"><b>Elite</b>Highest stat 7–9<br>maks. 5 pemenang<strong>20%</strong></div>
+        <div class="bracket"><b>Master</b>Stat 10 + mastery achievements<br>maks. 3 pemenang<strong>25%</strong></div>
+      </div>
+      <div class="footer-note"><strong>Rarity policy:</strong> rarity memberikan visual, prestige, animation, cosmetic, dan narrative route. Rarity tidak menjadi automatic cash multiplier. Performance menentukan pemenang kompetisi.</div>
+    </section>
+
+    <section class="section">
+      <div class="section-head"><span class="section-num">04</span><h2>Bagaimana NFT menjadi lebih menarik</h2><p>Yang bertambah adalah lapisan utility dan provenance. Harga pasar tetap ditentukan pembeli dan penjual.</p></div>
+      <div class="equation value">
+        <h3>Citizen value stack</h3>
+        <div class="equation-grid">
+          <div class="factor">Handcrafted art<br>& citizen identity</div><div class="plus">+</div>
+          <div class="factor">Role utility<br>& score tiers</div><div class="plus">+</div>
+          <div class="factor">Tokens already<br>consumed</div><div class="plus">+</div>
+          <div class="factor">Time & verified<br>activity</div><div class="plus">+</div>
+          <div class="factor">Scarce titles<br>& achievements</div><div class="plus">+</div>
+          <div class="factor">Permanent unlocks<br>& public history</div>
+        </div>
+      </div>
+      <div class="outcomes" style="margin-top:24px">
+        <article class="outcome good value"><h3>Mengapa buyer tertarik?</h3><ul><li>Menghemat waktu progression.</li><li>Memperoleh score dan role utility yang sudah terbuka.</li><li>Mendapat title/event history yang mungkin tidak tersedia lagi.</li><li>Mendapat permanent animations dan cosmetics.</li><li>Dapat langsung memasuki bracket yang memenuhi syarat.</li><li>Membeli citizen ID atau artwork yang disukai.</li></ul></article>
+        <article class="outcome caution money"><h3>Bagaimana owner mendapat uang?</h3><ul><li>Menang dalam active skill-based competition.</li><li>Menjual NFT jika ada pembeli pada harga yang disepakati.</li><li>Creator economy dapat ditambahkan nanti untuk karya aktif—bukan sekadar holding.</li></ul><div class="formula"><strong>User net outcome</strong><br>= prizes received + resale proceeds<br>− NFT acquisition cost<br>− token acquisition cost<br>− network/market fees</div></article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head"><span class="section-num">05</span><h2>Secondary sale loop</h2><p>Public progression berpindah. Private relationship memory tidak dijual.</p></div>
+      <div class="flow">
+        <article class="step value"><div class="step-no"><span>Seller</span><b>A</b></div><h3>List citizen</h3><p>Owner menawarkan Citizen NFT beserta public profile, scores, achievements, unlocks, dan transaction-verifiable history.</p></article>
+        <article class="step money"><div class="step-no"><span>Market</span><b>B</b></div><h3>Buyer evaluates</h3><p>Buyer menilai artwork, role, progression, utility, history, asking price, dan funded future competitions.</p></article>
+        <article class="step chain"><div class="step-no"><span>On-chain</span><b>C</b></div><h3>Transfer completes</h3><p>Jika buyer setuju, marketplace memproses pembayaran, NFT transfer, dan Core royalty sesuai compatible route.</p></article>
+        <article class="step value"><div class="step-no"><span>New loop</span><b>D</b></div><h3>New owner continues</h3><p>Scores dan public history ikut NFT. Private memory owner lama tetap terpisah. New owner melanjutkan progression.</p></article>
+      </div>
+    </section>
+
+    <div class="footer-note">
+      <strong>Kesimpulan:</strong> alur tidak boleh berhenti pada “selesaikan misi”. Mission menghasilkan Training Credit, progression membuka utility dan bracket, active competition memberi peluang prize, dan seluruh public journey membentuk citizen yang lebih sulit direplikasi. Nilai pasar dan penghasilan tetap bergantung pada aktivitas, kemenangan, dan permintaan nyata—bukan otomatis karena memegang NFT.
+    </div>
+  </main>
+
+  <script>
+    const buttons = [...document.querySelectorAll('.filter')];
+    const cards = [...document.querySelectorAll('.step, .lane, .outcome, .equation')];
+    buttons.forEach(button => button.addEventListener('click', () => {
+      buttons.forEach(item => item.classList.remove('active'));
+      button.classList.add('active');
+      const filter = button.dataset.filter;
+      cards.forEach(card => {
+        const visible = filter === 'all' || card.classList.contains(filter);
+        card.classList.toggle('dim', !visible);
+      });
+    }));
+  </script>
+</body>
+</html>

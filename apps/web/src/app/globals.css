@@ -1,0 +1,105 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    user-select: none;
+    box-sizing: border-box;
+  }
+
+  html, body {
+    background-color: #0c1622;
+    color: #1a2734;
+    width: 100vw;
+    height: 100vh;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+}
+
+/* Authentic Retro Arcade Bezel Frame matching user reference crop */
+.bas-arcade-bezel {
+  border: 2px solid #0f1c29;
+  padding: 7px;
+  background: linear-gradient(to bottom, #dbe8f4 0%, #b8d0e3 20%, #9cb8cf 55%, #83a2bc 85%, #6f90ab 100%);
+  border-radius: 24px;
+  box-shadow: 
+    /* Bold White Highlight on ALL 4 sides: Kiri, Kanan, Atas, Bawah sama-sama menonjol */
+    inset 2.5px 2.5px 0px #ffffff,
+    inset -2.5px -2.5px 0px #ffffff,
+    inset 0 0 0 1px rgba(255, 255, 255, 0.7),
+    0 8px 24px rgba(0, 0, 0, 0.65);
+}
+
+.bas-arcade-screen {
+  border: 2px solid #142434;
+  border-radius: 17px;
+  background-color: #c8dbe9;
+  background-image: 
+    linear-gradient(#b6cce0 1px, transparent 1px),
+    linear-gradient(90deg, #b6cce0 1px, transparent 1px);
+  background-size: 16px 16px;
+  box-shadow: 
+    inset 0 1.5px 0px rgba(255, 255, 255, 0.7),
+    inset 1.5px 0 0px rgba(255, 255, 255, 0.5),
+    inset -1.5px 0 0px rgba(255, 255, 255, 0.5),
+    inset 0 -1.5px 0px rgba(255, 255, 255, 0.5),
+    inset 0 2px 6px rgba(18, 37, 53, 0.35);
+}
+
+@keyframes float-rise {
+  0% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-32px) scale(1.25); }
+}
+
+.floating-stat-fx {
+  position: fixed;
+  font-family: var(--font-heading), sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: #f7d23d;
+  text-shadow: 2px 2px 0 #000;
+  pointer-events: none;
+  z-index: 9999;
+  animation: float-rise 0.8s ease-out forwards;
+}
+
+@keyframes hero-idle-bob {
+  0% { transform: translateY(0px); }
+  100% { transform: translateY(-6px); }
+}
+
+@keyframes arcade-marquee {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
+}
+
+.animate-arcade-marquee {
+  display: inline-block;
+  white-space: nowrap;
+  will-change: transform;
+  animation: arcade-marquee 28s linear infinite;
+}
+
+.animate-arcade-marquee:hover {
+  animation-play-state: paused;
+}
+
+/* Crisp pixel art black text stroke matching mockup buttons */
+.pixel-text-outlined {
+  color: #ffffff;
+  text-shadow:
+    -1px -1px 0 #000000,
+     1px -1px 0 #000000,
+    -1px  1px 0 #000000,
+     1px  1px 0 #000000,
+     0px  1px 0 #000000,
+     0px -1px 0 #000000,
+    -1px  0px 0 #000000,
+     1px  0px 0 #000000,
+     0px  1.5px 0 #000000;
+}

@@ -1,0 +1,11 @@
+{
+  "network": "mainnet-beta",
+  "rpcUrl": "https://api.mainnet-beta.solana.com",
+  "programId": "BASDistr1ct1111111111111111111111111111111",
+  "collectionMint": "BASCo11ect1onMa1nnet111111111111111111111111",
+  "candyMachine": "BASCandyMach1neMa1nnet111111111111111111111",
+  "utilityTokenMint": "BASTokenOff1c1alPumpFun11111111111111111111",
+  "tokenBurnRequired": 1,
+  "maxSupply": 100,
+  "treasuryAddress": "BASTreasuryMa1nnet1111111111111111111111111"
+}

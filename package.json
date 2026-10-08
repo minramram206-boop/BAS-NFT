@@ -1,0 +1,16 @@
+{
+  "name": "bas-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BAS - Living Pixel Art World & Citizen Progression on Solana",
+  "scripts": {
+    "dev": "pnpm --filter @bas/web dev",
+    "build": "pnpm --filter \"@bas/*\" build",
+    "lint": "pnpm --filter \"@bas/*\" lint",
+    "typecheck": "pnpm --filter \"@bas/*\" typecheck",
+    "test": "pnpm --filter \"@bas/*\" test"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}
