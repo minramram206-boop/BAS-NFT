@@ -94,14 +94,20 @@ impl CoreAssetPrefix {
 /// `name`/`uri` cannot shift the result, and a truncated or malformed account
 /// fails closed instead of being read past its end.
 pub fn read_core_asset_prefix(data: &[u8]) -> Result<CoreAssetPrefix> {
+    // All three rejections report `InvalidAssetState`, the §13 error for an
+    // account that is not a readable uncompressed Core asset. One variant
+    // rather than three is deliberate: which check failed tells a caller
+    // something about how the collection is built, and a client only needs to
+    // know that the account is not usable. The three cases stay as three
+    // separate tests below so a regression in any one of them is still caught.
     if data.len() < MIN_ASSET_PREFIX_LEN {
-        return Err(error!(DistrictError::AssetAccountTooSmall));
+        return Err(error!(DistrictError::InvalidAssetState));
     }
     if data[0] != KEY_ASSET_V1 {
-        return Err(error!(DistrictError::NotACoreAsset));
+        return Err(error!(DistrictError::InvalidAssetState));
     }
     if data[UPDATE_AUTHORITY_TAG_OFFSET] != UPDATE_AUTHORITY_COLLECTION {
-        return Err(error!(DistrictError::AssetNotInACollection));
+        return Err(error!(DistrictError::InvalidAssetState));
     }
 
     Ok(CoreAssetPrefix {
@@ -222,7 +228,7 @@ mod tests {
             let data = asset(key, &OWNER, UPDATE_AUTHORITY_COLLECTION, &COLLECTION, "a", "b");
             assert_eq!(
                 error_name(read_core_asset_prefix(&data)),
-                "NotACoreAsset",
+                "InvalidAssetState",
                 "key {key} must be rejected"
             );
         }
@@ -236,7 +242,7 @@ mod tests {
             let data = asset(KEY_ASSET_V1, &OWNER, tag, &OTHER, "a", "b");
             assert_eq!(
                 error_name(read_core_asset_prefix(&data)),
-                "AssetNotInACollection",
+                "InvalidAssetState",
                 "update authority tag {tag} must be rejected"
             );
         }
@@ -248,7 +254,7 @@ mod tests {
         for len in [0usize, 1, 33, 34, MIN_ASSET_PREFIX_LEN - 1] {
             assert_eq!(
                 error_name(read_core_asset_prefix(&full[..len])),
-                "AssetAccountTooSmall",
+                "InvalidAssetState",
                 "a {len} byte account must be rejected"
             );
         }
