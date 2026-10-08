@@ -112,6 +112,11 @@ pnpm verify           # typecheck + test + lint + build
 `pnpm dev:packages` in a second terminal when you are editing a package and
 want `tsc --watch`.
 
+Do not run `pnpm build` while `pnpm dev` is running: both write to
+`apps/web/.next`, and the dev server then fails with a stale
+`Cannot find module './<chunk>.js'`. Stop the dev server, or run
+`rm -rf apps/web/.next` and start it again.
+
 ### Offline production builds
 
 `next/font/google` downloads Silkscreen and Pixelify Sans during `next build`.
