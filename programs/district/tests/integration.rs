@@ -922,13 +922,13 @@ async fn cannot_register_the_same_asset_twice() {
     //
     // The rejection never reaches the handler. The `init` constraint CPIs into
     // the system program to create the PDA, and because the first registration
-    // already created it, the system program answers `CreateAccount` — its error
-    // 0, which is what surfaces here as `Custom(0)`. A citizen therefore cannot
-    // be registered twice, and the counter cannot be inflated by replaying the
-    // instruction, even though the handler itself has no such check.
+    // already created it, the system program refuses with its own error 0,
+    // `AccountAlreadyInUse` — which surfaces here as `Custom(0)`. A citizen
+    // therefore cannot be registered twice, and the counter cannot be inflated
+    // by replaying the instruction, even though the handler has no such check.
     assert_eq!(
         custom_error_code(&failure),
-        u32::from(SystemError::CreateAccount),
+        u32::from(SystemError::AccountAlreadyInUse),
         "expected the system program to refuse re-creating the PDA, got {failure}"
     );
     assert_eq!(
