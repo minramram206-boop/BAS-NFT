@@ -147,7 +147,7 @@ async fn start() -> (ProgramTestContext, Harness) {
     // Registration writes a PDA and emits an event; give it headroom so tests
     // fail on logic rather than on the default 200k per-instruction budget.
     program_test.set_compute_max_units(1_400_000);
-    let context = program_test.start_with_context().await;
+    let mut context = program_test.start_with_context().await;
 
     let harness = Harness {
         authority: Keypair::new(),
