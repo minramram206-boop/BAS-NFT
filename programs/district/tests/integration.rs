@@ -159,8 +159,22 @@ async fn start() -> (ProgramTestContext, Harness) {
         mpl_core: MPL_CORE_PROGRAM_ID,
     };
 
-    // `ProgramTestContext::payer` is prefunded, and it pays for every `init`
-    // in these tests, so the other keypairs need no balance of their own.
+    // Anchor's `init` constraint funds the new account from the account named
+    // as `payer`, not from the transaction fee payer. `InitializeDistrict`
+    // declares `payer = authority` and `RegisterCitizen` declares
+    // `payer = owner`, so both keypairs need their own rent balance or the
+    // system program CPI fails with `insufficient lamports 0, need 1712160`.
+    for account in [
+        harness.authority_key(),
+        harness.holder_key(),
+        harness.impostor_key(),
+    ] {
+        context.set_account(
+            &account,
+            &AccountSharedData::new(10_000_000_000, 0, &system_program::ID),
+        );
+    }
+
     (context, harness)
 }
 
@@ -191,20 +205,24 @@ async fn send(
         context.last_blockhash,
     );
 
-    let with_metadata = context
+    // `process_transaction_with_metadata` comes back with empty `log_messages`
+    // in banks mode, so the logs are taken from a simulation of the same
+    // transaction. Simulating does not commit, and it runs against the same bank
+    // state the execution then sees, so the outcome it reports matches.
+    let simulated = context.banks_client.simulate_transaction(transaction.clone()).await?;
+    let logs = simulated
+        .simulation_details
+        .map(|details| details.logs)
+        .unwrap_or_default();
+    LAST_LOGS.with(|slot| *slot.borrow_mut() = logs.clone());
+
+    let executed = context
         .banks_client
         .process_transaction_with_metadata(transaction)
         .await?;
 
-    // `BanksTransactionResultWithMetadata` carries the execution result plus an
-    // optional metadata blob; the logs are `metadata.log_messages`.
-    let logs = with_metadata
-        .metadata
-        .map(|metadata| metadata.log_messages)
-        .unwrap_or_default();
-    LAST_LOGS.with(|slot| *slot.borrow_mut() = logs.clone());
-
-    match with_metadata.result {
+    // Execution is authoritative; the simulation is only read for its logs.
+    match executed.result {
         Ok(()) => Ok(logs),
         Err(transaction_error) => Err(TransportError::TransactionError(transaction_error)),
     }
@@ -261,12 +279,6 @@ fn initialize_instruction(harness: &Harness, burn_amount: u64) -> Instruction {
 
 async fn initialize(context: &mut ProgramTestContext, harness: &Harness) {
     let instruction = initialize_instruction(harness, BURN_AMOUNT);
-    println!(
-        "initialize_district discriminator+args = {:?}",
-        instruction.data
-    );
-    println!("account metas = {:?}", instruction.accounts);
-
     if let Err(error) = send(context, instruction, &[&harness.authority]).await {
         dump_last_logs("initialize_district");
         panic!("initialize_district must succeed, got {error}");
