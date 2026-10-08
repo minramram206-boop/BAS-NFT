@@ -1,4 +1,4 @@
-import { STAT_MAX } from './constants.ts';
+import { STAT_MAX } from './constants.js';
 
 /** Clamp a raw stat score into the protocol range. */
 export function clampStatScore(score: number): number {

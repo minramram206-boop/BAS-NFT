@@ -11,7 +11,7 @@ import {
   STAT_TYPES,
   clampStatScore,
   isStatType,
-} from '../src/index.ts';
+} from '../dist/index.js';
 
 describe('@bas/chain-client', () => {
   it('defaults to the devnet cluster', () => {

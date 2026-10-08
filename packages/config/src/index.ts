@@ -1,7 +1,7 @@
-import { loadRepoJson } from './repo-json.ts';
-import { NETWORK_CONFIG_FILES, parseNetworkConfig } from './network.ts';
-import { resolveNetwork } from './env.ts';
-import type { DistrictNetworkConfig, NetworkConfigFile, SupportedNetwork } from './types.ts';
+import { loadRepoJson } from './repo-json.js';
+import { NETWORK_CONFIG_FILES, parseNetworkConfig } from './network.js';
+import { resolveNetwork } from './env.js';
+import type { DistrictNetworkConfig, NetworkConfigFile, SupportedNetwork } from './types.js';
 
 export type { DistrictNetworkConfig, SupportedNetwork };
 export {
@@ -11,9 +11,9 @@ export {
   findPlaceholderAddresses,
   parseNetworkConfig,
   validateProductionReadiness,
-} from './network.ts';
-export { DEFAULT_NETWORK, NETWORK_ENV_VAR, resolveNetwork } from './env.ts';
-export { findRepoRoot, loadRepoJson } from './repo-json.ts';
+} from './network.js';
+export { DEFAULT_NETWORK, NETWORK_ENV_VAR, resolveNetwork } from './env.js';
+export { findRepoRoot, loadRepoJson } from './repo-json.js';
 
 function loadConfig(network: SupportedNetwork): DistrictNetworkConfig {
   const file = NETWORK_CONFIG_FILES[network];

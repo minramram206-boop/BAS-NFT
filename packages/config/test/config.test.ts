@@ -14,14 +14,15 @@ import {
   parseNetworkConfig,
   resolveNetwork,
   validateProductionReadiness,
-} from '../src/index.ts';
+} from '../dist/index.js';
+import type { NetworkConfigFile } from '../dist/types.js';
 
 const repoRoot = findRepoRoot();
 
-function readConfigFile(relativePath: string): Record<string, unknown> {
+function readConfigFile<T = NetworkConfigFile>(relativePath: string): T {
   const absolute = join(repoRoot, relativePath);
   assert.ok(existsSync(absolute), `${relativePath} must exist in the repository`);
-  return JSON.parse(readFileSync(absolute, 'utf8')) as Record<string, unknown>;
+  return JSON.parse(readFileSync(absolute, 'utf8')) as T;
 }
 
 describe('@bas/config', () => {

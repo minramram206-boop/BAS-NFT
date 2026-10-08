@@ -5,15 +5,20 @@ import { describe, it } from 'node:test';
 
 import { findRepoRoot } from '@bas/config';
 import {
-  CITIZENS_CONTENT_FILE,
+  ContentValidationError,
   MAX_STAT_SCORE,
   STAT_KEYS,
+  parseCitizen,
+  parseCitizenRoster,
+} from '../dist/index.js';
+import {
+  CITIZENS_CONTENT_FILE,
   getCitizenById,
   getCitizens,
   getDefaultCitizenId,
   loadCitizens,
-} from '../src/index.ts';
-import type { CitizenRecord } from '../src/types.ts';
+} from '../dist/citizens.server.js';
+import type { CitizenRecord } from '../dist/types.js';
 
 const repoRoot = findRepoRoot();
 const publicDir = join(repoRoot, 'apps/web/public');
@@ -29,7 +34,7 @@ function assertValidCitizen(citizen: CitizenRecord): void {
   }
 }
 
-describe('@bas/content', () => {
+describe('@bas/content server loaders', () => {
   it('loads the mandated content file', () => {
     assert.equal(CITIZENS_CONTENT_FILE, 'content/en/citizens.json');
     assert.ok(existsSync(join(repoRoot, CITIZENS_CONTENT_FILE)));
@@ -54,7 +59,7 @@ describe('@bas/content', () => {
     }
   });
 
-  it('hands out a mutable copy so stores never mutate shared content', () => {
+  it('hands out a mutable copy so client state never mutates shared content', () => {
     const copy = loadCitizens();
     const first = copy[0];
     assert.ok(first, 'copy must not be empty');
@@ -69,10 +74,49 @@ describe('@bas/content', () => {
     assert.notEqual(loadCitizens()[0], first);
   });
 
-  it('exposes lookups used by the web app', () => {
+  it('exposes the lookups used by the routes', () => {
     const defaultId = getDefaultCitizenId();
     assert.equal(defaultId, getCitizens()[0]?.id);
     assert.equal(getCitizenById(defaultId)?.id, defaultId);
     assert.equal(getCitizenById(-1), undefined);
+  });
+});
+
+describe('@bas/content validation', () => {
+  const valid = {
+    id: 1,
+    name: 'Pak Tani',
+    code: '#001',
+    role: 'Egg Farmer',
+    roleKey: 'egg_farmer',
+    image: '/characters/1.png',
+    avatar: '/avatars/1.png',
+    intelligence: 12,
+    alignment: 8,
+    composure: 10,
+    registered: true,
+    lore: 'The pioneering cultivator of District 01.',
+  };
+
+  it('accepts a well-formed record', () => {
+    assert.deepEqual(parseCitizen(valid, 0), valid);
+  });
+
+  it('rejects malformed records', () => {
+    assert.throws(() => parseCitizen(null, 0), ContentValidationError);
+    assert.throws(() => parseCitizen({ ...valid, id: 1.5 }, 0), ContentValidationError);
+    assert.throws(() => parseCitizen({ ...valid, name: '' }, 0), ContentValidationError);
+    assert.throws(() => parseCitizen({ ...valid, registered: 'yes' }, 0), ContentValidationError);
+    assert.throws(
+      () => parseCitizen({ ...valid, intelligence: MAX_STAT_SCORE + 1 }, 0),
+      ContentValidationError,
+    );
+    assert.throws(() => parseCitizen({ ...valid, composure: -1 }, 0), ContentValidationError);
+  });
+
+  it('rejects malformed rosters', () => {
+    assert.throws(() => parseCitizenRoster([]), ContentValidationError);
+    assert.throws(() => parseCitizenRoster({}), ContentValidationError);
+    assert.throws(() => parseCitizenRoster([valid, valid]), /duplicate ids/);
   });
 });

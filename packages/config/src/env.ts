@@ -1,4 +1,4 @@
-import type { SupportedNetwork } from './types.ts';
+import type { SupportedNetwork } from './types.js';
 
 /** Environment variable that selects the active cluster. */
 export const NETWORK_ENV_VAR = 'NEXT_PUBLIC_SOLANA_NETWORK';

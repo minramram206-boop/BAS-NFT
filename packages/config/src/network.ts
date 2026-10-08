@@ -1,4 +1,4 @@
-import type { DistrictNetworkConfig, NetworkConfigFile, SupportedNetwork } from './types.ts';
+import type { DistrictNetworkConfig, NetworkConfigFile, SupportedNetwork } from './types.js';
 
 /** Config file backing each supported cluster. */
 export const NETWORK_CONFIG_FILES = {

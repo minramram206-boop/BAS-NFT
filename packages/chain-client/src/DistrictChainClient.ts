@@ -1,5 +1,5 @@
 import { getNetworkConfig, type DistrictNetworkConfig, type SupportedNetwork } from '@bas/config';
-import { DistrictClientError } from './errors.ts';
+import { DistrictClientError } from './errors.js';
 
 /**
  * Typed read-side client for the District program.
