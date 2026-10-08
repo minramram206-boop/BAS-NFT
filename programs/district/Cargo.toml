@@ -21,3 +21,11 @@ default = []
 anchor-lang = { workspace = true }
 anchor-spl = { workspace = true }
 solana-program = { workspace = true }
+
+# Only used by tests/integration.rs, which runs the instructions against
+# solana-program-test's simulated bank. None of this reaches the BPF binary.
+[dev-dependencies]
+solana-program-test = { workspace = true }
+solana-sdk = { workspace = true }
+spl-token = { workspace = true }
+tokio = { workspace = true }

@@ -20,7 +20,10 @@ cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
-test = "pnpm --filter \"./packages/*\" test"
+# Integration tests run against solana-program-test's simulated bank, so they
+# need neither a validator nor the Anchor CLI. `anchor test` still works if you
+# have the toolchain; it just runs this.
+test = "cargo test --manifest-path programs/district/Cargo.toml"
 
 # NOTE
 # The program id above is the public half of a generated, NEVER DEPLOYED

@@ -51,7 +51,7 @@ jobs:
       # (see .env.example) and add the step back.
 
   programs:
-    name: Anchor programs · cargo check + unit tests
+    name: Anchor programs · check, unit tests, integration tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -68,10 +68,19 @@ jobs:
       - name: cargo check
         run: cargo check --all-targets
 
-      # Runs the host-side unit tests, which cover the Metaplex Core asset
-      # parser in programs/district/src/mpl_core.rs. These are plain Rust tests
-      # against synthetic account bytes, so they need no validator and no BPF
-      # build. They are the only automated proof that the collection
-      # membership check reads the right offsets.
-      - name: cargo test
+      # Host-side unit tests for the Metaplex Core asset parser in
+      # programs/district/src/mpl_core.rs, against synthetic account bytes.
+      - name: Unit tests
         run: cargo test --lib -- --nocapture
+
+      # Instruction-level tests in programs/district/tests/integration.rs. They
+      # run the real program logic inside solana-program-test's simulated bank,
+      # so account constraints, PDA derivation, the SPL Token burn CPI and event
+      # emission are all exercised. No validator, no BPF build and no Anchor CLI
+      # are involved, which is why this runs in the same job as cargo check.
+      #
+      # This is not a replacement for `anchor build` + `anchor test` against a
+      # real validator before deployment; it is the automated regression guard
+      # for the security checks in the meantime.
+      - name: Integration tests
+        run: cargo test --test integration -- --nocapture --test-threads=1

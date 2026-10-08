@@ -13,6 +13,14 @@ anchor-lang = "0.30.1"
 anchor-spl = "0.30.1"
 solana-program = "=1.18.26"
 
+# Host-side test harness. Pinned to the exact Solana version so
+# solana-program-test and solana-program resolve to one copy of `Pubkey`.
+solana-program-test = "=1.18.26"
+solana-sdk = "=1.18.26"
+# Same version and feature set anchor-spl 0.30.1 uses.
+spl-token = { version = "4", features = ["no-entrypoint"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
 # BPF builds are size constrained, so optimise for a small binary.
 [profile.release]
 overflow-checks = true

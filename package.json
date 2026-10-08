@@ -22,7 +22,7 @@
     "assets": "node scripts/check-assets.mjs",
     "verify": "pnpm typecheck && pnpm test && pnpm lint && pnpm build",
     "program:check": "cargo check --all-targets",
-    "program:test": "cargo test --lib && anchor test",
+    "program:test": "cargo test --manifest-path programs/district/Cargo.toml",
     "program:build": "anchor build",
     "clean": "pnpm --filter \"@bas/*\" clean && rm -rf apps/web/.next"
   },
