@@ -72,9 +72,9 @@ bukan untuk mengganti persyaratan yang sudah eksplisit.
 - Status: Approved
 - Pemilik keputusan: Engineering
 - Konteks: `programId` pada `config/devnet.json` dan `config/mainnet.json` panjangnya 42 karakter, dan beberapa alamat lain memakai karakter non-base58 (`0` dan `O`). Nilai-nilai ini belum bisa menjadi public key Solana yang sah karena program belum pernah di-deploy.
-- Keputusan: Validasi dibagi dua tingkat. Saat load, `parseNetworkConfig` memastikan setiap field ada, tidak kosong, dan berbentuk public key yang benar: base58, 43–44 karakter, dan tepat 32 byte setelah di-decode. Kesiapan rilis diperiksa terpisah oleh `findPlaceholderAddresses` dan `validateProductionReadiness`, yang menolak alamat yang bentuknya salah **atau** yang nilainya ada di `REPO_PLACEHOLDER_ADDRESSES`. `resolveNetwork` tidak pernah jatuh ke mainnet.
-- Alasan: Alamat yang bentuknya cacat bukan sekadar placeholder, melainkan bug: `declare_id!` memarse program id saat kompilasi sehingga `cargo check` gagal tanpa pesan yang jelas. Membedakan "bentuk benar tapi belum di-deploy" dari "bentuk salah" membuat kedua masalah itu terdeteksi di tempat yang tepat.
-- Dampak: Skrip deployment dan pemeriksaan rilis wajib memanggil `validateProductionReadiness`. Public key yang sama harus ditulis ke `config/devnet.json`, `config/mainnet.json`, `programs/Anchor.toml`, dan `declare_id!`; `pnpm test` gagal kalau keempatnya berbeda.
+- Keputusan: Validasi dibagi dua tingkat. Saat load, `parseNetworkConfig` memastikan setiap field ada, tidak kosong, dan berbentuk public key yang benar: base58, 43–44 karakter, dan tepat 32 byte setelah di-decode; prefix metadata harus HTTPS dan berakhir pada direktori template yang tepat. Kesiapan rilis diperiksa terpisah oleh `findPlaceholderAddresses`, `findPlaceholderConfiguration`, dan `validateProductionReadiness`: gerbang menolak alamat yang nilainya ada di `REPO_PLACEHOLDER_ADDRESSES` serta host metadata contoh/reserved seperti `*.invalid`, `*.test`, dan `example.com`. `resolveNetwork` tidak pernah jatuh ke mainnet.
+- Alasan: Alamat yang bentuknya cacat bukan sekadar placeholder, melainkan bug: `declare_id!` memarse program id saat kompilasi sehingga `cargo check` gagal tanpa pesan yang jelas. Host URI contoh juga harus memblokir rilis: on-chain whitelist yang valid secara sintaksis tetap membuat pendaftaran gagal permanen bila aset produksi tidak pernah bisa memakai host itu.
+- Dampak: Skrip deployment dan pemeriksaan rilis wajib memanggil `validateProductionReadiness`. Public key yang sama harus ditulis ke `config/devnet.json`, `config/mainnet.json`, `programs/Anchor.toml`, dan `declare_id!`; `pnpm test` gagal kalau keempatnya berbeda. Mainnet juga harus memakai origin metadata produksi yang benar.
 - Komponen terkait: `packages/config/src/network.ts`, `packages/config/test/config.test.ts`, `config/*.json`, `programs/Anchor.toml`
 - Menggantikan: —
 
@@ -146,7 +146,7 @@ bukan untuk mengganti persyaratan yang sudah eksplisit.
 - Konteks: Perapian menemukan 74 berkas biner yang tidak dirujuk kode, dua pohon dokumen identik, dan tiga salinan sprite yang sama. Tidak ada pemeriksaan apa pun yang mencegah hal itu terulang. Repositori juga belum memiliki CI, padahal `TECH_STACK_ID.md` §12 Stage 1 mensyaratkannya.
 - Keputusan: Menambahkan `scripts/check-assets.mjs` yang gagal ketika ada berkas di `apps/web/public` yang tidak dirujuk oleh sumber atau konten, dan ketika ada dua berkas publik yang identik byte-per-byte. Skrip ini menjadi `pnpm test` milik `@bas/web`. Menambahkan `.github/workflows/verify.yml` dengan job TypeScript (typecheck, unit test, lint, asset guard) dan job `cargo check` untuk program Anchor.
 - Alasan: Aturan yang hanya tertulis di dokumentasi sudah terbukti tidak cukup; pemeriksaan yang berjalan otomatis membuat duplikasi gagal di CI, bukan ditemukan manual berbulan-bulan kemudian.
-- Dampak: `next build` sengaja tidak dijalankan di CI karena `next/font` mengunduh font dari `fonts.googleapis.com`; alasan dan cara mengaktifkannya kembali dicatat di workflow dan `docs/ARCHITECTURE.md`. Job Rust hanya menjalankan `cargo check`, bukan `anchor build`, karena BPF toolchain tidak tersedia di runner.
+- Dampak: Awalnya `next build` sengaja tidak dijalankan di CI karena font `next/font` mengunduh dari Google. Keterbatasan itu kemudian diselesaikan oleh D-0014 dengan font self-hosted dan build produksi di CI. Job Rust hanya menjalankan tes host, bukan `anchor build`, karena BPF toolchain tidak tersedia di runner.
 - Komponen terkait: `scripts/check-assets.mjs`, `.github/workflows/verify.yml`, `apps/web/package.json`, `package.json`
 - Menggantikan: —
 
@@ -186,3 +186,27 @@ bukan untuk mengganti persyaratan yang sudah eksplisit.
 - Catatan yang ditemukan lewat test ini dan wajib diketahui pengubah berikutnya: `Transaction::new_signed_with_payer` **tidak** menandatangani untuk payer, jadi payer harus ikut daftar keypair; `init` Anchor menarik lamport dari payer yang **dideklarasikan** (`authority` di `InitializeDistrict`, `owner` di `RegisterCitizen`), bukan dari fee payer, sehingga keypair itu butuh airdrop sendiri; instruksi identik yang diulang perlu `warp_to_slot` + blockhash baru atau bank menolaknya sebagai `AlreadyProcessed` sebelum program dipanggil; constraint `owner =` melaporkan `ConstraintOwner` (2004), bukan `AccountOwnedByWrongProgram` (3007); dan pendaftaran ganda ditolak oleh system program (`SystemError::AccountAlreadyInUse`, muncul sebagai `Custom(0)`) lewat CPI `init`, sebelum handler berjalan. `RUSTFLAGS: -A unexpected_cfgs` dan `RUST_LOG: error` dipasang di CI karena warning macro anchor dan log DEBUG runtime menenggelamkan ringkasan test.
 - Komponen terkait: `programs/district/tests/integration.rs`, `programs/district/Cargo.toml`, `Cargo.toml`, `programs/Anchor.toml`, `package.json`, `.github/workflows/verify.yml`
 - Menggantikan: —
+
+## D-0013 — Registry URI template Metaplex Core yang disetujui
+
+- Tanggal: 2026-10-09
+- Status: Implemented (menunggu validasi Rust dan review keamanan)
+- Pemilik keputusan: Security
+- Konteks: SPEC v2 §6.3 mensyaratkan template citizen yang disetujui, tetapi PDA kosong yang diturunkan dari `approved_template_id` tidak membuktikan bahwa URI metadata asset benar-benar berasal dari template itu. Asset dapat berasal dari koleksi yang benar tetapi memakai JSON arbitrer.
+- Keputusan: `initialize_config` membuat akun program-owned `ApprovedTemplate` pada PDA `approved_template` + little-endian template ID, menyimpan versi, bump, ID, dan prefix URI HTTPS yang berakhir `/templates/{id}/`. Prefix ini immutable karena tidak ada instruksi update; `update_config` tidak lagi menerima perubahan template ID. `register_citizen` membaca field URI Borsh `AssetV1` dan menerima hanya satu nama file ASCII aman yang berakhiran `.json` di bawah prefix tersimpan. Slash tambahan, backslash, query, fragment, whitespace, path traversal, URI tidak valid, dan asset yang memakai template ID lain ditolak. `config/*.json` memasok prefix yang sama untuk TypeScript; gerbang produksi menolak host reserved placeholder.
+- Alasan: Validasi harus dilakukan on-chain dari URI yang ditulis Metaplex Core, bukan hanya dari parameter client atau alamat PDA yang bisa diturunkan siapa pun. Prefix exact dan immutable membuat keputusan template dapat diaudit dan menghindari kelemahan pemeriksaan substring.
+- Dampak: Instruksi `initialize_config` menerima prefix dan akun registry tambahan; `register_citizen` menerima akun registry typed; integrasi client/manifes mengikuti perubahan tersebut. Manifest repository memakai `metadata.example.invalid` hanya sebagai fixture, bukan endpoint deploy. Sebelum deploy wajib menggantinya dengan host metadata produksi dan menjalankan gerbang kesiapan. Fixture/unit/integration tests harus membuktikan penerimaan URI yang disetujui dan penolakan URI tak disetujui.
+- Komponen terkait: `programs/district/src/state.rs`, `programs/district/src/mpl_core.rs`, `programs/district/src/lib.rs`, `programs/district/tests/integration.rs`, `packages/config`, `packages/chain-client`
+- Menggantikan: —
+
+## D-0014 — Font pixel self-hosted dan build produksi CI
+
+- Tanggal: 2026-10-09
+- Status: Implemented (install, font-license check, lint, typecheck, tests, dan production build lulus)
+- Pemilik keputusan: Engineering
+- Konteks: `next/font/google` mengambil Silkscreen dan Pixelify Sans dari host Google saat `next build`, sedangkan host tersebut tidak tersedia di runner ini. Workflow meniadakan build produksi dan dokumentasi menyebut opsi mock `NEXT_FONT_GOOGLE_MOCKED_RESPONSES`, tetapi berkas mock yang dirujuk tidak ada dan variabel itu tidak ditangani oleh versi Next yang terpasang.
+- Keputusan: Mengganti unduhan build-time dengan paket pinned `@fontsource/silkscreen` dan `@fontsource/pixelify-sans` versi 5.3.0. UI memuat font Latin yang dibutuhkan secara lokal; `pnpm build` kembali menjadi langkah CI.
+- Alasan: Hasil produksi harus bisa dikompilasi secara deterministik setelah `pnpm install`, tanpa bergantung pada host eksternal yang tidak masuk allowlist jaringan runner.
+- Dampak: Font masuk dalam dependency dan bundle first-party. Teks lisensi OFL beserta copyright notice kedua font disediakan di `apps/web/public/licenses/`, sehingga tetap tersedia pada deploy. Build mengecek bahwa stylesheet dan font files lokal benar-benar terpakai.
+- Komponen terkait: `apps/web/src/app/layout.tsx`, `apps/web/src/app/globals.css`, `apps/web/package.json`, `pnpm-lock.yaml`, `scripts/check-font-licenses.mjs`, `.github/workflows/verify.yml`, `docs/ARCHITECTURE.md`
+- Menggantikan: Pengecualian build produksi di D-0009.

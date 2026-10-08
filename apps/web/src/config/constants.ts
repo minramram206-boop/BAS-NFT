@@ -1,14 +1,13 @@
 import { MAX_STAT_SCORE, STAT_KEYS } from '@bas/content';
 import type { StatKey } from '@bas/content';
+import { MESSAGES, formatMessage } from '@/messages';
 
 /**
- * Presentation constants and copy for the District 01 shell.
- * Keeping them in one module stops the same strings, numbers and colours from
- * being re-typed in every component.
+ * Presentation constants and protocol-adjacent values for the District 01 UI.
+ * Public-facing copy lives only in `src/messages/en.json`.
  *
  * This module runs in the browser, so it must not import Node-only packages.
- * Values that mirror the on-chain protocol are verified by
- * `packages/chain-client/test/chain-client.test.ts`.
+ * Values mirroring the program are verified by `@bas/chain-client` tests.
  */
 
 /** Maximum score of a citizen stat, mirrored from `programs/district`. */
@@ -23,16 +22,7 @@ export const STAT_METER_SEGMENTS = 5;
 /** Citizens displayed per registry page (3x3 grid). */
 export const REGISTRY_PAGE_SIZE = 9;
 
-/**
- * Remaining slots shown by the mock header before any mint.
- *
- * The configured collection size comes from `config/<network>.json` and is
- * exposed as `DistrictTelemetry.maxSupply`; this value is only the starting
- * point of the client-side session counter until the program is wired up.
- */
-export const INITIAL_SUPPLY_COUNT = 100;
-
-/** DOM id of the registry section, used by the "LIHAT WARGA" action. */
+/** DOM id of the registry section, used by the browse-citizens action. */
 export const REGISTRY_SECTION_ID = 'citizen-registry-section';
 
 /** Movement tuning of the 2.5D plaza stage, in stage pixel units. */
@@ -57,66 +47,45 @@ export const STAGE_MOVE_KEYS = {
   down: ['ArrowDown', 's', 'S'],
 } as const;
 
-/** Key that returns from the dojo to the district. */
-export const BACK_TO_DISTRICT_HOTKEY = '3';
+/** Key that returns from training to the district. */
+export const BACK_TO_DISTRICT_HOTKEY = 'Escape';
+export const BACK_TO_DISTRICT_HOTKEY_LABEL = MESSAGES.training.backHotkeyLabel;
 
 export interface StatMeta {
-  /** Full stat name as shown on cards. */
+  /** Public English label; never expose the internal stat key. */
   label: string;
-  /** Three letter abbreviation used in buttons and badges. */
+  /** Public English text used in compact badges. */
   shortLabel: string;
-  /** Header of the large dojo drill button. */
+  /** English title of the training action. */
   actionLabel: string;
   emoji: string;
-  /** Emoji used by the dojo attribute list, when it differs from `emoji`. */
   dojoEmoji?: string | undefined;
-  /** Meter value colour. */
   meterColorClass: string;
-  /** Attribute row accent colour. */
   valueColorClass: string;
-  /** Gradient of the large dojo drill button. */
   actionButtonClass: string;
-  /** Subtitle colour of the large dojo drill button. */
   actionHintClass: string;
-  /**
-   * Keyboard shortcut of the dojo drill.
-   * Only the stats that the dojo exposes as a drill have a hotkey; the
-   * remaining key returns to the district.
-   */
   hotkey?: string | undefined;
 }
 
 export const STAT_META: Record<StatKey, StatMeta> = {
   intelligence: {
-    label: 'INTELLIGENCE (INT)',
-    shortLabel: 'INT',
-    actionLabel: 'LATIH INTELLIGENCE',
-    emoji: '📖',
+    ...MESSAGES.stats.intelligence,
     meterColorClass: 'bg-[#3c76ad]',
     valueColorClass: 'text-[#286396]',
     actionButtonClass:
       'bg-gradient-to-b from-[#5588b9] via-[#4374a3] to-[#33618d] border-[#183248] shadow-[inset_0_1.5px_0_rgba(255,255,255,0.6),0_3px_0_#183248] active:shadow-[inset_0_1.5px_0_rgba(255,255,255,0.6)]',
     actionHintClass: 'text-sky-200',
-    hotkey: '1',
   },
   alignment: {
-    label: 'ALIGNMENT (ALN)',
-    shortLabel: 'ALN',
-    actionLabel: 'LATIH ALIGNMENT',
-    emoji: '⚖',
+    ...MESSAGES.stats.alignment,
     meterColorClass: 'bg-[#4ea059]',
     valueColorClass: 'text-[#8e6822]',
     actionButtonClass:
       'bg-gradient-to-b from-[#c89955] via-[#b38541] to-[#9c7130] border-[#432c12] shadow-[inset_0_1.5px_0_rgba(255,255,255,0.6),0_3px_0_#432c12] active:shadow-[inset_0_1.5px_0_rgba(255,255,255,0.6)]',
     actionHintClass: 'text-amber-200',
-    hotkey: '2',
   },
-  composure: {
-    label: 'COMPOSURE (CMP)',
-    shortLabel: 'CMP',
-    actionLabel: 'LATIH COMPOSURE',
-    emoji: '🤝',
-    dojoEmoji: '💚',
+  compute: {
+    ...MESSAGES.stats.compute,
     meterColorClass: 'bg-[#8c5897]',
     valueColorClass: 'text-[#378b4b]',
     actionButtonClass:
@@ -125,43 +94,43 @@ export const STAT_META: Record<StatKey, StatMeta> = {
   },
 };
 
-/**
- * Broadcast and status copy shared by both headers and the status bar.
- * Every cluster-specific value is passed in from `DistrictTelemetry`, so the
- * shell can never advertise a program id or supply that the configuration does
- * not actually contain.
- */
+/** Broadcast labels supplied from the canonical English message catalog. */
 export const BROADCAST = {
-  districtTag: '⚡ LIVE BROADCAST:',
-  trainingTag: '⚔ DRILL ACTIVE:',
+  districtTag: MESSAGES.broadcast.districtTag,
+  trainingTag: MESSAGES.broadcast.trainingTag,
 } as const;
 
-export function districtBroadcastMessage(programShort: string, maxSupply: number): string {
-  return (
-    `BURN $DIST TO LEVEL UP STATS • PREPARE FOR DOJO TRAINING • ` +
-    `PROGRAM ${programShort} • ${maxSupply} CITIZEN SLOTS • SOLANA VERIFIED 🛡`
-  );
+export function districtBroadcastMessage(
+  active: number,
+  maxSupply: number,
+  network: string,
+): string {
+  return formatMessage(MESSAGES.broadcast.districtMessage, {
+    active,
+    supply: maxSupply,
+    network,
+  });
 }
 
 export function trainingBroadcastMessage(): string {
-  return (
-    `SELECT ANY CITIZEN BELOW • CLICK STAT BUTTON TO TRAIN INT / ALN / CMP • ` +
-    `MAX STAT ${MAX_STAT_SCORE} PER CITIZEN • BAS ARCADE VERIFIED 🛡`
-  );
+  return formatMessage(MESSAGES.broadcast.trainingMessage, { maxScore: MAX_STAT_SCORE });
 }
 
-export function statusBarMessage(programShort: string): string {
-  return `◇ DISTRICT ONLINE • PROGRAM: ${programShort} • SOLANA VERIFIED ◇`;
+export function statusBarMessage(network: string, programShort: string): string {
+  return formatMessage(MESSAGES.status.previewNotice, {
+    network,
+    program: programShort,
+  });
 }
 
 /** Static UI labels reused across views. */
 export const UI = {
-  districtName: 'DISTRICT 01',
-  trainingName: 'TRAINING DOJO',
-  dojoBadge: 'DOJO SIMULATION',
-  backToDistrict: '🏰 KEMBALI KE DISTRICT 01',
-  backToDistrictLabel: 'KEMBALI KE DISTRICT 01',
-  switchToDojo: '⚔ DOJO',
-  burnTokenSymbol: '$DIST',
-  registryHeading: 'REGISTRI',
+  districtName: MESSAGES.app.districtName,
+  trainingName: MESSAGES.app.trainingName,
+  dojoBadge: MESSAGES.app.trainingBadge,
+  backToDistrict: MESSAGES.app.backToDistrict,
+  backToDistrictLabel: MESSAGES.app.backToDistrict,
+  districtHub: MESSAGES.app.districtHub,
+  burnTokenSymbol: MESSAGES.app.burnTokenSymbol,
+  registryHeading: MESSAGES.app.registryHeading,
 } as const;

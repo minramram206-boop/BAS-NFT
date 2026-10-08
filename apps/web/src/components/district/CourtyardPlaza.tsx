@@ -4,6 +4,7 @@ import React, { useRef } from 'react';
 import type { CitizenRecord } from '@bas/content';
 import { cn } from '@/lib/utils/cn';
 import { STAGE } from '@/config/constants';
+import { MESSAGES } from '@/messages';
 import { useStageWalk } from '@/lib/hooks/useStageWalk';
 import { PixelSprite } from '@/components/ui/PixelSprite';
 
@@ -29,12 +30,12 @@ export const CourtyardPlaza: React.FC<CourtyardPlazaProps> = ({ citizen }) => {
     <div
       ref={stageRef}
       onClick={handleStageClick}
-      title="Klik di ubin atau gunakan keyboard [W,A,S,D] / Arrow keys untuk menggerakkan warga di Plaza 2.5D"
+      title={MESSAGES.district.stageTitle}
       className="group relative mx-auto h-[360px] w-full cursor-pointer select-none overflow-hidden rounded-xl border-2 border-[#182635] bg-[#9bb2c5] shadow-inner md:h-[400px] lg:h-[430px]"
     >
       <PixelSprite
         src={STAGE.backgroundImage}
-        alt="District 01 courtyard plaza"
+        alt={MESSAGES.district.stageAlt}
         fill
         sizes="100vw"
         priority
@@ -74,11 +75,11 @@ export const CourtyardPlaza: React.FC<CourtyardPlazaProps> = ({ citizen }) => {
 
       <span className="pointer-events-none absolute top-2 left-2 flex items-center gap-1.5 rounded border border-[#274059] bg-[#122230]/90 px-2 py-0.5 font-heading text-[9px] font-extrabold text-[#74beff] shadow">
         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#1ae27c]" />
-        <span>PLAZA 2.5D</span>
+        <span>{MESSAGES.district.stageLabel}</span>
       </span>
 
       <span className="pointer-events-none absolute right-2 bottom-2 rounded border border-[#274059] bg-[#122230]/90 px-2 py-0.5 font-heading text-[9px] text-[#dfae3e] shadow transition-colors group-hover:text-amber-300">
-        WASD / KLIK
+        {MESSAGES.district.stageControls}
       </span>
     </div>
   );

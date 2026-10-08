@@ -5,24 +5,30 @@ import { getNetworkConfig, resolveNetwork } from '@bas/config';
 /**
  * Cluster telemetry rendered by the shell.
  *
- * Built on the server from `config/<network>.json` through `@bas/config`, so
- * the header and status bar can never advertise a cluster, program id, or
- * supply that disagrees with the configuration the app actually runs on.
+ * Built on the server from `config/<cluster>.json` through `@bas/config`, so the
+ * header, price hint and status bar cannot drift from the manifest the app
+ * actually runs against.
  */
 export interface DistrictTelemetry {
   /** `devnet` or `mainnet-beta`, as resolved from the environment. */
   network: string;
   /** Uppercase cluster label for the header pill, e.g. `SOLANA DEVNET`. */
   networkLabel: string;
-  /** Program id exactly as configured. */
+  /** District program id exactly as configured. */
   programId: string;
-  /** Abbreviated program id for tickers, e.g. `BASD...1111`. */
+  /** Abbreviated program id for tickers. */
   programShort: string;
   rpcUrl: string;
-  /** Collection supply configured for the cluster. */
+  /** Mock collection supply for the UI preview. */
   maxSupply: number;
-  /** Utility tokens burned per training, in raw token units. */
-  tokenBurnRequired: number;
+  /** Base training cost, a decimal string of raw token atoms. */
+  baseTrainingCostAtoms: string;
+  /** Official token decimals; devnet mirrors mainnet. */
+  tokenDecimals: number;
+  /** Maximum score (SPEC v2 §7). */
+  maxScore: number;
+  /** Official token burn share, in basis points (10000 = 100%). */
+  burnBps: number;
   /** Abbreviated utility token mint. */
   utilityTokenShort: string;
 }
@@ -38,13 +44,16 @@ export function loadDistrictTelemetry(): DistrictTelemetry {
   const config = getNetworkConfig(network);
 
   return {
-    network: config.network,
-    networkLabel: `SOLANA ${config.network.replace('-beta', '').toUpperCase()}`,
-    programId: config.programId,
-    programShort: abbreviate(config.programId),
+    network: config.cluster,
+    networkLabel: `SOLANA ${config.cluster.replace('-beta', '').toUpperCase()}`,
+    programId: config.districtProgramId,
+    programShort: abbreviate(config.districtProgramId),
     rpcUrl: config.rpcUrl,
     maxSupply: config.maxSupply,
-    tokenBurnRequired: config.tokenBurnRequired,
+    baseTrainingCostAtoms: config.baseTrainingCostAtoms,
+    tokenDecimals: config.tokenDecimals,
+    maxScore: config.maxScore,
+    burnBps: config.burnBps,
     utilityTokenShort: abbreviate(config.utilityTokenMint, 4, 4),
   };
 }

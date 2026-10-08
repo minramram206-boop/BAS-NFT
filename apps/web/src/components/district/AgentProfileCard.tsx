@@ -2,7 +2,8 @@
 
 import React from 'react';
 import type { CitizenRecord } from '@bas/content';
-import { STAT_ORDER, UI } from '@/config/constants';
+import { STAT_ORDER } from '@/config/constants';
+import { MESSAGES } from '@/messages';
 import { PixelSprite } from '@/components/ui/PixelSprite';
 import { StatMeter } from '@/components/ui/StatMeter';
 import { TrainStatButton } from '@/components/ui/TrainStatButton';
@@ -22,10 +23,11 @@ export const AgentProfileCard: React.FC<AgentProfileCardProps> = ({ citizen }) =
     <header className="flex items-center justify-between border-b border-[#a6bfd4] pb-1.5">
       <span className={TAB_CLASS}>
         <span className="text-xs text-white">★</span>
-        <span className="font-heading text-xs font-bold tracking-wider">AGENT</span>
+        <span className="font-heading text-xs font-bold tracking-wider">{MESSAGES.district.agentLabel}</span>
       </span>
-      <span className="font-heading text-[11px] font-bold text-[#102232]">
-        KODE: <span className="font-pixel text-xs">{citizen.code}</span>
+      <span className="flex items-center gap-2 font-heading text-[10px] font-bold text-[#102232]">
+        <span>{citizen.role}</span>
+        <span>{MESSAGES.district.codeLabel} <span className="font-pixel text-xs">{citizen.code}</span></span>
       </span>
     </header>
 
@@ -53,7 +55,7 @@ export const AgentProfileCard: React.FC<AgentProfileCardProps> = ({ citizen }) =
               : 'border border-[#5a2e0a] bg-[#cb7933]'
           }`}
         >
-          {citizen.registered ? 'TERDAFTAR' : 'BELUM TERDAFTAR'}
+          {citizen.registered ? MESSAGES.district.registered : MESSAGES.district.notRegistered}
         </div>
       </div>
 
@@ -74,7 +76,7 @@ export const AgentProfileCard: React.FC<AgentProfileCardProps> = ({ citizen }) =
             !
           </span>
           <span className="font-pixel text-[11px] font-semibold text-[#102232] md:text-xs">
-            skor naik hanya dengan burn token &bull; {UI.burnTokenSymbol}
+            {MESSAGES.district.previewUpgradeNotice}
           </span>
         </div>
 

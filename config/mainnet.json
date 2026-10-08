@@ -1,11 +1,20 @@
 {
-  "network": "mainnet-beta",
-  "rpcUrl": "https://api.mainnet-beta.solana.com",
-  "programId": "D8HGhXUqHx7UXysCMEBDzvd3FS4XGEMNjCR6Eaj8CRbV",
-  "collectionMint": "BASCo11ect1onMa1nnet111111111111111111111111",
+  "cluster": "mainnet-beta",
+  "districtProgramId": "D8HGhXUqHx7UXysCMEBDzvd3FS4XGEMNjCR6Eaj8CRbV",
+  "coreCollection": "BASCo11ect1onMa1nnet111111111111111111111111",
   "candyMachine": "BASCandyMach1neMa1nnet111111111111111111111",
+  "candyGuard": "DLS5g62wAFpTr8sdeE2roEj3rm6cujo6HyuimDUWJTET",
   "utilityTokenMint": "6yv2K6n1pczbSdWNZGfEvkQuS5rgHhq5RwKD64PQ7TcG",
-  "tokenBurnRequired": 1,
+  "solTreasury": "BASTreasuryMa1nnet1111111111111111111111111",
+  "royaltyRecipient": "9J5uTtsPvFKGLEyzw9NsRkrDACFMNJxEQu3nEMXM37su",
+  "missionAuthority": "AeRoEz5UbbNf6Y3n1t3V8KNtgb7oWTXZAeYVB8osEvF6",
+  "maxScore": 10,
+  "baseTrainingCostAtoms": "100000000",
+  "burnBps": 10000,
+  "dailyMessageLimit": 20,
+  "rpcUrl": "https://api.mainnet-beta.solana.com",
+  "tokenDecimals": 6,
+  "approvedTemplateId": 7,
   "maxSupply": 100,
-  "treasuryAddress": "BASTreasuryMa1nnet1111111111111111111111111"
+  "approvedTemplateUriPrefix": "https://metadata.example.invalid/templates/7/"
 }

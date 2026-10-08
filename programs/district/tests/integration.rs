@@ -45,8 +45,9 @@ use district::{
     mpl_core::{self, MPL_CORE_PROGRAM_ID},
     roles::{CitizenRole, ROLE_COUNT, ROLE_TEMPLATES},
     state::{
-        ClaimReceipt, CitizenStat, CitizenState, DistrictConfig, CITIZEN_STATE_VERSION,
-        DISTRICT_CONFIG_VERSION, STAT_MAX, TIER_1_SCORE, TIER_2_SCORE, TIER_3_SCORE,
+        ApprovedTemplate, ClaimReceipt, CitizenStat, CitizenState, DistrictConfig,
+        APPROVED_TEMPLATE_VERSION, CITIZEN_STATE_VERSION, DISTRICT_CONFIG_VERSION, STAT_MAX,
+        TIER_1_SCORE, TIER_2_SCORE, TIER_3_SCORE,
     },
     InitializeConfigArgs, MissionClaimArgs, UpdateConfigArgs,
 };
@@ -67,6 +68,9 @@ const BASE_TRAINING_COST: u64 = 100;
 
 /// Template identifier the district approves (§6.3 item 3).
 const APPROVED_TEMPLATE_ID: u32 = 7;
+/// Immutable URI prefix stored in the approved-template PDA.
+const APPROVED_TEMPLATE_URI_PREFIX: &str =
+    "https://metadata.example.invalid/templates/7/";
 
 const TOKEN_DECIMALS: u8 = 9;
 const TOKEN_SUPPLY: u64 = 1_000_000_000;
@@ -151,7 +155,7 @@ impl Harness {
         self.utility_mint.pubkey()
     }
 
-    /// The account whose address proves the approved template (§6.3 item 3).
+    /// Immutable URI registry PDA for the approved template (§6.3 item 3).
     fn template_key(&self) -> Pubkey {
         approved_template_address(APPROVED_TEMPLATE_ID)
     }
@@ -344,6 +348,20 @@ async fn read_config(context: &mut ProgramTestContext, harness: &Harness) -> Dis
     DistrictConfig::try_deserialize(&mut &account.data[..]).expect("the config must deserialize")
 }
 
+async fn read_approved_template(
+    context: &mut ProgramTestContext,
+    harness: &Harness,
+) -> ApprovedTemplate {
+    let account = context
+        .banks_client
+        .get_account(harness.template_key())
+        .await
+        .expect("a transport error")
+        .expect("the approved-template registry must exist");
+    ApprovedTemplate::try_deserialize(&mut &account.data[..])
+        .expect("the approved-template registry must deserialize")
+}
+
 async fn read_citizen(context: &mut ProgramTestContext, citizen_state: Pubkey) -> CitizenState {
     let account = context
         .banks_client
@@ -367,12 +385,20 @@ async fn read_claim_receipt(context: &mut ProgramTestContext, receipt: Pubkey) -
 /// Build the bytes of a Metaplex Core `AssetV1` account, using the same offsets
 /// the unit tests in `src/mpl_core.rs` assert.
 fn core_asset(owner: &Pubkey, collection: &Pubkey) -> Vec<u8> {
+    core_asset_with_uri(
+        owner,
+        collection,
+        "https://metadata.example.invalid/templates/7/citizen-13.json",
+    )
+}
+
+fn core_asset_with_uri(owner: &Pubkey, collection: &Pubkey, uri: &str) -> Vec<u8> {
     let mut data = Vec::new();
     data.push(mpl_core::KEY_ASSET_V1);
     data.extend_from_slice(owner.as_ref());
     data.push(mpl_core::UPDATE_AUTHORITY_COLLECTION);
     data.extend_from_slice(collection.as_ref());
-    for text in ["Citizen #13", "https://bas.example/citizen/13.json"] {
+    for text in ["Citizen #13", uri] {
         data.extend_from_slice(&(text.len() as u32).to_le_bytes());
         data.extend_from_slice(text.as_bytes());
     }
@@ -520,6 +546,7 @@ fn initialize_config_instruction(harness: &Harness, start_paused: bool) -> Instr
         program_id: district::ID,
         accounts: accounts::InitializeConfig {
             config: harness.config_key(),
+            approved_template: harness.template_key(),
             admin: harness.admin_key(),
             system_program: system_program::ID,
         }
@@ -530,6 +557,7 @@ fn initialize_config_instruction(harness: &Harness, start_paused: bool) -> Instr
                 sol_treasury: harness.sol_treasury,
                 collection_mint: harness.collection_key(),
                 approved_template_id: APPROVED_TEMPLATE_ID,
+                approved_template_uri_prefix: APPROVED_TEMPLATE_URI_PREFIX.to_string(),
                 base_training_cost: BASE_TRAINING_COST,
                 start_paused,
             },
@@ -594,7 +622,7 @@ fn register_instruction(harness: &Harness, asset: Pubkey, owner: Pubkey, role: u
             config: harness.config_key(),
             asset,
             mpl_core_program: harness.mpl_core_key(),
-            template_id: harness.template_key(),
+            approved_template: harness.template_key(),
             citizen_state: harness.citizen_pda(&asset).0,
             owner,
             system_program: system_program::ID,
@@ -857,6 +885,18 @@ async fn initialize_writes_the_config_pda() {
     assert_eq!(config.collection_mint, harness.collection_key());
     assert_eq!(config.approved_template_id, APPROVED_TEMPLATE_ID);
     assert_eq!(config.base_training_cost, BASE_TRAINING_COST);
+    let template = read_approved_template(&mut context, &harness).await;
+    assert_eq!(template.version, APPROVED_TEMPLATE_VERSION);
+    assert_eq!(template.template_id, APPROVED_TEMPLATE_ID);
+    assert_eq!(template.uri_prefix, APPROVED_TEMPLATE_URI_PREFIX);
+    assert_eq!(
+        template.bump,
+        Pubkey::find_program_address(
+            &[b"approved_template", &APPROVED_TEMPLATE_ID.to_le_bytes()],
+            &district::ID,
+        )
+        .1
+    );
     assert_eq!(config.total_registered_citizens, 0);
     assert!(!config.is_paused);
     assert_eq!(
@@ -1079,7 +1119,6 @@ async fn update_config_changes_operational_parameters_only() {
             UpdateConfigArgs {
                 mission_authority: new_mission_authority,
                 sol_treasury: new_treasury,
-                approved_template_id: APPROVED_TEMPLATE_ID + 1,
                 base_training_cost: BASE_TRAINING_COST * 2,
             },
         ),
@@ -1091,8 +1130,13 @@ async fn update_config_changes_operational_parameters_only() {
     let config = read_config(&mut context, &harness).await;
     assert_eq!(config.mission_authority, new_mission_authority);
     assert_eq!(config.sol_treasury, new_treasury);
-    assert_eq!(config.approved_template_id, APPROVED_TEMPLATE_ID + 1);
+    assert_eq!(config.approved_template_id, APPROVED_TEMPLATE_ID);
     assert_eq!(config.base_training_cost, BASE_TRAINING_COST * 2);
+    assert_eq!(
+        read_approved_template(&mut context, &harness).await.uri_prefix,
+        APPROVED_TEMPLATE_URI_PREFIX,
+        "the approved-template registry is immutable after initialization"
+    );
 
     // §17: devnet and mainnet differ by addresses and config, not by
     // architecture. An instruction that could rewrite the collection, the mint
@@ -1477,79 +1521,41 @@ async fn rejects_an_asset_that_is_not_owned_by_the_core_program() {
 }
 
 #[tokio::test]
-async fn rejects_an_unapproved_template_identifier() {
+async fn rejects_an_asset_with_an_unapproved_metadata_template_uri() {
     let (mut context, harness) = start().await;
     bootstrap(&mut context, &harness).await;
 
-    // §6.3 item 3. The approval is an address derived from the config's
-    // template id, so a client cannot substitute one of its own: only this
-    // program can produce that address and no instruction creates an account
-    // there.
-    let asset = install_member(&mut context, &harness);
-    let mut instruction = register_instruction(
-        &harness,
-        asset,
-        harness.holder_key(),
-        CitizenRole::Pioneer as u8,
-    );
-    let wrong_template = approved_template_address(APPROVED_TEMPLATE_ID + 1);
-    for meta in instruction.accounts.iter_mut() {
-        if meta.pubkey == harness.template_key() {
-            meta.pubkey = wrong_template;
-        }
-    }
-
-    // The identifier is a PDA derived from the config, and Anchor re-derives it
-    // as a `seeds` constraint before the handler runs, so a substituted key is
-    // reported by the framework rather than by a §13 code. That is the point of
-    // doing it as a constraint: the check cannot be reached around.
-    let result = send(&mut context, instruction, &[&harness.holder]).await;
-    let failure = result.expect_err("an unapproved template must be refused");
-    assert_eq!(
-        custom_error_code(&failure),
-        u32::from(anchor_lang::error::ErrorCode::ConstraintSeeds),
-        "expected ConstraintSeeds (2006), got {failure}"
-    );
-    assert_eq!(read_config(&mut context, &harness).await.total_registered_citizens, 0);
-
-    // And changing the approved template changes which address is accepted,
-    // which is an admin decision rather than a client one.
-    send(
+    // The Core account is otherwise valid and belongs to the configured
+    // collection, but its immutable URI names template 8 instead of template 7.
+    let asset = Pubkey::new_unique();
+    install_asset(
         &mut context,
-        update_config_instruction(
-            &harness,
-            UpdateConfigArgs {
-                mission_authority: harness.mission_authority_key(),
-                sol_treasury: harness.sol_treasury,
-                approved_template_id: APPROVED_TEMPLATE_ID + 1,
-                base_training_cost: BASE_TRAINING_COST,
-            },
-        ),
-        &[&harness.admin],
-    )
-    .await
-    .expect("the admin must be able to move the approved template");
-
-    // The registration below is byte-identical to the one that was just refused,
-    // so without a new blockhash it would share a signature and the bank would
-    // answer AlreadyProcessed without invoking the program.
-    advance(&mut context, &harness).await;
-
-    let mut instruction = register_instruction(
         &harness,
         asset,
-        harness.holder_key(),
-        CitizenRole::Pioneer as u8,
+        core_asset_with_uri(
+            &harness.holder_key(),
+            &harness.collection_key(),
+            "https://metadata.example.invalid/templates/8/citizen-13.json",
+        ),
     );
-    for meta in instruction.accounts.iter_mut() {
-        if meta.pubkey == harness.template_key() {
-            meta.pubkey = wrong_template;
-        }
-    }
-    send(&mut context, instruction, &[&harness.holder])
-        .await
-        .expect("the newly approved template must now be accepted");
-    assert_eq!(read_config(&mut context, &harness).await.total_registered_citizens, 1);
+
+    let result = send(
+        &mut context,
+        register_instruction(&harness, asset, harness.holder_key(), CitizenRole::Pioneer as u8),
+        &[&harness.holder],
+    )
+    .await;
+    expect_error_code(result, DistrictError::InvalidAssetState);
+    assert_eq!(read_config(&mut context, &harness).await.total_registered_citizens, 0);
+    assert!(
+        context
+            .banks_client
+            .get_account(harness.citizen_pda(&asset).0)
+            .await
+            .expect("a transport error")
+            .is_none(),
+        "an unapproved URI must not create CitizenState"
+    );
 }
 
 #[tokio::test]

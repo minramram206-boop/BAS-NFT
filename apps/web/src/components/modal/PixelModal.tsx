@@ -2,12 +2,12 @@
 
 import React from 'react';
 import { useCloseModal, useModalState } from '@/stores/selectors';
+import { MESSAGES } from '@/messages';
 
 /**
  * Global arcade dialog.
  *
- * The message body is trusted copy produced by the store, never user input or
- * chain data; it is rendered as markup to keep the existing retro formatting.
+ * Messages are plain English text, never markup, wallet data or chain data.
  */
 export const PixelModal: React.FC = () => {
   const modal = useModalState();
@@ -32,17 +32,16 @@ export const PixelModal: React.FC = () => {
           {modal.title}
         </div>
 
-        <div
-          className="font-pixel text-xs leading-relaxed text-[#27384a]"
-          dangerouslySetInnerHTML={{ __html: modal.message }}
-        />
+        <p className="whitespace-pre-line font-pixel text-xs leading-relaxed text-[#27384a]">
+          {modal.message}
+        </p>
 
         <button
           type="button"
           onClick={closeModal}
           className="mt-2 self-center rounded-lg border-2 border-[#1a3854] bg-[#3b74a6] px-5 py-2 font-heading text-xs font-bold text-white shadow-[0_2px_0_#1a3854] transition-all hover:bg-[#2d5d86] active:translate-y-0.5"
         >
-          OK / TUTUP
+          {MESSAGES.actions.closeModal}
         </button>
       </div>
     </div>

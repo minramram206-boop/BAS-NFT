@@ -1,37 +1,24 @@
 import type { Metadata } from 'next';
-import { Pixelify_Sans, Silkscreen } from 'next/font/google';
+import '@fontsource/pixelify-sans/latin-400.css';
+import '@fontsource/pixelify-sans/latin-500.css';
+import '@fontsource/pixelify-sans/latin-600.css';
+import '@fontsource/pixelify-sans/latin-700.css';
+import '@fontsource/silkscreen/latin-400.css';
+import '@fontsource/silkscreen/latin-700.css';
 import { loadCitizens } from '@bas/content/server';
 import { loadDistrictTelemetry } from '@/config/telemetry';
 import { DistrictTelemetryProvider } from '@/components/layout/DistrictTelemetryProvider';
 import { BasStoreProvider } from '@/stores/BasStoreProvider';
+import { MESSAGES } from '@/messages';
 import './globals.css';
-
-/**
- * Pixel fonts are fetched at build time by `next/font`.
- * In an offline CI runner, provide `NEXT_FONT_GOOGLE_MOCKED_RESPONSES`
- * (see `docs/ARCHITECTURE.md`) so the build does not depend on the network.
- */
-const silkscreen = Silkscreen({
-  weight: ['400', '700'],
-  subsets: ['latin'],
-  variable: '--font-heading',
-  display: 'swap',
-});
-
-const pixelify = Pixelify_Sans({
-  weight: ['400', '500', '600', '700'],
-  subsets: ['latin'],
-  variable: '--font-pixel',
-  display: 'swap',
-});
 
 export const metadata: Metadata = {
   title: {
-    default: 'BAS - District 01 & Agent Training',
-    template: '%s - BAS District 01',
+    default: MESSAGES.metadata.title,
+    template: MESSAGES.metadata.titleTemplate,
   },
-  description: 'Living Pixel Art World & Citizen Progression on Solana',
-  applicationName: 'BAS Pixel District',
+  description: MESSAGES.metadata.description,
+  applicationName: MESSAGES.metadata.applicationName,
 };
 
 export default function RootLayout({
@@ -43,7 +30,7 @@ export default function RootLayout({
   const telemetry = loadDistrictTelemetry();
 
   return (
-    <html lang="en" className={`${silkscreen.variable} ${pixelify.variable}`}>
+    <html lang="en">
       <body className="m-0 h-screen w-screen select-none overflow-hidden bg-[#0c1622] p-1.5 font-pixel text-[#1a2734] antialiased selection:bg-[#4d7ca8] selection:text-white md:p-2">
         {/*
           Static cluster telemetry plus one session store seeded with the
@@ -52,7 +39,17 @@ export default function RootLayout({
           between the district and the dojo.
         */}
         <DistrictTelemetryProvider telemetry={telemetry}>
-          <BasStoreProvider citizens={citizens}>{children}</BasStoreProvider>
+          <BasStoreProvider
+            citizens={citizens}
+            maxSupply={telemetry.maxSupply}
+            trainingConfig={{
+              baseTrainingCostAtoms: telemetry.baseTrainingCostAtoms,
+              tokenDecimals: telemetry.tokenDecimals,
+              tokenSymbol: MESSAGES.app.burnTokenSymbol,
+            }}
+          >
+            {children}
+          </BasStoreProvider>
         </DistrictTelemetryProvider>
       </body>
     </html>

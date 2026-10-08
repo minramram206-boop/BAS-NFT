@@ -19,9 +19,10 @@
 //! ...           optional plugin header / registry
 //! ```
 //!
-//! Everything the district needs lives in the fixed-size prefix, so the
-//! variable-length `name`, `uri` and plugin data never have to be parsed.
-//! Verified against `programs/mpl-core/src/state/asset.rs` and
+//! Owner and collection live in the fixed-size prefix. `register_citizen` also
+//! reads the Borsh `uri` string to compare it against the immutable approved
+//! template registry; plugin data and `seq` are never parsed. The layout is
+//! verified against `programs/mpl-core/src/state/asset.rs` and
 //! `programs/mpl-core/src/state/update_authority.rs` in
 //! github.com/metaplex-foundation/mpl-core.
 //!
@@ -90,9 +91,8 @@ impl CoreAssetPrefix {
 
 /// Read the owner and collection out of a Core asset account.
 ///
-/// Only the fixed-size prefix is inspected, so plugin data and the length of
-/// `name`/`uri` cannot shift the result, and a truncated or malformed account
-/// fails closed instead of being read past its end.
+/// Only the fixed-size prefix is inspected, so variable-length strings and
+/// plugin data cannot shift the result. A truncated account fails closed.
 pub fn read_core_asset_prefix(data: &[u8]) -> Result<CoreAssetPrefix> {
     // All three rejections report `InvalidAssetState`, the §13 error for an
     // account that is not a readable uncompressed Core asset. One variant
@@ -116,6 +116,37 @@ pub fn read_core_asset_prefix(data: &[u8]) -> Result<CoreAssetPrefix> {
     })
 }
 
+/// Read the Borsh `uri` field from a Core asset, rejecting truncated lengths
+/// and invalid UTF-8 instead of trusting attacker-controlled offsets.
+pub fn read_core_asset_uri(data: &[u8]) -> Result<&str> {
+    // Validate the discriminator and authority tag before interpreting a string.
+    read_core_asset_prefix(data)?;
+    let mut offset = MIN_ASSET_PREFIX_LEN;
+    let _name = read_borsh_string(data, &mut offset)?;
+    read_borsh_string(data, &mut offset)
+}
+
+fn read_borsh_string<'a>(data: &'a [u8], offset: &mut usize) -> Result<&'a str> {
+    let length_end = (*offset)
+        .checked_add(4)
+        .ok_or_else(|| error!(DistrictError::InvalidAssetState))?;
+    let length_bytes = data
+        .get(*offset..length_end)
+        .ok_or_else(|| error!(DistrictError::InvalidAssetState))?;
+    let mut encoded_length = [0u8; 4];
+    encoded_length.copy_from_slice(length_bytes);
+    let length = u32::from_le_bytes(encoded_length) as usize;
+    let value_start = length_end;
+    let value_end = value_start
+        .checked_add(length)
+        .ok_or_else(|| error!(DistrictError::InvalidAssetState))?;
+    let value = data
+        .get(value_start..value_end)
+        .ok_or_else(|| error!(DistrictError::InvalidAssetState))?;
+    *offset = value_end;
+    core::str::from_utf8(value).map_err(|_| error!(DistrictError::InvalidAssetState))
+}
+
 fn read_pubkey(data: &[u8], offset: usize) -> Pubkey {
     // Bounds are checked by `read_core_asset_prefix` before this is called.
     let mut bytes = [0u8; 32];
@@ -134,7 +165,14 @@ mod tests {
 
     /// Build an `AssetV1` account: the fixed prefix, then variable-length name,
     /// uri and seq exactly like borsh writes them, plus trailing plugin bytes.
-    fn asset(key: u8, owner: &Pubkey, authority_tag: u8, authority: &Pubkey, name: &str, uri: &str) -> Vec<u8> {
+    fn asset(
+        key: u8,
+        owner: &Pubkey,
+        authority_tag: u8,
+        authority: &Pubkey,
+        name: &str,
+        uri: &str,
+    ) -> Vec<u8> {
         let mut data = Vec::new();
         data.push(key);
         data.extend_from_slice(owner.as_ref());
@@ -159,15 +197,17 @@ mod tests {
             UPDATE_AUTHORITY_COLLECTION,
             &COLLECTION,
             "Citizen #13",
-            "https://example.com/13.json",
+            "https://metadata.example.invalid/templates/7/citizen-13.json",
         )
     }
 
     /// The Anchor error name, so assertions stay readable.
-    fn error_name(result: Result<CoreAssetPrefix>) -> String {
+    fn error_name<T>(result: Result<T>) -> String {
         match result.unwrap_err() {
             AnchorError::AnchorError(anchor_error) => anchor_error.error_name,
-            AnchorError::ProgramError(program_error) => format!("{:?}", program_error.program_error),
+            AnchorError::ProgramError(program_error) => {
+                format!("{:?}", program_error.program_error)
+            },
         }
     }
 
@@ -179,6 +219,27 @@ mod tests {
         assert!(prefix.belongs_to_collection(&COLLECTION));
         assert!(prefix.is_owned_by(&OWNER));
         assert!(!prefix.is_owned_by(&OTHER));
+    }
+
+    #[test]
+    fn reads_the_variable_length_uri_for_template_validation() {
+        assert_eq!(
+            read_core_asset_uri(&member_asset()).expect("a valid URI must parse"),
+            "https://metadata.example.invalid/templates/7/citizen-13.json"
+        );
+    }
+
+    #[test]
+    fn rejects_a_truncated_or_non_utf8_uri() {
+        let valid = member_asset();
+        let uri_length_offset = MIN_ASSET_PREFIX_LEN + 4 + "Citizen #13".len();
+        let truncated = &valid[..uri_length_offset + 5];
+        assert_eq!(error_name(read_core_asset_uri(truncated)), "InvalidAssetState");
+
+        let mut invalid_utf8 = valid.clone();
+        let uri_start = uri_length_offset + 4;
+        invalid_utf8[uri_start] = 0xff;
+        assert_eq!(error_name(read_core_asset_uri(&invalid_utf8)), "InvalidAssetState");
     }
 
     #[test]
@@ -214,7 +275,7 @@ mod tests {
             UPDATE_AUTHORITY_COLLECTION,
             &OTHER,
             "Citizen #13",
-            "https://example.com/13.json",
+            "https://metadata.example.invalid/templates/7/citizen-13.json",
         );
         let prefix = read_core_asset_prefix(&foreign).expect("well-formed bytes must parse");
         assert!(!prefix.belongs_to_collection(&COLLECTION));

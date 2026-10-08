@@ -3,14 +3,16 @@
 import React, { useMemo, useState } from 'react';
 import type { CitizenRecord } from '@bas/content';
 import { REGISTRY_PAGE_SIZE, REGISTRY_SECTION_ID, UI } from '@/config/constants';
+import { MESSAGES, formatMessage } from '@/messages';
 import { useCitizens, useSelectCitizen, useSelectedCitizenId } from '@/stores/selectors';
 import type { RegistryFilter } from '@/stores/basStore';
 import { cn } from '@/lib/utils/cn';
 import { PixelSprite } from '@/components/ui/PixelSprite';
 
 const FILTERS: ReadonlyArray<{ key: RegistryFilter; label: string }> = [
-  { key: 'all', label: 'ALL' },
-  { key: 'registered', label: 'TERDAFTAR' },
+  { key: 'all', label: MESSAGES.district.filterAll },
+  { key: 'registered', label: MESSAGES.district.filterRegistered },
+  { key: 'unregistered', label: MESSAGES.district.filterUnregistered },
 ];
 
 function matchesFilter(citizen: CitizenRecord, filter: RegistryFilter): boolean {
@@ -74,8 +76,8 @@ export const CitizenRegistryGrid: React.FC = () => {
               setSearch(event.target.value);
               resetToFirstPage();
             }}
-            placeholder="Cari warga..."
-            aria-label="Cari warga"
+            placeholder={MESSAGES.district.searchPlaceholder}
+            aria-label={MESSAGES.district.searchLabel}
             className="w-24 rounded-md border border-[#577085] bg-[#ffffff] px-2 py-0.5 font-pixel text-xs text-[#102232] outline-none focus:border-[#182635] md:w-32"
           />
 
@@ -115,15 +117,18 @@ export const CitizenRegistryGrid: React.FC = () => {
 
       <footer className="flex flex-shrink-0 items-center justify-between border-t border-[#a6bfd4] pt-1 font-heading text-[10px] font-bold text-[#334b60] md:text-xs">
         <PaginationButton
-          label="◀ PREV"
+          label={MESSAGES.district.previousPage}
           disabled={currentPage === 0}
           onClick={() => setPage((value) => Math.max(0, value - 1))}
         />
         <span className="text-[10px] font-bold text-[#102232] md:text-[11px]">
-          HALAMAN {currentPage + 1} / {totalPages}
+          {formatMessage(MESSAGES.district.pageCount, {
+            current: currentPage + 1,
+            total: totalPages,
+          })}
         </span>
         <PaginationButton
-          label="NEXT ▶"
+          label={MESSAGES.district.nextPage}
           disabled={currentPage >= totalPages - 1}
           onClick={() => setPage((value) => Math.min(totalPages - 1, value + 1))}
         />

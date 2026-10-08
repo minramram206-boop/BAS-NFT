@@ -31,8 +31,8 @@ export const TrainingHeroStage: React.FC = () => {
           />
         </div>
 
-        <div className="rounded-md border-2 border-[#6d542b] bg-[#ebd6ae] px-5 py-1 font-heading text-xs font-bold text-[#4a3416] shadow-[0_2px_0_rgba(0,0,0,0.25)] text-shadow-sm md:text-sm">
-          {citizen.name.toUpperCase()}
+        <div className="rounded-md border-2 border-[#6d542b] bg-[#ebd6ae] px-5 py-1 text-center font-heading text-xs font-bold text-[#4a3416] shadow-[0_2px_0_rgba(0,0,0,0.25)] text-shadow-sm md:text-sm">
+          {citizen.name.toUpperCase()} · {citizen.role}
         </div>
       </div>
 
@@ -40,10 +40,9 @@ export const TrainingHeroStage: React.FC = () => {
         <span className="absolute -top-2 left-10 z-10 h-0 w-0 border-l-[8px] border-r-[8px] border-b-[8px] border-l-transparent border-r-transparent border-b-[#edf5fa]" />
         <span className="absolute -top-2.5 left-10 z-0 h-0 w-0 border-l-[9px] border-r-[9px] border-b-[9px] border-l-transparent border-r-transparent border-b-[#182635]" />
 
-        <p
-          className="font-pixel text-xs font-bold leading-relaxed text-[#102232] md:text-sm"
-          dangerouslySetInnerHTML={{ __html: trainingLog }}
-        />
+        <p className="whitespace-pre-line font-pixel text-xs font-bold leading-relaxed text-[#102232] md:text-sm">
+          {trainingLog}
+        </p>
       </div>
     </div>
   );

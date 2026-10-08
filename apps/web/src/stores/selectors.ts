@@ -1,7 +1,8 @@
 'use client';
 
 import type { CitizenRecord, StatKey } from '@bas/content';
-import { useBasStoreSlice, type BasStore } from './basStore';
+import { STAT_KEYS } from '@bas/content';
+import { useBasStoreSlice, type BasStore, type PreviewTrainingCredits } from './basStore';
 import { useBasStoreApi } from './BasStoreProvider';
 
 /**
@@ -9,6 +10,12 @@ import { useBasStoreApi } from './BasStoreProvider';
  * Each hook selects exactly one value, so components only re-render on the
  * state they actually use.
  */
+
+const EMPTY_PREVIEW_CREDITS: PreviewTrainingCredits = Object.freeze({
+  intelligence: 0,
+  alignment: 0,
+  compute: 0,
+});
 
 function useSlice<T>(selector: (state: BasStore) => T): T {
   const api = useBasStoreApi();
@@ -23,7 +30,7 @@ export function useSelectedCitizenId(): number {
   return useSlice((state) => state.selectedCitizenId);
 }
 
-/** The citizen shown on the plaza, the agent card, and the dojo stage. */
+/** The citizen shown on the plaza, the profile card, and the training stage. */
 export function useSelectedCitizen(): CitizenRecord | undefined {
   return useSlice((state) => {
     const { citizens, selectedCitizenId } = state;
@@ -39,20 +46,20 @@ export function useSupplyCount(): number {
   return useSlice((state) => state.supplyCount);
 }
 
-export function useTokensBurned(): number {
-  return useSlice((state) => state.tokensBurned);
+export function usePreviewCostAtoms(): bigint {
+  return useSlice((state) => state.previewCostAtoms);
+}
+
+export function useTrainingConfig() {
+  return useSlice((state) => state.trainingConfig);
+}
+
+export function usePreviewTrainingCredits(citizenId: number): PreviewTrainingCredits {
+  return useSlice((state) => state.previewTrainingCredits[citizenId] ?? EMPTY_PREVIEW_CREDITS);
 }
 
 export function useSfxEnabled(): boolean {
   return useSlice((state) => state.sfxEnabled);
-}
-
-export function useIsLoggedIn(): boolean {
-  return useSlice((state) => state.isLoggedIn);
-}
-
-export function useWalletAddress(): string {
-  return useSlice((state) => state.walletAddress);
 }
 
 export function useModalState() {
@@ -72,8 +79,8 @@ export function useMintCitizen() {
   return useSlice((state) => state.mintCitizen);
 }
 
-export function useToggleLogin() {
-  return useSlice((state) => state.toggleLogin);
+export function useShowWalletConnectorUnavailable() {
+  return useSlice((state) => state.showWalletConnectorUnavailable);
 }
 
 export function useToggleSfx() {
@@ -84,9 +91,7 @@ export function useCloseModal() {
   return useSlice((state) => state.closeModal);
 }
 
-const STAT_SUM_KEYS: readonly StatKey[] = ['intelligence', 'alignment', 'composure'];
-
 /** Total score of one citizen across the three trainable stats. */
 export function totalScore(citizen: CitizenRecord): number {
-  return STAT_SUM_KEYS.reduce((sum, key) => sum + citizen[key], 0);
+  return STAT_KEYS.reduce((sum, key: StatKey) => sum + citizen[key], 0);
 }

@@ -4,6 +4,7 @@ import React from 'react';
 import type { CitizenRecord } from '@bas/content';
 import { useCitizens, useSelectCitizen, useSelectedCitizenId } from '@/stores/selectors';
 import { cn } from '@/lib/utils/cn';
+import { MESSAGES } from '@/messages';
 import { PixelSprite } from '@/components/ui/PixelSprite';
 
 /** Horizontal strip used in the dojo to switch the active citizen. */
@@ -15,8 +16,8 @@ export const AvatarSelectionStrip: React.FC = () => {
   return (
     <section className="w-full rounded-xl border-2 border-[#182635] bg-[#bdcddc] p-3 shadow-[inset_0_1.5px_0_#fff]">
       <header className="mb-2 flex items-center justify-between font-heading text-[11px] font-bold text-[#102232]">
-        <span>GANTI AGENT LAINNYA:</span>
-        <span className="text-[9px] text-[#3c5671]">KLIK UNTUK MEMILIH</span>
+        <span>{MESSAGES.training.switchCitizen}</span>
+        <span className="text-[9px] text-[#3c5671]">{MESSAGES.training.clickToSelect}</span>
       </header>
 
       <div className="scrollbar-thin flex items-center gap-2 overflow-x-auto pb-1">

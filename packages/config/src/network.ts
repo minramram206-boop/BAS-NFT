@@ -1,6 +1,6 @@
 import type { DistrictNetworkConfig, NetworkConfigFile, SupportedNetwork } from './types.js';
 
-/** Config file backing each supported cluster. */
+/** Canonical manifest for each supported cluster. */
 export const NETWORK_CONFIG_FILES = {
   devnet: 'config/devnet.json',
   'mainnet-beta': 'config/mainnet.json',
@@ -17,21 +17,41 @@ const PUBKEY_LENGTH_RANGE = { min: 43, max: 44 } as const;
 /** Solana public keys are always 32 bytes. */
 const PUBLIC_KEY_BYTES = 32;
 
+/** u64::MAX, written here as BigInt so the manifest parser never rounds it. */
+const U64_MAX = 18_446_744_073_709_551_615n;
+
+/** Reserved or obviously non-production URI hostnames blocked at launch. */
+const PLACEHOLDER_URI_HOSTS = new Set([
+  'example.com',
+  'example.net',
+  'example.org',
+  'localhost',
+]);
+
+/** Address fields present in the canonical SPEC §4.3 manifest. */
 const ADDRESS_FIELDS = [
-  'programId',
-  'collectionMint',
+  'districtProgramId',
+  'coreCollection',
   'candyMachine',
+  'candyGuard',
   'utilityTokenMint',
-  'treasuryAddress',
+  'solTreasury',
+  'royaltyRecipient',
+  'missionAuthority',
 ] as const satisfies readonly ConfigField[];
 
 /** Address fields that must be real deployed keys before a public launch. */
 export const PRODUCTION_CRITICAL_ADDRESS_FIELDS = [
-  'programId',
-  'collectionMint',
+  'districtProgramId',
+  'coreCollection',
   'candyMachine',
+  'candyGuard',
   'utilityTokenMint',
-  'treasuryAddress',
+  'solTreasury',
+  'royaltyRecipient',
+  // Whoever holds this key can authorize Training Credits; credits are the one
+  // half of training that cannot be bought (SPEC §5.3).
+  'missionAuthority',
 ] as const satisfies readonly ConfigField[];
 
 function invalid(field: string, reason: string): never {
@@ -60,10 +80,6 @@ function requireUrl(source: NetworkConfigFile, field: ConfigField): string {
  * Being well-formed is not the same as being deployed, so the placeholder
  * addresses the repository ships still pass this check. Whether an address is
  * real is decided by {@link validateProductionReadiness}.
- *
- * Enforcing the shape at load time matters because `declare_id!` parses the
- * program id at compile time: a 31 byte placeholder used to make `cargo check`
- * fail with an opaque error instead of a clear one.
  */
 function requireAddress(source: NetworkConfigFile, field: ConfigField): string {
   const value = requireString(source, field);
@@ -92,8 +108,7 @@ function hasValidPublicKeyLength(value: string): boolean {
  * Decoded byte length of a base58 string.
  *
  * Leading `1` characters are the base58 encoding of leading zero bytes and
- * carry no value, so they have to be counted separately: a public key whose
- * first byte is zero would otherwise look one byte short.
+ * carry no value, so they have to be counted separately.
  */
 function decodedByteLength(value: string): number {
   let leadingZeros = 0;
@@ -119,12 +134,11 @@ function isWellFormedPublicKey(value: string): boolean {
 }
 
 /**
- * Placeholder addresses that ship with the repository.
+ * Placeholder addresses shipped with this repository.
  *
- * They are well-formed 32 byte public keys so that `declare_id!`, Anchor and
- * the client all compile and run, but none of them is deployed and none of them
- * is controlled by this project. {@link findPlaceholderAddresses} rejects them
- * by value, not by shape, so the release gate still blocks a launch.
+ * They are well-formed 32 byte public keys so every package, Anchor macro and
+ * client can compile before deployment. None of them is deployed or controlled
+ * by this project. The release gate rejects them by value, not by shape.
  */
 export const REPO_PLACEHOLDER_ADDRESSES = new Set<string>([
   // programs/district/keypair.json public half, generated and never deployed
@@ -137,52 +151,146 @@ export const REPO_PLACEHOLDER_ADDRESSES = new Set<string>([
   'BASCo11ect1onMa1nnetBeta1111111111111111111',
   'BASTreasuryDevnet11111111111111111111111111',
   'BASTreasuryMa1nnetBeta111111111111111111111',
+  // sha256("bas:placeholder:mission-authority-devnet")
+  'A6kLyjEaWi5pzdc46MnVd1WeKgFabjWVUREJw8f8rbhn',
+  // sha256("bas:placeholder:mission-authority-mainnet")
+  'AeRoEz5UbbNf6Y3n1t3V8KNtgb7oWTXZAeYVB8osEvF6',
+  // sha256("bas:placeholder:candy-guard-devnet")
+  'Ajq1yqiok35wbd3uu9carDA9YqTt4t5V3hW3Q9YETVhD',
+  // sha256("bas:placeholder:candy-guard-mainnet")
+  'DLS5g62wAFpTr8sdeE2roEj3rm6cujo6HyuimDUWJTET',
+  // sha256("bas:placeholder:royalty-recipient-devnet")
+  'FLagggahkgNjgzjXKKsXECvPZdLXGtfmUgPuZYKnconk',
+  // sha256("bas:placeholder:royalty-recipient-mainnet")
+  '9J5uTtsPvFKGLEyzw9NsRkrDACFMNJxEQu3nEMXM37su',
 ]);
 
-function requireNonNegativeInteger(source: NetworkConfigFile, field: ConfigField): number {
+function requirePositiveInteger(source: NetworkConfigFile, field: ConfigField): number {
   const value = source[field];
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
-    invalid(field, 'expected a non-negative integer');
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
+    invalid(field, 'expected a positive safe integer');
   }
   return value;
 }
 
-function requirePositiveInteger(source: NetworkConfigFile, field: ConfigField): number {
+function requireNonNegativeInteger(source: NetworkConfigFile, field: ConfigField): number {
   const value = source[field];
-  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
-    invalid(field, 'expected a positive integer');
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    invalid(field, 'expected a non-negative safe integer');
+  }
+  return value;
+}
+
+function requireBoundedInteger(
+  source: NetworkConfigFile,
+  field: ConfigField,
+  min: number,
+  max: number,
+): number {
+  const value = requireNonNegativeInteger(source, field);
+  if (value < min || value > max) {
+    invalid(field, `expected an integer between ${min} and ${max}`);
+  }
+  return value;
+}
+
+function requireApprovedTemplateUriPrefix(
+  source: NetworkConfigFile,
+  templateId: number,
+): string {
+  const field: ConfigField = 'approvedTemplateUriPrefix';
+  const value = requireString(source, field);
+  const requiredSuffix = `/templates/${templateId}/`;
+  let parsedUri: URL | undefined;
+  try {
+    parsedUri = new URL(value);
+  } catch {
+    // The field-specific error below handles malformed URL strings.
+  }
+  if (
+    !parsedUri ||
+    parsedUri.protocol !== 'https:' ||
+    !parsedUri.hostname ||
+    parsedUri.username.length > 0 ||
+    parsedUri.password.length > 0 ||
+    parsedUri.search.length > 0 ||
+    parsedUri.hash.length > 0 ||
+    !parsedUri.pathname.endsWith(requiredSuffix) ||
+    !value.endsWith(requiredSuffix) ||
+    value.length > 200 ||
+    !/^[\x21-\x7E]+$/.test(value) ||
+    value.includes('..') ||
+    /[?#\\]/.test(value)
+  ) {
+    invalid(
+      field,
+      `expected an https:// URI prefix of at most 200 characters ending in "${requiredSuffix}"`,
+    );
+  }
+  return value;
+}
+
+/** Decimal-string u64, to avoid JSON number rounding for token atoms. */
+function requireU64Atoms(source: NetworkConfigFile, field: ConfigField): string {
+  const value = source[field];
+  if (typeof value !== 'string' || !/^[1-9]\d*$/.test(value)) {
+    invalid(field, 'expected a positive decimal string of token atoms');
+  }
+  const parsed = BigInt(value);
+  if (parsed > U64_MAX) {
+    invalid(field, 'exceeds the on-chain u64 maximum');
   }
   return value;
 }
 
 /**
- * Validate one cluster config file and narrow it to {@link DistrictNetworkConfig}.
+ * Validate one cluster manifest and narrow it to {@link DistrictNetworkConfig}.
  *
- * Validation throws at module load, so a malformed or missing config file breaks
- * the build instead of silently shipping wrong values to a cluster.
+ * The JSON keys follow SPEC v2 §4.3. The manifest is the one source of truth;
+ * packages consume it rather than hardcoding addresses or economic values.
  */
 export function parseNetworkConfig(
   source: NetworkConfigFile,
   expectedNetwork: SupportedNetwork,
 ): DistrictNetworkConfig {
-  if (source.network !== expectedNetwork) {
-    invalid('network', `expected "${expectedNetwork}", received "${String(source.network)}"`);
+  if (source.cluster !== expectedNetwork) {
+    invalid('cluster', `expected "${expectedNetwork}", received "${String(source.cluster)}"`);
   }
 
+  const maxScore = requirePositiveInteger(source, 'maxScore');
+  if (maxScore !== 10) {
+    invalid('maxScore', 'SPEC v2 §7 fixes the maximum score at 10');
+  }
+  const burnBps = requireNonNegativeInteger(source, 'burnBps');
+  if (burnBps !== 10_000) {
+    invalid('burnBps', 'SPEC v2 §5.3 fixes training-token burn at 100% (10000 bps)');
+  }
+  const approvedTemplateId = requireBoundedInteger(source, 'approvedTemplateId', 0, 0xffff_ffff);
+  const approvedTemplateUriPrefix = requireApprovedTemplateUriPrefix(source, approvedTemplateId);
+
   return {
-    network: expectedNetwork,
+    cluster: expectedNetwork,
     rpcUrl: requireUrl(source, 'rpcUrl'),
-    programId: requireAddress(source, 'programId'),
-    collectionMint: requireAddress(source, 'collectionMint'),
+    districtProgramId: requireAddress(source, 'districtProgramId'),
+    coreCollection: requireAddress(source, 'coreCollection'),
     candyMachine: requireAddress(source, 'candyMachine'),
+    candyGuard: requireAddress(source, 'candyGuard'),
     utilityTokenMint: requireAddress(source, 'utilityTokenMint'),
-    treasuryAddress: requireAddress(source, 'treasuryAddress'),
-    tokenBurnRequired: requireNonNegativeInteger(source, 'tokenBurnRequired'),
+    solTreasury: requireAddress(source, 'solTreasury'),
+    royaltyRecipient: requireAddress(source, 'royaltyRecipient'),
+    missionAuthority: requireAddress(source, 'missionAuthority'),
+    maxScore,
+    baseTrainingCostAtoms: requireU64Atoms(source, 'baseTrainingCostAtoms'),
+    burnBps,
+    dailyMessageLimit: requirePositiveInteger(source, 'dailyMessageLimit'),
+    tokenDecimals: requireBoundedInteger(source, 'tokenDecimals', 0, 9),
+    approvedTemplateId,
+    approvedTemplateUriPrefix,
     maxSupply: requirePositiveInteger(source, 'maxSupply'),
   };
 }
 
-/** Address fields that still hold a placeholder instead of a deployed public key. */
+/** Address fields that still hold a repository placeholder. */
 export function findPlaceholderAddresses(
   config: DistrictNetworkConfig,
 ): Array<{ field: ConfigField; value: string; reason: string }> {
@@ -198,22 +306,73 @@ export function findPlaceholderAddresses(
   });
 }
 
+/** Find unresolved addresses and reserved template-URI hosts in a launch config. */
+export function findPlaceholderConfiguration(
+  config: DistrictNetworkConfig,
+): Array<{ field: ConfigField; value: string; reason: string }> {
+  const placeholders = findPlaceholderAddresses(config);
+  let parsedUri: URL | undefined;
+  try {
+    parsedUri = new URL(config.approvedTemplateUriPrefix);
+  } catch {
+    // Fail closed if a caller constructs DistrictNetworkConfig without using
+    // the canonical parser.
+  }
+
+  const uriPrefix = config.approvedTemplateUriPrefix;
+  const hostname = parsedUri?.hostname.toLowerCase() ?? '';
+  const requiredSuffix = `/templates/${config.approvedTemplateId}/`;
+  const invalidUri =
+    !parsedUri ||
+    parsedUri.protocol !== 'https:' ||
+    !hostname ||
+    parsedUri.username.length > 0 ||
+    parsedUri.password.length > 0 ||
+    parsedUri.search.length > 0 ||
+    parsedUri.hash.length > 0 ||
+    !parsedUri.pathname.endsWith(requiredSuffix) ||
+    uriPrefix.length > 200 ||
+    !/^[\x21-\x7E]+$/.test(uriPrefix) ||
+    uriPrefix.includes('..') ||
+    /[?#\\]/.test(uriPrefix);
+  const placeholderHost =
+    hostname.endsWith('.invalid') ||
+    hostname.endsWith('.example') ||
+    hostname.endsWith('.test') ||
+    hostname.endsWith('.localhost') ||
+    hostname.endsWith('.example.com') ||
+    hostname.endsWith('.example.net') ||
+    hostname.endsWith('.example.org') ||
+    PLACEHOLDER_URI_HOSTS.has(hostname);
+
+  if (invalidUri || placeholderHost) {
+    placeholders.push({
+      field: 'approvedTemplateUriPrefix',
+      value: uriPrefix,
+      reason: invalidUri
+        ? 'not a valid HTTPS template URI prefix'
+        : 'reserved placeholder hostname, not a production metadata origin',
+    });
+  }
+  return placeholders;
+}
+
 /**
- * Release gate: throw while any address field still holds a placeholder.
+ * Release gate: throw while any critical address or the metadata URI host is a placeholder.
  *
- * The repository ships placeholder addresses so the product can be built and
- * exercised before deployment. Call this from deployment and release checks,
- * never from runtime rendering.
+ * Call this from deployment and release checks, never from runtime rendering:
+ * the repository intentionally ships placeholders so local UI and CI work
+ * before the project has deployed.
  */
 export function validateProductionReadiness(config: DistrictNetworkConfig): DistrictNetworkConfig {
-  const placeholders = findPlaceholderAddresses(config);
+  const placeholders = findPlaceholderConfiguration(config);
   if (placeholders.length > 0) {
     const details = placeholders
       .map(({ field, value, reason }) => `${field}="${value}" (${reason})`)
       .join(', ');
     throw new Error(
-      `[@bas/config] ${config.network} configuration is not launch ready. ` +
-        `Replace these placeholders with deployed public keys: ${details}`,
+      `[@bas/config] ${config.cluster} configuration is not launch ready. ` +
+        `Replace placeholder values with deployed public keys and a production metadata URI host: ${details}`,
     );
   }
   return config;

@@ -2,7 +2,8 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { BACK_TO_DISTRICT_HOTKEY, STAT_META, UI } from '@/config/constants';
+import { BACK_TO_DISTRICT_HOTKEY_LABEL, STAT_META, UI } from '@/config/constants';
+import { MESSAGES } from '@/messages';
 import { useTrainingHotkeys } from '@/lib/hooks/useTrainingHotkeys';
 import { TrainStatButton } from '@/components/ui/TrainStatButton';
 
@@ -33,10 +34,10 @@ export const TrainingDrillActions: React.FC = () => {
       ))}
 
       <Link href="/" className={BACK_BUTTON_CLASS} title={UI.backToDistrict}>
-        <span className={BACK_BADGE_CLASS}>{BACK_TO_DISTRICT_HOTKEY}</span>
+        <span className={BACK_BADGE_CLASS}>{BACK_TO_DISTRICT_HOTKEY_LABEL}</span>
         <span className="flex flex-col items-start leading-none">
           <span className={BACK_LABEL_CLASS}>{UI.backToDistrict}</span>
-          <span className="mt-0.5 font-heading text-[9px] text-emerald-100">District 01 Hub</span>
+          <span className="mt-0.5 font-heading text-[9px] text-emerald-100">{MESSAGES.training.backHint}</span>
         </span>
       </Link>
     </div>

@@ -88,6 +88,80 @@ impl DistrictConfig {
         + 1; // bump
 }
 
+/// Layout version of the immutable approved Core metadata-template registry.
+pub const APPROVED_TEMPLATE_VERSION: u8 = 1;
+
+/// Maximum UTF-8 byte length of an approved metadata URI prefix.
+pub const MAX_APPROVED_TEMPLATE_URI_PREFIX_LEN: usize = 200;
+
+/// One approved metadata template, stored at the PDA derived from its id.
+///
+/// The account is created atomically with `DistrictConfig`, is program-owned,
+/// and has no update instruction. Its URI prefix is therefore an immutable
+/// allowlist for `register_citizen`, not an unchecked PDA marker supplied by a
+/// caller. See D-0013.
+#[account]
+pub struct ApprovedTemplate {
+    pub version: u8,
+    pub bump: u8,
+    pub template_id: u32,
+    /// Exact trusted prefix; each asset URI must add one safe `.json` filename.
+    pub uri_prefix: String,
+}
+
+impl ApprovedTemplate {
+    pub fn space(uri_prefix_len: usize) -> usize {
+        8 // discriminator
+            + 1 // version
+            + 1 // bump
+            + 4 // template_id
+            + 4 // borsh string length
+            + uri_prefix_len
+    }
+
+    /// Whether this immutable template approves a complete asset metadata URI.
+    ///
+    /// The prefix must include the template directory and end in `/`. The URI
+    /// may append one `.json` filename only; slash, backslash, query, fragment,
+    /// whitespace, and path traversal are rejected.
+    pub fn approves_uri(&self, uri: &str) -> bool {
+        let Some(filename) = uri.strip_prefix(&self.uri_prefix) else {
+            return false;
+        };
+        !filename.is_empty()
+            && filename.ends_with(".json")
+            && !filename.contains('/')
+            && !filename.contains('\\')
+            && !filename.contains('?')
+            && !filename.contains('#')
+            && !filename.contains("..")
+            && !filename.chars().any(char::is_whitespace)
+            && filename.chars().all(|character| {
+                character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.')
+            })
+    }
+
+    /// Validate the template prefix accepted at initialization.
+    pub fn is_valid_uri_prefix(uri_prefix: &str, template_id: u32) -> bool {
+        let expected_segment = format!("/templates/{template_id}/");
+        uri_prefix.starts_with("https://")
+            && uri_prefix.ends_with(&expected_segment)
+            && uri_prefix.len() <= MAX_APPROVED_TEMPLATE_URI_PREFIX_LEN
+            && uri_prefix.is_ascii()
+            && !uri_prefix.chars().any(char::is_whitespace)
+            && !uri_prefix.contains('?')
+            && !uri_prefix.contains('#')
+            && !uri_prefix.contains('\\')
+            && !uri_prefix.contains("..")
+            && uri_prefix
+                .strip_prefix("https://")
+                .is_some_and(|authority_and_path| {
+                    let authority = authority_and_path.split('/').next().unwrap_or_default();
+                    !authority.is_empty() && !authority.contains('@')
+                })
+    }
+}
+
 /// Canonical citizen progression state — the single source of truth for scores.
 ///
 /// §6.4 marks this `[FINAL]`: "Hanya boleh ada satu sumber kebenaran untuk
@@ -434,6 +508,89 @@ mod tests {
         // A missing max check must saturate, not wrap to 0.
         assert_eq!(citizen.raise(CitizenStat::Intelligence), STAT_MAX);
         assert_eq!(citizen.tier_of(CitizenStat::Intelligence), 3);
+    }
+
+    #[test]
+    fn approved_template_prefix_is_bound_to_https_and_its_template_id() {
+        assert!(ApprovedTemplate::is_valid_uri_prefix(
+            "https://metadata.example.invalid/templates/7/",
+            7
+        ));
+        assert!(!ApprovedTemplate::is_valid_uri_prefix(
+            "http://metadata.example.invalid/templates/7/",
+            7
+        ));
+        assert!(!ApprovedTemplate::is_valid_uri_prefix(
+            "https://metadata.example.invalid/templates/8/",
+            7
+        ));
+        assert!(!ApprovedTemplate::is_valid_uri_prefix(
+            "https://metadata.example.invalid/templates/7",
+            7
+        ));
+        assert!(!ApprovedTemplate::is_valid_uri_prefix(
+            "https://metadata.example.invalid/templates/7/?preview=true",
+            7
+        ));
+        assert!(!ApprovedTemplate::is_valid_uri_prefix(
+            &format!(
+                "https://{}.invalid/templates/7/",
+                "m".repeat(MAX_APPROVED_TEMPLATE_URI_PREFIX_LEN)
+            ),
+            7
+        ));
+        assert!(!ApprovedTemplate::is_valid_uri_prefix(
+            "https://metadata.example.invalid/templates/7/ ",
+            7
+        ));
+        assert!(!ApprovedTemplate::is_valid_uri_prefix(
+            "https://méta.example.invalid/templates/7/",
+            7
+        ));
+        assert!(!ApprovedTemplate::is_valid_uri_prefix(
+            "https://metadata.example.invalid/templates/7/#preview",
+            7
+        ));
+        assert!(!ApprovedTemplate::is_valid_uri_prefix(
+            "https://user@metadata.example.invalid/templates/7/",
+            7
+        ));
+        assert!(!ApprovedTemplate::is_valid_uri_prefix(
+            "https://metadata.example.invalid/templates/7\\\\preview/templates/7/",
+            7
+        ));
+    }
+
+    #[test]
+    fn approved_template_accepts_only_one_safe_json_filename_under_its_prefix() {
+        let template = ApprovedTemplate {
+            version: APPROVED_TEMPLATE_VERSION,
+            bump: 0,
+            template_id: 7,
+            uri_prefix: "https://metadata.example.invalid/templates/7/".to_string(),
+        };
+        assert!(template.approves_uri(
+            "https://metadata.example.invalid/templates/7/citizen-13.json"
+        ));
+        for uri in [
+            "https://metadata.example.invalid/templates/8/citizen-13.json",
+            "https://metadata.example.invalid/templates/7/",
+            "https://metadata.example.invalid/templates/7/citizen.png",
+            "https://metadata.example.invalid/templates/7/subdir/citizen.json",
+            "https://metadata.example.invalid/templates/7/../citizen.json",
+            "https://metadata.example.invalid/templates/7/citizen.json?template=7",
+            "https://metadata.example.invalid/templates/7/citizen.json#fragment",
+            "https://metadata.example.invalid/templates/7/citizen name.json",
+            "https://metadata.example.invalid/templates/7/citizen\\\\name.json",
+            "https://metadata.example.invalid/templates/7/%2e%2e.json",
+        ] {
+            assert!(!template.approves_uri(uri), "unexpectedly accepted {uri}");
+        }
+    }
+
+    #[test]
+    fn approved_template_account_space_includes_the_borsh_uri_string() {
+        assert_eq!(ApprovedTemplate::space(46), 8 + 1 + 1 + 4 + 4 + 46);
     }
 
     #[test]

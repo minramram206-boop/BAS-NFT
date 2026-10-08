@@ -50,18 +50,17 @@ Do not run `pnpm build` while `pnpm dev` is running: both write to
 request:
 
 - **typescript** — install (builds the packages), typecheck, unit tests, lint,
-  and the asset guard.
+  the asset guard, and a Next.js production build using self-hosted fonts.
 - **programs** — `cargo check --all-targets`, then `cargo test --lib` (the Rust
   unit tests for the Metaplex Core asset parser), then `cargo test --test
   integration` (18 instruction-level tests that run the real program logic
   inside `solana-program-test`). No validator, no BPF build and no Anchor CLI
   are involved; see D-0012 for what that can and cannot prove.
 
-`next build` is deliberately not in CI because `next/font` downloads the pixel
-fonts from `fonts.googleapis.com`. Give the runner egress to
-`fonts.googleapis.com` and `fonts.gstatic.com`, or set
-`NEXT_FONT_GOOGLE_MOCKED_RESPONSES` (see `.env.example`), then add the step
-back.
+The Silkscreen and Pixelify Sans fonts are bundled from pinned `@fontsource`
+packages, so the production build does not need access to Google Fonts. Their
+copyright notices and OFL license texts are served from
+`/licenses/silkscreen-OFL.txt` and `/licenses/pixelify-sans-OFL.txt`.
 
 ## Repository layout
 
@@ -117,17 +116,23 @@ not measured — latency, sync state — are not displayed at all.
 
 ## Launch gate
 
-`config/*.json` ships placeholder addresses. They are all well-formed 32 byte
-base58 public keys — `@bas/config` rejects anything else at load time, because
-`declare_id!` parses the program id at compile time — but none of them is
-deployed, and none is controlled by this project. Readiness for launch is a
-separate check:
+`config/*.json` ships placeholder addresses and an example metadata host. The
+addresses are all well-formed 32 byte base58 public keys — `@bas/config` rejects
+anything else at load time, because `declare_id!` parses the program id at
+compile time — but none is deployed or controlled by this project. Readiness
+for launch is a separate check:
 
 ```ts
-import { DEVNET_CONFIG, findPlaceholderAddresses, validateProductionReadiness } from '@bas/config';
+import {
+  DEVNET_CONFIG,
+  findPlaceholderAddresses,
+  findPlaceholderConfiguration,
+  validateProductionReadiness,
+} from '@bas/config';
 
-findPlaceholderAddresses(DEVNET_CONFIG);   // what still has to be replaced
-validateProductionReadiness(DEVNET_CONFIG); // throws until every address is real
+findPlaceholderAddresses(DEVNET_CONFIG);      // unresolved public keys
+findPlaceholderConfiguration(DEVNET_CONFIG); // public keys and metadata origin
+validateProductionReadiness(DEVNET_CONFIG);   // throws until both are production-ready
 ```
 
 The `programId` is the public half of a generated, never-deployed keypair, so
@@ -142,8 +147,9 @@ anchor keys sync                                      # rewrites declare_id! and
 Then write the same public key into `config/devnet.json` and
 `config/mainnet.json`. `pnpm test` fails if `declare_id!`, `Anchor.toml` and the
 two config files disagree, and `validateProductionReadiness` keeps throwing
-while any address is still one of the shipped placeholders
-(`REPO_PLACEHOLDER_ADDRESSES`).
+while any critical address is still one of the shipped placeholders
+(`REPO_PLACEHOLDER_ADDRESSES`) or the approved-template URI still points at a
+reserved example host. Configure a real production metadata origin before launch.
 
 Generate the program keypair, deploy, then write the same 43–44 character
 base58 public key into `config/devnet.json`, `config/mainnet.json` and

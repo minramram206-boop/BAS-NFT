@@ -39,6 +39,20 @@ pub mod district {
         ctx: Context<InitializeConfig>,
         args: InitializeConfigArgs,
     ) -> Result<()> {
+        require!(
+            ApprovedTemplate::is_valid_uri_prefix(
+                &args.approved_template_uri_prefix,
+                args.approved_template_id,
+            ),
+            DistrictError::InvalidAssetState
+        );
+
+        let template = &mut ctx.accounts.approved_template;
+        template.version = APPROVED_TEMPLATE_VERSION;
+        template.bump = ctx.bumps.approved_template;
+        template.template_id = args.approved_template_id;
+        template.uri_prefix = args.approved_template_uri_prefix;
+
         let config = &mut ctx.accounts.config;
         config.version = DISTRICT_CONFIG_VERSION;
         config.admin = ctx.accounts.admin.key();
@@ -131,7 +145,6 @@ pub mod district {
         let config = &mut ctx.accounts.config;
         config.mission_authority = args.mission_authority;
         config.sol_treasury = args.sol_treasury;
-        config.approved_template_id = args.approved_template_id;
         config.base_training_cost = args.base_training_cost;
         Ok(())
     }
@@ -176,7 +189,8 @@ pub mod district {
         // asset account is what makes these bytes trustworthy: only the Core
         // program can write them, so a caller cannot fabricate an account that
         // parses as a collection member.
-        let asset_prefix = read_core_asset_prefix(&ctx.accounts.asset.try_borrow_data()?)?;
+        let asset_data = ctx.accounts.asset.try_borrow_data()?;
+        let asset_prefix = read_core_asset_prefix(&asset_data)?;
         require!(
             asset_prefix.belongs_to_collection(&config.collection_mint),
             DistrictError::InvalidCollection
@@ -188,11 +202,15 @@ pub mod district {
             DistrictError::NotOwner
         );
 
-        // §6.3 item 3, verifying the approved template identifier, is enforced
-        // by the `seeds` constraint on `template_id` above rather than here: the
-        // constraint runs before this body, so a wrong identifier never reaches
-        // it. Reading the asset's `uri` instead was rejected because the set of
-        // approved URIs is not defined anywhere in the spec; see D-0013.
+        // §6.3 item 3: read the URI stored by Metaplex Core and match it against
+        // the program-owned, immutable template registry PDA. The collection
+        // update-authority check in `read_core_asset_prefix` prevents an asset
+        // owner from changing the URI to bypass this allowlist.
+        let asset_uri = read_core_asset_uri(&asset_data)?;
+        require!(
+            ctx.accounts.approved_template.approves_uri(asset_uri),
+            DistrictError::InvalidAssetState
+        );
 
         // §6.3 item 4: read the citizen template from the registry. An unknown
         // role is an error rather than a default.
@@ -524,15 +542,11 @@ pub mod district {
     }
 }
 
-/// The PDA that must be presented as `template_id` for a given approved
-/// template identifier.
+/// PDA of the immutable approved-template registry for one template id.
 ///
-/// Deriving the approval from a program PDA rather than from a caller-supplied
-/// pubkey is what makes the check unforgeable: only this program can produce an
-/// account at this address, and no instruction creates one, so the check is a
-/// pure function of `DistrictConfig::approved_template_id`. Changing the
-/// approved template therefore changes which address will be accepted, which is
-/// an admin decision recorded by `update_config`.
+/// `initialize_config` creates and stores the URI prefix here. Registration
+/// requires the program-owned account and checks its URI allowlist; clients
+/// cannot supply or modify the prefix.
 pub fn approved_template_address(template_id: u32) -> Pubkey {
     Pubkey::find_program_address(
         &[b"approved_template", &template_id.to_le_bytes()],
@@ -542,12 +556,14 @@ pub fn approved_template_address(template_id: u32) -> Pubkey {
 }
 
 /// Arguments of `initialize_config` (§12).
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct InitializeConfigArgs {
     pub mission_authority: Pubkey,
     pub sol_treasury: Pubkey,
     pub collection_mint: Pubkey,
     pub approved_template_id: u32,
+    /// HTTPS prefix ending in `/templates/{approved_template_id}/`.
+    pub approved_template_uri_prefix: String,
     /// `base_training_cost` of §5.3, in token atoms.
     pub base_training_cost: u64,
     /// Mainnet passes `true` (§12: starts paused on mainnet).
@@ -559,7 +575,6 @@ pub struct InitializeConfigArgs {
 pub struct UpdateConfigArgs {
     pub mission_authority: Pubkey,
     pub sol_treasury: Pubkey,
-    pub approved_template_id: u32,
     pub base_training_cost: u64,
 }
 
@@ -592,6 +607,14 @@ pub struct InitializeConfig<'info> {
         bump
     )]
     pub config: Account<'info, DistrictConfig>,
+    #[account(
+        init,
+        payer = admin,
+        space = ApprovedTemplate::space(args.approved_template_uri_prefix.len()),
+        seeds = [b"approved_template", &args.approved_template_id.to_le_bytes()],
+        bump
+    )]
+    pub approved_template: Account<'info, ApprovedTemplate>,
     /// Bootstrap/deploy authority; becomes the first admin and pays the rent.
     #[account(mut)]
     pub admin: Signer<'info>,
@@ -680,20 +703,18 @@ pub struct RegisterCitizen<'info> {
     /// passes, and its only job is to be compared against `asset.owner`.
     /// Clients use `MPL_CORE_PROGRAM_ID`.
     pub mpl_core_program: UncheckedAccount<'info>,
-    /// The account whose address must equal
-    /// `approved_template_address(config.approved_template_id)` (§6.3 item 3).
+    /// Program-owned immutable URI allowlist created by `initialize_config`.
     ///
-    /// CHECK: never read and never written, and never created — no instruction
-    /// in this program writes an account at this address. It is an unforgeable
-    /// commitment to the approved template identifier: the address is derived
-    /// from `config.approved_template_id`, and the bare `bump` below makes
-    /// Anchor re-derive it and compare before the handler runs, so a client
-    /// cannot substitute a key of its own choosing.
+    /// The PDA, stored id and config id must all agree before the handler runs.
     #[account(
         seeds = [b"approved_template", &config.approved_template_id.to_le_bytes()],
-        bump
+        bump = approved_template.bump,
+        constraint = approved_template.version == APPROVED_TEMPLATE_VERSION
+            @ DistrictError::InvalidAssetState,
+        constraint = approved_template.template_id == config.approved_template_id
+            @ DistrictError::InvalidAssetState
     )]
-    pub template_id: UncheckedAccount<'info>,
+    pub approved_template: Account<'info, ApprovedTemplate>,
     #[account(
         init,
         payer = owner,

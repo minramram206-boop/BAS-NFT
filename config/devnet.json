@@ -1,11 +1,20 @@
 {
-  "network": "devnet",
-  "rpcUrl": "https://api.devnet.solana.com",
-  "programId": "D8HGhXUqHx7UXysCMEBDzvd3FS4XGEMNjCR6Eaj8CRbV",
-  "collectionMint": "BASCo11ect1onDevnet1111111111111111111111111",
+  "cluster": "devnet",
+  "districtProgramId": "D8HGhXUqHx7UXysCMEBDzvd3FS4XGEMNjCR6Eaj8CRbV",
+  "coreCollection": "BASCo11ect1onDevnet1111111111111111111111111",
   "candyMachine": "BASCandyMach1neDevnet1111111111111111111111",
+  "candyGuard": "Ajq1yqiok35wbd3uu9carDA9YqTt4t5V3hW3Q9YETVhD",
   "utilityTokenMint": "6yv2K6n1pczbSdWNZGfEvkQuS5rgHhq5RwKD64PQ7TcG",
-  "tokenBurnRequired": 1,
+  "solTreasury": "BASTreasuryDevnet11111111111111111111111111",
+  "royaltyRecipient": "FLagggahkgNjgzjXKKsXECvPZdLXGtfmUgPuZYKnconk",
+  "missionAuthority": "A6kLyjEaWi5pzdc46MnVd1WeKgFabjWVUREJw8f8rbhn",
+  "maxScore": 10,
+  "baseTrainingCostAtoms": "100000000",
+  "burnBps": 10000,
+  "dailyMessageLimit": 20,
+  "rpcUrl": "https://api.devnet.solana.com",
+  "tokenDecimals": 6,
+  "approvedTemplateId": 7,
   "maxSupply": 100,
-  "treasuryAddress": "BASTreasuryDevnet11111111111111111111111111"
+  "approvedTemplateUriPrefix": "https://metadata.example.invalid/templates/7/"
 }

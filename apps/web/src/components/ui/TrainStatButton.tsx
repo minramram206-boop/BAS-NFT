@@ -2,15 +2,22 @@
 
 import React from 'react';
 import type { StatKey } from '@bas/content';
+import { formatTokenAtoms, trainingCostAtoms } from '@bas/chain-client/stats';
 import { MAX_STAT_SCORE, STAT_META } from '@/config/constants';
-import { useTrainStat } from '@/stores/selectors';
+import {
+  usePreviewTrainingCredits,
+  useSelectedCitizen,
+  useTrainStat,
+  useTrainingConfig,
+} from '@/stores/selectors';
+import { MESSAGES, formatMessage } from '@/messages';
 import { cn } from '@/lib/utils/cn';
 
 export type TrainStatButtonVariant = 'leather' | 'drill';
 
 export interface TrainStatButtonProps {
   stat: StatKey;
-  /** `leather` = compact tan button in the agent card, `drill` = large dojo button. */
+  /** `leather` = compact card button, `drill` = larger training-page button. */
   variant?: TrainStatButtonVariant | undefined;
   className?: string | undefined;
 }
@@ -23,9 +30,8 @@ const LEATHER_BUTTON_CLASS =
 const LABEL_SHADOW_CLASS = 'drop-shadow-[0_1px_1px_rgba(20,10,5,0.95)]';
 
 /**
- * Train one stat of the selected citizen.
- * Replaces the three near-identical buttons that existed in both the agent
- * profile card and the dojo drill row.
+ * Show one public stat's preview action, configured cost estimate, and matching
+ * Training Credit availability. Clicking only updates local preview state.
  */
 export const TrainStatButton: React.FC<TrainStatButtonProps> = ({
   stat,
@@ -33,16 +39,46 @@ export const TrainStatButton: React.FC<TrainStatButtonProps> = ({
   className,
 }) => {
   const trainStat = useTrainStat();
+  const citizen = useSelectedCitizen();
+  const trainingConfig = useTrainingConfig();
+  const credits = usePreviewTrainingCredits(citizen?.id ?? 0);
   const meta = STAT_META[stat];
+  const currentScore = citizen?.[stat] ?? 0;
+  const atMaximum = currentScore >= MAX_STAT_SCORE;
+  const hasCredit = credits[stat] >= 1;
+  const cost = citizen && !atMaximum
+    ? formatTokenAtoms(
+        trainingCostAtoms(trainingConfig.baseTrainingCostAtoms, currentScore),
+        trainingConfig.tokenDecimals,
+      )
+    : null;
+  const title = formatMessage(MESSAGES.training.buttonTitle, { stat: meta.label });
+  const helper = !citizen
+    ? MESSAGES.training.selectCitizen
+    : atMaximum
+      ? MESSAGES.training.maxLevel
+      : !hasCredit
+        ? MESSAGES.training.noCredit
+        : cost === null
+          ? MESSAGES.training.selectCitizen
+          : formatMessage(MESSAGES.training.creditCost, {
+            stat: meta.label,
+            cost,
+            symbol: trainingConfig.tokenSymbol,
+            credits: credits[stat],
+            creditLabel: meta.label,
+          });
 
   if (variant === 'drill') {
     return (
       <button
         type="button"
         onClick={(event) => trainStat(stat, event.currentTarget)}
-        title={`Latih ${meta.shortLabel} (+1 ${meta.shortLabel})`}
+        title={title}
+        aria-label={`${title}. ${helper}`}
+        disabled={!citizen || atMaximum}
         className={cn(
-          'group relative flex cursor-pointer items-center justify-center gap-2.5 rounded-xl border-2 px-4 py-3 transition-all active:translate-y-0.5',
+          'group relative flex cursor-pointer items-center justify-center gap-2.5 rounded-xl border-2 px-4 py-3 transition-all active:translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-55',
           meta.actionButtonClass,
           className,
         )}
@@ -60,7 +96,7 @@ export const TrainStatButton: React.FC<TrainStatButtonProps> = ({
             {meta.emoji} {meta.actionLabel}
           </span>
           <span className={cn('mt-0.5 font-heading text-[9px]', meta.actionHintClass)}>
-            +1 {meta.shortLabel} &bull; -1 $DIST
+            {helper}
           </span>
         </span>
       </button>
@@ -71,9 +107,11 @@ export const TrainStatButton: React.FC<TrainStatButtonProps> = ({
     <button
       type="button"
       onClick={(event) => trainStat(stat, event.currentTarget)}
-      title={`Latih ${meta.shortLabel} (+1 ${meta.shortLabel})`}
+      title={`${title}. ${helper}`}
+      aria-label={`${title}. ${helper}`}
+      disabled={!citizen || atMaximum}
       className={cn(
-        'group flex cursor-pointer items-center justify-center gap-1 rounded-lg px-1.5 py-1.5 transition-all hover:brightness-105 active:translate-y-0.5',
+        'group flex cursor-pointer items-center justify-center gap-1 rounded-lg px-1.5 py-1.5 transition-all hover:brightness-105 active:translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-55',
         LEATHER_BUTTON_CLASS,
         className,
       )}
@@ -85,11 +123,11 @@ export const TrainStatButton: React.FC<TrainStatButtonProps> = ({
           LABEL_SHADOW_CLASS,
         )}
       >
-        LATIH {meta.shortLabel}
+        {atMaximum ? MESSAGES.training.maxLevel : !hasCredit ? MESSAGES.training.noCredit : meta.actionLabel}
       </span>
     </button>
   );
 };
 
-/** Hint line reused by the dojo stat card and the agent card. */
-export const TRAINING_COST_HINT = `Menaikkan stat mengkonsumsi 1 Burn Token $DIST per sesi latihan, maksimum ${MAX_STAT_SCORE} per stat.`;
+/** Disclosure reused by the district card and the training screen. */
+export const TRAINING_COST_HINT = MESSAGES.training.costHint;

@@ -126,13 +126,13 @@ Do not run `pnpm build` while `pnpm dev` is running: both write to
 `Cannot find module './<chunk>.js'`. Stop the dev server, or run
 `rm -rf apps/web/.next` and start it again.
 
-### Offline production builds
+### Self-hosted pixel fonts
 
-`next/font/google` downloads Silkscreen and Pixelify Sans during `next build`.
-On a runner without internet access the build fails. Either allow
-`fonts.googleapis.com` and `fonts.gstatic.com`, or set
-`NEXT_FONT_GOOGLE_MOCKED_RESPONSES` (see `.env.example`). `next dev` does not
-fail: it logs the error and uses a fallback font.
+Silkscreen and Pixelify Sans are loaded from the pinned `@fontsource` npm
+packages, using only the Latin font files and weights the UI renders. Their
+font files are bundled with the app at build time; no request to Google Fonts
+or other external host is required, so the production build is reproducible in
+an offline runner after dependency installation.
 
 ## 5. Assets
 
@@ -164,14 +164,17 @@ characters, which is not a valid Solana public key (43–44 base58 characters).
 
 - **load time** — the file exists, every field is present, non-empty, and
   correctly shaped. A malformed file breaks the build instead of shipping.
-- **launch gate** — `validateProductionReadiness(config)` and
-  `findPlaceholderAddresses(config)` reject any address that is not a
-  43–44 character base58 key. Call them from deployment and release checks,
-  never from rendering.
+- **launch gate** — `validateProductionReadiness(config)` rejects unresolved
+  critical addresses and reserved placeholder metadata hosts such as
+  `*.invalid` and `example.com`. `findPlaceholderAddresses(config)` reports
+  the address portion, while `findPlaceholderConfiguration(config)` reports
+  both addresses and the approved-template URI prefix. Call these from
+  deployment and release checks, never from rendering.
 
 Before any deployment: generate the program keypair, deploy, then write the
 same public key into `config/devnet.json`, `config/mainnet.json` and
-`programs/Anchor.toml`, and re-run the gate.
+`programs/Anchor.toml`; configure the deployed Core collection and a real,
+production metadata host at the approved template path; then re-run the gate.
 
 ## 7. Cluster telemetry in the UI
 
@@ -190,7 +193,7 @@ pull request:
 
 | Job | Steps | Notes |
 | --- | --- | --- |
-| `typescript` | install (runs `postinstall` → `build:packages`), `pnpm typecheck`, `pnpm test`, `pnpm lint`, `node scripts/check-assets.mjs` | `next build` is deliberately excluded: `next/font` needs egress to `fonts.googleapis.com`. Enable it once the runner has network access or `NEXT_FONT_GOOGLE_MOCKED_RESPONSES` is provided |
+| `typescript` | install (runs `postinstall` → `build:packages`), `pnpm typecheck`, `pnpm test`, `pnpm lint`, `node scripts/check-assets.mjs`, `pnpm build` | The web build uses self-hosted `@fontsource` assets and does not require Google Fonts egress |
 | `programs` | `cargo check --all-targets`, then `cargo test --lib`, then `cargo test --test integration -- --test-threads=1` | Catches Rust syntax and type errors, runs the 9 host-side unit tests for the Metaplex Core asset parser — the only automated proof that the collection check reads the right offsets — and then the 18 instruction-level tests (D-0012). The job sets `RUSTFLAGS: -A unexpected_cfgs` and `RUST_LOG: error`, without which anchor macro warnings and runtime debug logs bury the summary. A real `anchor build` / `anchor test` against a validator must still run before deployment |
 
 ## 9. Known gaps
@@ -205,8 +208,11 @@ Tracked in [`DECISIONS.md`](./DECISIONS.md):
   and `LOGIN` only toggles local state. `@solana/kit` plus Wallet Standard is
   the mandated integration.
 - `apps/worker`, `packages/ai`, `packages/db`, `packages/metaplex-client`,
-  `packages/mission-engine`, `packages/competition-engine`, `packages/ui` and
-  `tests/` do not exist yet. They are later stages of `TECH_STACK_ID.md` §12.
+  `packages/mission-engine`, `packages/competition-engine` and `packages/ui`
+  do not exist yet. They are later stages of `TECH_STACK_ID.md` §12. The
+  required `tests/e2e` and `tests/integration` directories are present; the
+  former is reserved for future Playwright browser tests, while program
+  instruction tests currently live beside the Anchor crate.
 - `programs/district` now has an instruction-level suite: 18 tests in
   `programs/district/tests/integration.rs` run the real program logic inside
   `solana-program-test`, next to `cargo check --all-targets` and the 9 host-side

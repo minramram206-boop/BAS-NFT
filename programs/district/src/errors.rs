@@ -2,10 +2,10 @@ use anchor_lang::prelude::*;
 
 /// Program errors.
 ///
-/// The variant names are the ones listed in `PIXEL_DISTRICT_SPEC_V2_ID.md` §13,
-/// so a client can map a code back to the spec by name. Two additions are
-/// marked below: they cover rejections the spec requires (§6.3 item 3 template
-/// verification, §6.3 item 4 role registry) but does not name an error for.
+/// Variant names follow `PIXEL_DISTRICT_SPEC_V2_ID.md` §13, so a client can map
+/// a code back to the spec by name. `InvalidRole` is the one additional variant
+/// needed for §6.3's seven-role registry; an unapproved Core URI is reported as
+/// `InvalidAssetState` rather than adding a second template-specific error.
 ///
 /// Anchor's `#[error_code]` numbers these from 6000 in declaration order, so
 /// the order is part of the on-chain contract and must not be rearranged
@@ -111,10 +111,9 @@ pub enum DistrictError {
     /// The role is not one of the seven in the registry (§6.3 item 4).
     /// Recorded in D-0013.
     ///
-    /// §6.3 item 3, the approved template identifier, is also an addition, but
-    /// it needs no variant of its own: it is a PDA derivation checked by
-    /// Anchor's `seeds` constraint, so a wrong identifier is reported as the
-    /// framework's `ConstraintSeeds` (2006) before any handler runs.
+    /// §6.3 item 3, an unapproved metadata URI, reuses `InvalidAssetState`
+    /// because the malformed asset data and a URI outside the immutable template
+    /// allowlist are both unusable asset state.
     #[msg("Unknown citizen role.")]
     InvalidRole,
 }

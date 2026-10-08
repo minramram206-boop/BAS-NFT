@@ -6,10 +6,13 @@ import { STAT_META, STAT_ORDER } from '@/config/constants';
 import { cn } from '@/lib/utils/cn';
 import { useSelectedCitizen } from '@/stores/selectors';
 import { TRAINING_COST_HINT } from '@/components/ui/TrainStatButton';
+import { usePreviewTrainingCredits } from '@/stores/selectors';
+import { MESSAGES, formatMessage } from '@/messages';
 
 /** Dojo attribute panel: the three trainable stats of the selected citizen. */
 export const TrainingStatsCard: React.FC = () => {
   const citizen = useSelectedCitizen();
+  const previewCredits = usePreviewTrainingCredits(citizen?.id ?? 0);
 
   if (!citizen) return null;
 
@@ -18,7 +21,7 @@ export const TrainingStatsCard: React.FC = () => {
       <header className="flex items-center justify-between rounded-lg border border-[#142639] bg-[#284a6e] px-3 py-1.5 font-heading text-xs font-bold text-white shadow-[inset_0_1px_0_#5a8cc1]">
         <span className="flex items-center gap-1.5">
           <span className="text-amber-300">★</span>
-          <span>AGENT ATTRIBUTES</span>
+          <span>{MESSAGES.training.attributeHeading}</span>
         </span>
         <span className="text-[10px] text-sky-200">{citizen.code}</span>
       </header>
@@ -29,6 +32,7 @@ export const TrainingStatsCard: React.FC = () => {
             key={stat}
             stat={stat}
             value={citizen[stat]}
+            credits={previewCredits[stat]}
             isLast={index === STAT_ORDER.length - 1}
           />
         ))}
@@ -45,11 +49,15 @@ export const TrainingStatsCard: React.FC = () => {
 interface AttributeRowProps {
   stat: StatKey;
   value: number;
+  credits: number;
   isLast: boolean;
 }
 
-const AttributeRow: React.FC<AttributeRowProps> = ({ stat, value, isLast }) => {
+const AttributeRow: React.FC<AttributeRowProps> = ({ stat, value, credits, isLast }) => {
   const meta = STAT_META[stat];
+  const creditCopy = credits === 1
+    ? MESSAGES.training.creditCount
+    : MESSAGES.training.creditCountPlural;
 
   return (
     <div
@@ -57,10 +65,15 @@ const AttributeRow: React.FC<AttributeRowProps> = ({ stat, value, isLast }) => {
         isLast ? '' : 'border-b border-[#c8dbe9] pb-1.5'
       }`}
     >
-      <span className="flex items-center gap-2 font-heading text-xs font-bold text-[#102232]">
+      <div className="flex min-w-0 items-center gap-2">
         <span className="text-sm">{meta.dojoEmoji ?? meta.emoji}</span>
-        <span>{meta.label}</span>
-      </span>
+        <span className="flex min-w-0 flex-col">
+          <span className="font-heading text-xs font-bold text-[#102232]">{meta.label}</span>
+          <span className="font-pixel text-[9px] text-[#49657e]">
+            {formatMessage(creditCopy, { count: credits, label: meta.label })}
+          </span>
+        </span>
+      </div>
       <span className={cn('font-heading text-base font-bold', meta.valueColorClass)}>{value}</span>
     </div>
   );

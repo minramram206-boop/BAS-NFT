@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { REGISTRY_SECTION_ID } from '@/config/constants';
+import { MESSAGES } from '@/messages';
 import { useMintCitizen } from '@/stores/selectors';
 import { cn } from '@/lib/utils/cn';
 import { PixelIcon } from '@/components/ui/PixelIcon';
@@ -27,25 +28,25 @@ const ICON_EFFECT_CLASS = 'transition-transform group-hover:scale-110';
 const PLAZA_ACTIONS: readonly PlazaAction[] = [
   {
     key: 'mint',
-    label: 'MINT CITIZEN',
+    label: MESSAGES.district.mintAction,
     icon: '/icons/icon_mint_egg.png',
-    iconAlt: 'Mint a citizen',
+    iconAlt: MESSAGES.district.mintIconAlt,
     buttonClass:
       'border-2 border-[#182b1b] bg-[#5c9053] shadow-[inset_0_0_0_1.5px_#a4ca8c,0_2.5px_0_#142416] active:shadow-[inset_0_0_0_1.5px_#a4ca8c,0_1px_0_#142416]',
   },
   {
     key: 'registry',
-    label: 'LIHAT WARGA',
+    label: MESSAGES.district.registryAction,
     icon: '/icons/icon_citizens_group.png',
-    iconAlt: 'View citizen registry',
+    iconAlt: MESSAGES.district.registryIconAlt,
     buttonClass:
       'border-2 border-[#142233] bg-[#446f9e] shadow-[inset_0_0_0_1.5px_#88a8ce,0_2.5px_0_#101c2b] active:shadow-[inset_0_0_0_1.5px_#88a8ce,0_1px_0_#101c2b]',
   },
   {
     key: 'dojo',
-    label: 'UPGRADE',
+    label: MESSAGES.district.trainingAction,
     icon: '/icons/icon_upgrade_arrow.png',
-    iconAlt: 'Open the training dojo',
+    iconAlt: MESSAGES.district.trainingIconAlt,
     buttonClass:
       'border-2 border-[#332111] bg-[#9b7145] text-center shadow-[inset_0_0_0_1.5px_#d7b87f,0_2.5px_0_#24170b] active:shadow-[inset_0_0_0_1.5px_#d7b87f,0_1px_0_#24170b]',
   },

@@ -10,6 +10,7 @@ export {
   PRODUCTION_CRITICAL_ADDRESS_FIELDS,
   REPO_PLACEHOLDER_ADDRESSES,
   findPlaceholderAddresses,
+  findPlaceholderConfiguration,
   parseNetworkConfig,
   validateProductionReadiness,
 } from './network.js';

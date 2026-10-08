@@ -1,0 +1,133 @@
+{
+  "app": {
+    "districtName": "DISTRICT 01",
+    "trainingName": "CITIZEN TRAINING",
+    "trainingBadge": "PREVIEW MODE",
+    "registryHeading": "CITIZEN REGISTRY",
+    "backToDistrict": "BACK TO DISTRICT 01",
+    "districtHub": "District 01 Hub",
+    "burnTokenSymbol": "$DIST"
+  },
+  "stats": {
+    "intelligence": {
+      "label": "Insight",
+      "shortLabel": "INSIGHT",
+      "actionLabel": "TRAIN INSIGHT",
+      "emoji": "📖",
+      "hotkey": "1"
+    },
+    "alignment": {
+      "label": "Bond",
+      "shortLabel": "BOND",
+      "actionLabel": "TRAIN BOND",
+      "emoji": "⚖",
+      "hotkey": "2"
+    },
+    "compute": {
+      "label": "Craft",
+      "shortLabel": "CRAFT",
+      "actionLabel": "TRAIN CRAFT",
+      "emoji": "🤝",
+      "dojoEmoji": "💚",
+      "hotkey": "3"
+    }
+  },
+  "broadcast": {
+    "districtTag": "⚡ DISTRICT PREVIEW:",
+    "trainingTag": "⚔ TRAINING PREVIEW:",
+    "districtMessage": "LOCAL PREVIEW • {active} OF {supply} SAMPLE CITIZEN SLOTS USED • CONFIGURED NETWORK: {network}",
+    "trainingMessage": "SELECT A CITIZEN • USE ONE MATCHING PREVIEW CREDIT • MAX SCORE {maxScore} • NO ON-CHAIN TRANSACTIONS"
+  },
+  "district": {
+    "onlineLabel": "LOCAL PREVIEW",
+    "configuredNetwork": "CONFIGURED NETWORK",
+    "supplyLabel": "PREVIEW SLOTS",
+    "previewCostLabel": "ESTIMATED COST",
+    "registered": "REGISTERED",
+    "notRegistered": "NOT REGISTERED",
+    "localCitizenTitle": "LOCAL CITIZEN",
+    "unregisteredSpeech": "Not registered yet.",
+    "unregisteredHint": "This is a local preview. No Core asset has been minted or registered.",
+    "registeredDetail": "Preview citizen #{id} • Insight {insight} | Bond {bond} | Craft {craft}",
+    "interaction": "District interaction",
+    "chooseAction": "Choose an action below",
+    "mintAction": "PREVIEW REGISTRATION",
+    "registryAction": "VIEW CITIZENS",
+    "trainingAction": "TRAIN",
+    "mintIconAlt": "Preview citizen registration",
+    "registryIconAlt": "View the citizen registry",
+    "trainingIconAlt": "Open citizen training",
+    "agentLabel": "CITIZEN",
+    "codeLabel": "ID:",
+    "previewUpgradeNotice": "PREVIEW ONLY • ESTIMATED COSTS • CONFIG VALUES UNVERIFIED • NO ON-CHAIN TRANSACTIONS",
+    "searchPlaceholder": "Search citizens...",
+    "searchLabel": "Search citizens",
+    "filterAll": "ALL",
+    "filterRegistered": "REGISTERED",
+    "filterUnregistered": "NOT REGISTERED",
+    "previousPage": "◀ PREV",
+    "nextPage": "NEXT ▶",
+    "pageCount": "PAGE {current} / {total}",
+    "stageTitle": "Click a tile or use W, A, S, D, or the arrow keys to move the citizen around the plaza.",
+    "stageAlt": "District 01 courtyard plaza",
+    "stageLabel": "PLAZA PREVIEW",
+    "stageControls": "WASD / ARROWS",
+    "shieldAlt": "District 01 shield",
+    "supplyAlt": "Preview slot counter",
+    "gateAlt": "District gate",
+    "toggleAudio": "Toggle 8-bit audio",
+    "audioOn": "🔊 ON",
+    "audioOff": "🔇 OFF",
+    "registeredSpeech": "{name} appears in the District 01 local preview."
+  },
+  "training": {
+    "costHint": "Each preview upgrade uses one matching Training Credit and estimates the configured token cost. Token decimals and addresses are unverified; no tokens are transferred or burned.",
+    "attributeHeading": "CITIZEN ATTRIBUTES",
+    "creditsHeading": "PREVIEW TRAINING CREDITS",
+    "creditCount": "Preview: {count} {label} Credit",
+    "creditCountPlural": "Preview: {count} {label} Credits",
+    "creditCost": "+1 {stat} • {cost} {symbol} • {credits} {creditLabel} Credit",
+    "buttonTitle": "Train {stat} by one point",
+    "maxLevel": "MAX LEVEL",
+    "noCredit": "NO MATCHING CREDIT",
+    "previewReady": "Preview ready. Choose an attribute to simulate training.",
+    "previewSuccess": "Preview upgrade complete. {stat} is now {value}. Estimated cost: {cost} {symbol}. No tokens were transferred.",
+    "maxModalTitle": "MAXIMUM SCORE",
+    "maxModal": "{citizen} has reached the maximum score of {max} for {stat}.",
+    "creditModalTitle": "NO MATCHING CREDIT",
+    "creditModal": "This citizen has no matching preview Training Credit for {stat}. In the live system, earn this credit through an authorized mission or verified district event.",
+    "backHint": "Return to the district",
+    "switchToTraining": "⚔ TRAIN",
+    "selectCitizen": "SELECT A CITIZEN",
+    "switchCitizen": "SWITCH CITIZENS:",
+    "clickToSelect": "CLICK TO SELECT",
+    "backHotkeyLabel": "ESC"
+  },
+  "actions": {
+    "previewRegistrationTitle": "PREVIEW REGISTRATION",
+    "noSlotsTitle": "NO PREVIEW SLOTS",
+    "noSlotsMessage": "No local preview slots remain.",
+    "allRegisteredTitle": "ALL SAMPLE CITIZENS REGISTERED",
+    "allRegisteredMessage": "All {count} sample citizens in this preview are registered.",
+    "previewRegistrationMessage": "{name} ({code}) is now registered in this local preview. No Core asset was minted and no on-chain transaction was sent. Role: {role}. Remaining preview slots: {remaining} / {total}.",
+    "walletUnavailableTitle": "WALLET NOT CONNECTED",
+    "walletUnavailableMessage": "Wallet connection is not available in this local preview. No wallet has been connected.",
+    "closeModal": "CLOSE"
+  },
+  "status": {
+    "previewNotice": "LOCAL PREVIEW • NOT CONNECTED TO SOLANA • PLACEHOLDER CONFIG • NETWORK: {network} • PROGRAM: {program}",
+    "footer": "Token decimals, addresses and deployment status have not been verified."
+  },
+  "a11y": {
+    "loggedInTitle": "A wallet connector is not enabled in this preview.",
+    "loginButton": "WALLET CONNECTOR UNAVAILABLE",
+    "audioOnTitle": "Turn 8-bit audio off",
+    "audioOffTitle": "Turn 8-bit audio on"
+  },
+  "metadata": {
+    "title": "Pixel District Preview",
+    "titleTemplate": "%s - Pixel District Preview",
+    "description": "A local preview of citizen content and stat progression.",
+    "applicationName": "Pixel District"
+  }
+}

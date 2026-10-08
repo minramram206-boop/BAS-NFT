@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   typescript:
-    name: TypeScript · typecheck, tests, lint, asset guard
+    name: TypeScript · typecheck, tests, lint, build, asset guard
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,11 +44,10 @@ jobs:
       - name: Asset guard
         run: node scripts/check-assets.mjs
 
-      # `pnpm build` is intentionally not part of CI: next/font downloads
-      # Silkscreen and Pixelify Sans from fonts.googleapis.com during the
-      # production build. Either give the runner egress to fonts.googleapis.com
-      # and fonts.gstatic.com, or set NEXT_FONT_GOOGLE_MOCKED_RESPONSES
-      # (see .env.example) and add the step back.
+      # Pixelify Sans and Silkscreen are self-hosted from pinned @fontsource
+      # packages, so this production build does not fetch fonts from Google.
+      - name: Production build
+        run: pnpm build
 
   programs:
     name: Anchor programs · check, unit tests, integration tests

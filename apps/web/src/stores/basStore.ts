@@ -1,19 +1,17 @@
 import { createStore, useStore, type StoreApi } from 'zustand';
 import { MAX_STAT_SCORE } from '@bas/content';
 import type { CitizenRecord, StatKey } from '@bas/content';
-import { INITIAL_SUPPLY_COUNT } from '@/config/constants';
+import { formatTokenAtoms, trainingCostAtoms } from '@bas/chain-client/stats';
+import { STAT_META } from '@/config/constants';
+import { MESSAGES, formatMessage } from '@/messages';
 import { retroAudio } from '@/lib/audio/RetroAudioSynthesizer';
 
 /**
  * Presentation store for District 01.
  *
- * The roster is loaded on the server by `@bas/content/server` and passed to
- * `createBasStore`, so the pre-rendered HTML and the hydrated client markup
- * start from exactly the same state. One store instance is created per
- * request/page load; see `CitizenRosterProvider`.
- *
- * Nothing stored here is canonical: ownership, progression, burns and credits
- * must be verified by the District program and trusted server logic.
+ * This is a Phase A local preview: mock scores, preview Training Credits, and
+ * estimated costs never become canonical chain state and never send a
+ * transaction. The production wallet/program integration is not enabled.
  */
 
 export type RegistryFilter = 'all' | 'registered' | 'unregistered';
@@ -24,24 +22,35 @@ export interface ModalState {
   message: string;
 }
 
+/** Values read from the selected cluster manifest, used only for estimates. */
+export interface TrainingPreviewConfig {
+  baseTrainingCostAtoms: string;
+  tokenDecimals: number;
+  tokenSymbol: string;
+}
+
+/** One mock balance per public Training Credit type. */
+export type PreviewTrainingCredits = Readonly<Record<StatKey, number>>;
+
 export interface BasStore {
   citizens: CitizenRecord[];
   selectedCitizenId: number;
-  /** Remaining mintable citizen slots. */
+  /** Remaining sample slots in this local preview. */
   supplyCount: number;
-  /** Utility tokens burned in the current session. */
-  tokensBurned: number;
+  maxSupply: number;
+  /** Estimated token atoms for preview upgrades; no tokens are transferred. */
+  previewCostAtoms: bigint;
+  /** One local-only balance for each stat-specific Training Credit pool. */
+  previewTrainingCredits: Readonly<Record<number, PreviewTrainingCredits>>;
+  trainingConfig: TrainingPreviewConfig;
   sfxEnabled: boolean;
-  isLoggedIn: boolean;
-  /** Placeholder address until the Wallet Standard adapter is integrated. */
-  walletAddress: string;
   trainingLog: string;
   modal: ModalState;
 
   selectCitizen: (id: number) => void;
   trainStat: (stat: StatKey, targetElement?: HTMLElement | null) => void;
   mintCitizen: () => void;
-  toggleLogin: () => void;
+  showWalletConnectorUnavailable: () => void;
   toggleSfx: () => void;
   openModal: (title: string, message: string) => void;
   closeModal: () => void;
@@ -49,28 +58,47 @@ export interface BasStore {
 
 export interface CreateBasStoreOptions {
   /** Validated roster produced by `@bas/content/server`. */
-  citizens?: readonly CitizenRecord[] | undefined;
-  supplyCount?: number | undefined;
+  citizens: readonly CitizenRecord[];
+  /** Maximum preview supply from the selected network manifest. */
+  maxSupply: number;
+  /** Configured cost inputs; used for estimates only. */
+  trainingConfig: TrainingPreviewConfig;
 }
 
 const CLOSED_MODAL: ModalState = { isOpen: false, title: '', message: '' };
-const DEFAULT_TRAINING_LOG = 'pelatihan selesai.<br>satu skor bertambah.';
-const DEFAULT_WALLET_LABEL = '7xKX...4C1d';
+const PREVIEW_CREDITS_PER_STAT = 1;
+
+function createPreviewCredits(citizens: readonly CitizenRecord[]): Readonly<Record<number, PreviewTrainingCredits>> {
+  return Object.freeze(Object.fromEntries(
+    citizens.map((citizen) => [citizen.id, Object.freeze({
+      intelligence: PREVIEW_CREDITS_PER_STAT,
+      alignment: PREVIEW_CREDITS_PER_STAT,
+      compute: PREVIEW_CREDITS_PER_STAT,
+    })]),
+  ));
+}
+
+function publicCreditLabel(stat: StatKey): string {
+  return STAT_META[stat].label;
+}
 
 export type BasStoreApi = StoreApi<BasStore>;
 
-export function createBasStore(options: CreateBasStoreOptions = {}): BasStoreApi {
-  const citizens = (options.citizens ?? []).map((citizen) => ({ ...citizen }));
+export function createBasStore(options: CreateBasStoreOptions): BasStoreApi {
+  const citizens = options.citizens.map((citizen) => ({ ...citizen }));
+  const maxSupply = options.maxSupply;
+  const trainingConfig = { ...options.trainingConfig };
 
   return createStore<BasStore>()((set, get) => ({
     citizens,
     selectedCitizenId: citizens[0]?.id ?? 0,
-    supplyCount: options.supplyCount ?? INITIAL_SUPPLY_COUNT,
-    tokensBurned: 0,
+    supplyCount: maxSupply,
+    maxSupply,
+    previewCostAtoms: 0n,
+    previewTrainingCredits: createPreviewCredits(citizens),
+    trainingConfig,
     sfxEnabled: true,
-    isLoggedIn: false,
-    walletAddress: DEFAULT_WALLET_LABEL,
-    trainingLog: DEFAULT_TRAINING_LOG,
+    trainingLog: MESSAGES.training.previewReady,
     modal: CLOSED_MODAL,
 
     selectCitizen: (id) => {
@@ -79,28 +107,67 @@ export function createBasStore(options: CreateBasStoreOptions = {}): BasStoreApi
     },
 
     trainStat: (stat, targetElement) => {
-      const { citizens: roster, selectedCitizenId, tokensBurned, openModal } = get();
+      const {
+        citizens: roster,
+        selectedCitizenId,
+        previewCostAtoms,
+        previewTrainingCredits,
+        trainingConfig: costConfig,
+        openModal,
+      } = get();
       const citizen = roster.find((item) => item.id === selectedCitizenId);
       if (!citizen) return;
 
+      const publicLabel = publicCreditLabel(stat);
       if (citizen[stat] >= MAX_STAT_SCORE) {
         openModal(
-          'STAT MAXED',
-          `${citizen.name} has already reached maximum score (${MAX_STAT_SCORE}) in ${stat}.`,
+          MESSAGES.training.maxModalTitle,
+          formatMessage(MESSAGES.training.maxModal, {
+            citizen: citizen.name,
+            max: MAX_STAT_SCORE,
+            stat: publicLabel,
+          }),
         );
         return;
       }
 
-      retroAudio.play('train');
+      const credits = previewTrainingCredits[citizen.id] ?? {
+        intelligence: 0,
+        alignment: 0,
+        compute: 0,
+      };
+      if (credits[stat] < 1) {
+        openModal(
+          MESSAGES.training.creditModalTitle,
+          formatMessage(MESSAGES.training.creditModal, {
+            stat: publicLabel,
+          }),
+        );
+        return;
+      }
 
+      const currentScore = citizen[stat];
+      const costAtoms = trainingCostAtoms(costConfig.baseTrainingCostAtoms, currentScore);
+      const cost = formatTokenAtoms(costAtoms, costConfig.tokenDecimals);
+      const nextScore = currentScore + 1;
+      const nextCredits = { ...credits, [stat]: credits[stat] - 1 };
+
+      retroAudio.play('train');
       set({
         citizens: roster.map((item) =>
-          item.id === selectedCitizenId
-            ? { ...item, [stat]: Math.min(MAX_STAT_SCORE, item[stat] + 1) }
-            : item,
+          item.id === selectedCitizenId ? { ...item, [stat]: nextScore } : item,
         ),
-        tokensBurned: tokensBurned + 1,
-        trainingLog: `pelatihan selesai.<br>satu skor ${stat} bertambah.`,
+        previewCostAtoms: previewCostAtoms + costAtoms,
+        previewTrainingCredits: {
+          ...previewTrainingCredits,
+          [citizen.id]: nextCredits,
+        },
+        trainingLog: formatMessage(MESSAGES.training.previewSuccess, {
+          stat: publicLabel,
+          value: nextScore,
+          cost,
+          symbol: costConfig.tokenSymbol,
+        }),
       });
 
       if (targetElement && typeof document !== 'undefined') {
@@ -110,53 +177,49 @@ export function createBasStore(options: CreateBasStoreOptions = {}): BasStoreApi
 
     mintCitizen: () => {
       retroAudio.play('click');
-      const { supplyCount, citizens: roster, openModal } = get();
+      const { supplyCount, maxSupply: totalSupply, citizens: roster, openModal } = get();
 
       if (supplyCount <= 0) {
-        openModal('SUPPLY EXHAUSTED', `All ${INITIAL_SUPPLY_COUNT} citizen slots have been minted!`);
+        openModal(MESSAGES.actions.noSlotsTitle, MESSAGES.actions.noSlotsMessage);
         return;
       }
 
       const candidate = roster.find((item) => !item.registered);
       if (!candidate) {
         openModal(
-          'ALL REGISTERED',
-          `All ${roster.length} citizens currently in the registry directory are already registered!`,
+          MESSAGES.actions.allRegisteredTitle,
+          formatMessage(MESSAGES.actions.allRegisteredMessage, { count: roster.length }),
         );
         return;
       }
 
       retroAudio.play('mint');
+      const remaining = supplyCount - 1;
       set({
         citizens: roster.map((item) =>
           item.id === candidate.id ? { ...item, registered: true } : item,
         ),
-        supplyCount: supplyCount - 1,
+        supplyCount: remaining,
         selectedCitizenId: candidate.id,
       });
 
       openModal(
-        'MINT SUCCESSFUL! 🥚✨',
-        `<strong>${candidate.name} (${candidate.code})</strong> has officially registered into District 01!` +
-          `<br><br>Role: <em>${candidate.role}</em>` +
-          `<br>Remaining Supply: <strong>${supplyCount - 1} / ${INITIAL_SUPPLY_COUNT}</strong>`,
+        MESSAGES.actions.previewRegistrationTitle,
+        formatMessage(MESSAGES.actions.previewRegistrationMessage, {
+          name: candidate.name,
+          code: candidate.code,
+          role: candidate.role,
+          remaining,
+          total: totalSupply,
+        }),
       );
     },
 
-    toggleLogin: () => {
+    showWalletConnectorUnavailable: () => {
       retroAudio.play('click');
-      const { isLoggedIn, walletAddress, openModal } = get();
-
-      if (isLoggedIn) {
-        set({ isLoggedIn: false });
-        openModal('WALLET DISCONNECTED', 'Wallet connection terminated.');
-        return;
-      }
-
-      set({ isLoggedIn: true });
-      openModal(
-        'WALLET CONNECTED',
-        `Connected with address:<br><strong>${walletAddress}</strong><br>District L2 Online.`,
+      get().openModal(
+        MESSAGES.actions.walletUnavailableTitle,
+        MESSAGES.actions.walletUnavailableMessage,
       );
     },
 
@@ -183,13 +246,13 @@ export function useBasStoreSlice<T>(api: BasStoreApi, selector: (state: BasStore
   return useStore(api, selector);
 }
 
-/** Transient "+1 XXX" effect rendered outside the React tree for the arcade feel. */
+/** Transient public-label effect rendered outside the React tree. */
 function spawnFloatingStatEffect(targetElement: HTMLElement, stat: StatKey): void {
   const rect = targetElement.getBoundingClientRect();
   const effect = document.createElement('div');
 
   effect.className = 'floating-stat-fx';
-  effect.textContent = `+1 ${stat.toUpperCase().slice(0, 3)}`;
+  effect.textContent = `+1 ${STAT_META[stat].label.toUpperCase()}`;
   effect.style.left = `${rect.left + rect.width / 2 - 20}px`;
   effect.style.top = `${rect.top - 10}px`;
 
