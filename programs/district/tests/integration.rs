@@ -979,10 +979,16 @@ async fn cannot_register_the_same_asset_twice() {
 
     // `TransportError`'s Display only prints `custom program error: 0x...`, so
     // the code has to be compared rather than the message searched.
+    //
+    // The rejection comes from the `init` constraint rather than from the
+    // handler: Anchor sets the account discriminator while deserializing
+    // accounts, before any instruction body runs, and refuses to `init` an
+    // account whose discriminator is already set. A citizen therefore cannot be
+    // registered twice even though the handler itself has no such check.
     assert_eq!(
         custom_error_code(&failure),
-        u32::from(anchor_lang::error::ErrorCode::AccountAlreadyInUse),
-        "expected AccountAlreadyInUse (3006), got {failure}"
+        u32::from(anchor_lang::error::ErrorCode::AccountDiscriminatorAlreadySet),
+        "expected AccountDiscriminatorAlreadySet (3000), got {failure}"
     );
     assert_eq!(
         read_config(&mut context, &harness).await.total_registered_citizens,

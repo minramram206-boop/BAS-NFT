@@ -55,10 +55,9 @@ jobs:
             # otherwise push the actual test output out of the captured tail.
             # Only the first test matters here: it prints what the simulation
             # returns, which is what the event assertions depend on.
-            cargo test --test integration -- --nocapture --test-threads=1 \
-              burns_the_utility_token_and_raises_the_stat 2>&1 \
+            cargo test --test integration -- --nocapture --test-threads=1 2>&1 \
               | grep -vE 'unexpected .cfg. condition|note: expected values for|note: using a cfg inside|note: this warning originates|help: try referring|^\s*=|^\s*\||^\s*-->|^[0-9]+ \||^warning:|^\s*$' \
-              | tail -n 400
+              | tail -n 1400
           } > /tmp/diag.txt 2>&1 || true
 
       - name: Report the output in an issue
