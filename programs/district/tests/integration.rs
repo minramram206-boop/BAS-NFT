@@ -23,8 +23,7 @@ use anchor_lang::{
         entrypoint::ProgramResult, instruction::Instruction, program_pack::Pack, pubkey::Pubkey,
         system_program,
     },
-    AccountDeserialize, AccountInfo, AnchorDeserialize, Discriminator, InstructionData,
-    ToAccountMetas,
+    AccountDeserialize, AnchorDeserialize, Discriminator, InstructionData, ToAccountMetas,
 };
 use anchor_spl::token;
 use district::{
@@ -36,9 +35,12 @@ use district::{
 };
 use solana_program_test::{processor, ProgramTest, ProgramTestContext};
 use solana_sdk::{
-    account::AccountSharedData, instruction::InstructionError, rent::Rent, signature::Keypair,
-    signer::Signer, transaction::Transaction, transaction::TransactionError,
-    transport::TransportError,
+    // `AccountInfo` is re-exported by solana_sdk from the same solana-program
+    // 1.18.26 that anchor_lang is pinned to, so this is the very type the
+    // processor shim hands to `district::entry`.
+    account::AccountSharedData, account_info::AccountInfo, instruction::InstructionError,
+    rent::Rent, signature::Keypair, signer::Signer, transaction::Transaction,
+    transaction::TransactionError, transport::TransportError,
 };
 use spl_token::state::{Account as SplTokenAccount, AccountState, Mint as SplMint};
 
@@ -294,11 +296,16 @@ fn install_asset(context: &mut ProgramTestContext, harness: &Harness, asset: Pub
 /// Install an account with an arbitrary owner, used to prove that the `owner =
 /// mpl_core_program` constraint is what makes the asset bytes trustworthy.
 fn install_account(context: &mut ProgramTestContext, address: Pubkey, data: Vec<u8>, owner: Pubkey) {
-    // `ProgramTestContext::set_account` takes `&AccountSharedData`, not the
-    // `solana_sdk::account::Account` that BanksClient hands back.
+    // `ProgramTestContext::set_account` takes `&AccountSharedData`, whose data
+    // setter is private; the public route is `From<solana_sdk::account::Account>`.
     let lamports = Rent::default().minimum_balance(data.len().max(1));
-    let mut shared = AccountSharedData::new(lamports, data.len(), &owner);
-    shared.set_data(data);
+    let shared = AccountSharedData::from(solana_sdk::account::Account {
+        lamports,
+        data,
+        owner,
+        executable: false,
+        rent_epoch: u64::MAX,
+    });
     context.set_account(&address, &shared);
 }
 
@@ -390,11 +397,15 @@ fn token_account(mint: &Pubkey, owner: &Pubkey, amount: u64) -> AccountSharedDat
     spl_account(data)
 }
 
-/// An SPL Token account: fixed data, owned by the token program.
+/// An SPL Token account: packed data, owned by the token program.
 fn spl_account(data: Vec<u8>) -> AccountSharedData {
-    let mut shared = AccountSharedData::new(10_000_000_000, data.len(), &token::ID);
-    shared.set_data(data);
-    shared
+    AccountSharedData::from(solana_sdk::account::Account {
+        lamports: 10_000_000_000,
+        data,
+        owner: token::ID,
+        executable: false,
+        rent_epoch: u64::MAX,
+    })
 }
 
 struct Training {
