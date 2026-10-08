@@ -276,6 +276,23 @@ async fn send(
     }
 }
 
+/// Move the bank to a fresh blockhash.
+///
+/// A transaction's signature is a hash of its message, and the message is built
+/// from the payer, the instruction and the blockhash. Repeating a byte-identical
+/// instruction inside one test therefore produces an identical signature, which
+/// the bank rejects as `AlreadyProcessed` without ever invoking the program — so
+/// any test that sends the same thing twice has to call this in between, or it
+/// passes (or fails) for the wrong reason.
+async fn advance(context: &mut ProgramTestContext) {
+    let slot = context.bank.last_blockhash().1;
+    context.warp_to_slot(slot + 1).expect("warping a slot");
+    context.last_blockhash = context
+        .get_new_latest_blockhash()
+        .await
+        .expect("a fresh blockhash");
+}
+
 /// The Anchor error code of a transaction that was supposed to fail.
 ///
 /// `#[error_code]` generates `impl From<Enum> for u32` as `variant as u32 +
@@ -854,8 +871,7 @@ async fn initialize_can_only_run_once() {
     initialize(&mut context, &harness).await;
 
     // Two identical transactions would share a signature, so warp first.
-    context.warp_to_slot(2).expect("warping to slot 2");
-    context.last_blockhash = context.get_new_latest_blockhash().await.expect("a blockhash");
+    advance(&mut context).await;
 
     let result = send(
         &mut context,
@@ -947,8 +963,7 @@ async fn the_utility_mint_cannot_be_changed_after_the_lock() {
     expect_error_code(result, DistrictError::UtilityMintLocked);
 
     // Locking twice is refused too: the flag is not a toggle.
-    context.warp_to_slot(2).expect("warping to slot 2");
-    context.last_blockhash = context.get_new_latest_blockhash().await.expect("a blockhash");
+    advance(&mut context).await;
     let result = send(
         &mut context,
         lock_utility_mint_instruction(&harness, harness.admin_key()),
@@ -1133,8 +1148,7 @@ async fn pauses_and_resumes_and_rewriting_the_same_value_is_harmless() {
     // Two identical transactions from the same payer on the same blockhash share
     // a signature, which the bank rejects as AlreadyProcessed before the program
     // runs, so the slot has to move between them.
-    context.warp_to_slot(2).expect("warping to slot 2");
-    context.last_blockhash = context.get_new_latest_blockhash().await.expect("a blockhash");
+    advance(&mut context).await;
 
     send(
         &mut context,
@@ -1512,8 +1526,7 @@ async fn rejects_an_unapproved_template_identifier() {
     // The registration below is byte-identical to the one that was just refused,
     // so without a new blockhash it would share a signature and the bank would
     // answer AlreadyProcessed without invoking the program.
-    context.warp_to_slot(2).expect("warping to slot 2");
-    context.last_blockhash = context.get_new_latest_blockhash().await.expect("a blockhash");
+    advance(&mut context).await;
 
     let mut instruction = register_instruction(
         &harness,
@@ -1561,8 +1574,7 @@ async fn cannot_register_the_same_asset_twice() {
     let first = read_citizen(&mut context, citizen_state).await;
 
     // Two identical transactions share a signature, so warp before replaying.
-    context.warp_to_slot(2).expect("warping to slot 2");
-    context.last_blockhash = context.get_new_latest_blockhash().await.expect("a blockhash");
+    advance(&mut context).await;
 
     let result = send(
         &mut context,
@@ -1659,8 +1671,7 @@ async fn a_mission_claim_cannot_be_replayed() {
     // §15.3 test 2. The signature is identical, so the bank would reject it as
     // AlreadyProcessed before the program ran; warp so the replay actually
     // reaches the instruction and is refused for the right reason.
-    context.warp_to_slot(2).expect("warping to slot 2");
-    context.last_blockhash = context.get_new_latest_blockhash().await.expect("a blockhash");
+    advance(&mut context).await;
 
     let result = send(&mut context, instruction, &[&harness.holder, &harness.mission_authority]).await;
     expect_error_code(result, DistrictError::MissionClaimAlreadyUsed);
@@ -1935,6 +1946,8 @@ async fn the_cost_rises_with_the_score_so_tokens_alone_cannot_max_a_citizen() {
     let after_first = token_supply(&mut context, harness.utility_mint_key()).await;
     assert_eq!(supply_before - after_first, BASE_TRAINING_COST * 2);
 
+    // Same instruction as the upgrade above, so it needs a fresh blockhash.
+    advance(&mut context).await;
     upgrade(&mut context, &harness, &setup, CitizenStat::Intelligence)
         .await
         .expect("the second upgrade must succeed");
@@ -1962,8 +1975,10 @@ async fn an_upgrade_without_a_matching_credit_is_refused() {
     expect_error_code(result, DistrictError::InsufficientTrainingCredits);
 
     // §5.3: credits are stat-specific. A Bond credit cannot pay for Insight, so
-    // after claiming only Bond the Insight upgrade must still be refused.
+    // after claiming only Bond the Insight upgrade must still be refused. This
+    // is byte-identical to the attempt above, hence the fresh blockhash.
     claim_credit(&mut context, &harness, setup.asset, setup.citizen_state, CitizenStat::Alignment, 91).await;
+    advance(&mut context).await;
     let result = upgrade(&mut context, &harness, &setup, CitizenStat::Intelligence).await;
     expect_error_code(result, DistrictError::InsufficientTrainingCredits);
 
@@ -2384,8 +2399,7 @@ async fn admin_moves_only_through_propose_then_accept() {
     // account constraints *before* the runtime verifies signatures against them.
     // An account that is not signed is therefore reported as `Unauthorized` from
     // the constraint, not as `MissingRequiredSignature`.
-    context.warp_to_slot(2).expect("warping to slot 2");
-    context.last_blockhash = context.get_new_latest_blockhash().await.expect("a blockhash");
+    advance(&mut context).await;
     let result = send(
         &mut context,
         accept_admin_instruction(&harness, harness.impostor_key()),
