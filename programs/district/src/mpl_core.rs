@@ -202,7 +202,7 @@ mod tests {
     }
 
     /// The Anchor error name, so assertions stay readable.
-    fn error_name<T>(result: Result<T>) -> String {
+    fn error_name<T: core::fmt::Debug>(result: Result<T>) -> String {
         match result.unwrap_err() {
             AnchorError::AnchorError(anchor_error) => anchor_error.error_name,
             AnchorError::ProgramError(program_error) => {

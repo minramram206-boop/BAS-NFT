@@ -549,7 +549,10 @@ pub mod district {
 /// cannot supply or modify the prefix.
 pub fn approved_template_address(template_id: u32) -> Pubkey {
     Pubkey::find_program_address(
-        &[b"approved_template", &template_id.to_le_bytes()],
+        &[
+            b"approved_template".as_ref(),
+            template_id.to_le_bytes().as_ref(),
+        ],
         &crate::ID,
     )
     .0
@@ -612,7 +615,10 @@ pub struct InitializeConfig<'info> {
         init,
         payer = admin,
         space = ApprovedTemplate::space(args.approved_template_uri_prefix.len()),
-        seeds = [b"approved_template", &args.approved_template_id.to_le_bytes()],
+        seeds = [
+            b"approved_template".as_ref(),
+            args.approved_template_id.to_le_bytes().as_ref()
+        ],
         bump
     )]
     pub approved_template: Account<'info, ApprovedTemplate>,
@@ -708,7 +714,10 @@ pub struct RegisterCitizen<'info> {
     ///
     /// The PDA, stored id and config id must all agree before the handler runs.
     #[account(
-        seeds = [b"approved_template", &config.approved_template_id.to_le_bytes()],
+        seeds = [
+            b"approved_template".as_ref(),
+            config.approved_template_id.to_le_bytes().as_ref()
+        ],
         bump = approved_template.bump,
         constraint = approved_template.version == APPROVED_TEMPLATE_VERSION
             @ DistrictError::InvalidAssetState,
