@@ -1,133 +1,503 @@
 {
+  "metadata": {
+    "title": "BAS District",
+    "titleTemplate": "%s · BAS District",
+    "description": "An isometric city of citizen NFTs, shown with mock data.",
+    "applicationName": "BAS District",
+    "training": "Training",
+    "missions": "Mission board",
+    "season": "Season",
+    "citizen": "Citizen profile"
+  },
   "app": {
-    "districtName": "DISTRICT 01",
-    "trainingName": "CITIZEN TRAINING",
-    "trainingBadge": "PREVIEW MODE",
-    "registryHeading": "CITIZEN REGISTRY",
-    "backToDistrict": "BACK TO DISTRICT 01",
-    "districtHub": "District 01 Hub",
-    "burnTokenSymbol": "$DIST"
+    "name": "BAS DISTRICT",
+    "districtName": "District 01",
+    "tokenSymbol": "$DIST",
+    "mockData": "MOCK DATA",
+    "mockShort": "MOCK",
+    "mockWallet": "MOCK WALLET {address}",
+    "citizensInTown": "{count} citizens in town",
+    "season": "SEASON {number} · DAY {day} / {length}",
+    "seasonBoard": "Season board",
+    "back": "CITY"
+  },
+  "nav": {
+    "label": "Main",
+    "city": "CITY",
+    "missions": "MISSIONS",
+    "training": "TRAIN",
+    "season": "SEASON",
+    "citizen": "CITIZEN"
   },
   "stats": {
     "intelligence": {
       "label": "Insight",
       "shortLabel": "INSIGHT",
-      "actionLabel": "TRAIN INSIGHT",
-      "emoji": "📖",
-      "hotkey": "1"
+      "actionLabel": "TRAIN INSIGHT"
     },
     "alignment": {
       "label": "Bond",
       "shortLabel": "BOND",
-      "actionLabel": "TRAIN BOND",
-      "emoji": "⚖",
-      "hotkey": "2"
+      "actionLabel": "TRAIN BOND"
     },
     "compute": {
       "label": "Craft",
       "shortLabel": "CRAFT",
-      "actionLabel": "TRAIN CRAFT",
-      "emoji": "🤝",
-      "dojoEmoji": "💚",
-      "hotkey": "3"
+      "actionLabel": "TRAIN CRAFT"
     }
   },
-  "broadcast": {
-    "districtTag": "⚡ DISTRICT PREVIEW:",
-    "trainingTag": "⚔ TRAINING PREVIEW:",
-    "districtMessage": "LOCAL PREVIEW • {active} OF {supply} SAMPLE CITIZEN SLOTS USED • CONFIGURED NETWORK: {network}",
-    "trainingMessage": "SELECT A CITIZEN • USE ONE MATCHING PREVIEW CREDIT • MAX SCORE {maxScore} • NO ON-CHAIN TRANSACTIONS"
+  "districts": {
+    "plaza": "Central Plaza",
+    "archive": "Archive Quarter",
+    "hearth": "Hearth Row",
+    "forge": "Forge Yard",
+    "watch": "Watchtower Gate",
+    "frontier": "Outer Frontier",
+    "summit": "Summit Hall",
+    "road": "the road",
+    "always": "Always",
+    "lockedRule": "Tier {tier} · {stats} {score}",
+    "lockedShort": "Score {score} · T{tier}",
+    "unlockedBy": "{stat} {score} · T{tier}",
+    "or": " or ",
+    "anyStat": "any stat"
   },
-  "district": {
-    "onlineLabel": "LOCAL PREVIEW",
-    "configuredNetwork": "CONFIGURED NETWORK",
-    "supplyLabel": "PREVIEW SLOTS",
-    "previewCostLabel": "ESTIMATED COST",
-    "registered": "REGISTERED",
-    "notRegistered": "NOT REGISTERED",
-    "localCitizenTitle": "LOCAL CITIZEN",
-    "unregisteredSpeech": "Not registered yet.",
-    "unregisteredHint": "This is a local preview. No Core asset has been minted or registered.",
-    "registeredDetail": "Preview citizen #{id} • Insight {insight} | Bond {bond} | Craft {craft}",
-    "interaction": "District interaction",
-    "chooseAction": "Choose an action below",
-    "mintAction": "PREVIEW REGISTRATION",
-    "registryAction": "VIEW CITIZENS",
-    "trainingAction": "TRAIN",
-    "mintIconAlt": "Preview citizen registration",
-    "registryIconAlt": "View the citizen registry",
-    "trainingIconAlt": "Open citizen training",
-    "agentLabel": "CITIZEN",
-    "codeLabel": "ID:",
-    "previewUpgradeNotice": "PREVIEW ONLY • ESTIMATED COSTS • CONFIG VALUES UNVERIFIED • NO ON-CHAIN TRANSACTIONS",
-    "searchPlaceholder": "Search citizens...",
-    "searchLabel": "Search citizens",
-    "filterAll": "ALL",
-    "filterRegistered": "REGISTERED",
-    "filterUnregistered": "NOT REGISTERED",
-    "previousPage": "◀ PREV",
-    "nextPage": "NEXT ▶",
-    "pageCount": "PAGE {current} / {total}",
-    "stageTitle": "Click a tile or use W, A, S, D, or the arrow keys to move the citizen around the plaza.",
-    "stageAlt": "District 01 courtyard plaza",
-    "stageLabel": "PLAZA PREVIEW",
-    "stageControls": "WASD / ARROWS",
-    "shieldAlt": "District 01 shield",
-    "supplyAlt": "Preview slot counter",
-    "gateAlt": "District gate",
-    "toggleAudio": "Toggle 8-bit audio",
-    "audioOn": "🔊 ON",
-    "audioOff": "🔇 OFF",
-    "registeredSpeech": "{name} appears in the District 01 local preview."
+  "city": {
+    "loading": "Loading the city…",
+    "eventTag": "DISTRICT EVENT",
+    "eventIn": "in {time}",
+    "eventName": "BLACKOUT NIGHT",
+    "eventBody": "Craft fixes the generator, Bond calms the crowd, Insight finds the cause.",
+    "modeLabel": "Citizen mode",
+    "modeAuto": "AUTO",
+    "modeControl": "CONTROL",
+    "hintControl": "Tap the map to walk",
+    "hintAuto": "Citizens follow their day",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "center": "Center on the selected citizen",
+    "myCitizens": "MY CITIZENS",
+    "owned": "{count} owned",
+    "selected": "SELECTED",
+    "foundingCitizen": "Founding citizen",
+    "notYours": "Owned by another player",
+    "walkingTo": "Walking to {district}",
+    "standingIn": "At {district}",
+    "onMission": "{mission} · step {step} of {steps}",
+    "blockedTitle": "DISTRICT LOCKED",
+    "blockedMessage": "{name} cannot enter {district} yet. It opens at {rule}.",
+    "notOwnedTitle": "NOT YOUR CITIZEN",
+    "notOwnedMessage": "Only citizens you own follow your taps. Pick one under My citizens.",
+    "profile": "PROFILE",
+    "missions": "MISSIONS",
+    "train": "TRAIN"
+  },
+  "profile": {
+    "title": "CITIZEN PROFILE",
+    "bracket": "{role} · {bracket} bracket (highest stat {score})",
+    "ownerYou": "Owner {address} (you)",
+    "ownerOther": "Owned by another player",
+    "statsTitle": "STATS",
+    "statsRule": "Max 10 · tiers at 3, 6 and 10",
+    "tier": "Tier {tier}",
+    "credits": "{count} {stat} credits",
+    "credit": "1 {stat} credit",
+    "noCredits": "0 {stat} credits · do a mission first",
+    "nextCost": "Next: {cost} {symbol} + 1 credit",
+    "maxed": "Maxed",
+    "districtsTitle": "DISTRICTS",
+    "districtsRule": "Unlocked by tier",
+    "achievementsTitle": "ACHIEVEMENTS",
+    "achFounding": "Founding citizen",
+    "achFoundingDetail": "Minted in Season 1",
+    "achFirstTier": "First tier · {stat}",
+    "achFirstTierDetail": "{stat} reached 3",
+    "achEvent": "Hero of Blackout Night",
+    "achEventDetail": "District event",
+    "achMaster": "Master of Season 1",
+    "achMasterDetail": "Master bracket",
+    "historyTitle": "PUBLIC HISTORY",
+    "burned": "{amount} {symbol} burned",
+    "talk": "TALK",
+    "talkTitle": "TALK",
+    "talkMessage": "Chat with citizens arrives in Stage 5. In this preview they only walk and work.",
+    "train": "TRAIN",
+    "missing": "This citizen is not in the preview roster."
+  },
+  "history": {
+    "day": "DAY {day}",
+    "register": "Registered as {role}",
+    "registerDetail": "Starting stats: Insight {insight} · Bond {bond} · Craft {craft}",
+    "train": "Trained {stat} {from} → {to}",
+    "trainDetail": "Burned {amount} {symbol} · used 1 {stat} credit",
+    "mission": "Mission: {mission}",
+    "missionDetail": "{district} · earned 1 {stat} credit"
+  },
+  "missions": {
+    "title": "MISSION BOARD",
+    "subtitle": "Central Plaza",
+    "playingAs": "Playing as",
+    "filterLabel": "Filter by stat",
+    "all": "ALL",
+    "events": "EVENTS",
+    "note": "Credits from missions are the only way to train",
+    "statusActive": "IN PROGRESS",
+    "statusOpen": "AVAILABLE",
+    "statusLocked": "LOCKED",
+    "statusBusy": "TAKEN",
+    "statusSoon": "IN {time}",
+    "reward": "+1 {stats} credit",
+    "rewardEvent": "Credit by task + event title",
+    "anyCitizen": "Any citizen",
+    "takenBy": "{name} · step {step} of {steps}",
+    "needs": "Needs {rule}",
+    "needsMet": "Needs Tier {tier} · you have it",
+    "districtEvent": "District event",
+    "rewardTitle": "REWARD",
+    "rewardNote": "Goes to {name} only and cannot be traded. One credit plus {cost} {symbol} trains {stat} {from} → {to}.",
+    "verified": "The mission server checks each step, then co-signs the credit on chain.",
+    "start": "START MISSION",
+    "next": "DO NEXT STEP",
+    "finish": "FINISH AND CLAIM",
+    "abandon": "ABANDON",
+    "lockedHint": "{name} cannot enter {district} yet.",
+    "busyHint": "{name} is already on this mission.",
+    "soonHint": "This event opens in {time}.",
+    "completeTitle": "MISSION COMPLETE",
+    "completeMessage": "{name} earned 1 {stat} credit and {points} season points. Spend the credit in Training.",
+    "selectHint": "Pick a mission to see its steps.",
+    "catalog": {
+      "streetLamp": {
+        "title": "Fix the street lamp",
+        "body": "The lamp by the east road went dark. Bring the parts to the workshop and fit them in the right order.",
+        "steps": [
+          {
+            "title": "Pick up parts at the market",
+            "hint": "Walk to the market stall by the notice board in Central Plaza."
+          },
+          {
+            "title": "Walk to the workshop",
+            "hint": "Carry the parts to the workshop door in Forge Yard."
+          },
+          {
+            "title": "Fit the parts in order",
+            "prompt": "Build the lamp from the bottom up: the base plate holds the wire, the wire powers the bulb, and the glass goes over the bulb.",
+            "pieces": [
+              "Base plate",
+              "Copper wire",
+              "Bulb",
+              "Glass cover"
+            ]
+          }
+        ]
+      },
+      "lightsOut": {
+        "title": "Who turned off the lights?",
+        "body": "Collect clues from the city ledger and the citizens, then name the culprit.",
+        "steps": [
+          {
+            "title": "Read the city ledger",
+            "hint": "Walk to the ledger desk in front of the Archive."
+          },
+          {
+            "title": "Ask the night clerk",
+            "prompt": "The ledger says the lights went out at midnight. What do you ask the night clerk?",
+            "options": [
+              "Did you sleep well?",
+              "Who walked past the lamp at midnight?",
+              "Can I borrow a book?"
+            ]
+          },
+          {
+            "title": "Name the culprit",
+            "prompt": "The clerk saw a cart hit the lamp post, and the forge cart was out late. Who turned off the lights?",
+            "options": [
+              "The baker",
+              "A stray cat",
+              "The forge cart driver"
+            ]
+          }
+        ]
+      },
+      "hearthDeliveries": {
+        "title": "Deliveries for Hearth Row",
+        "body": "Collect the parcels, bring them to the homes and calm an upset neighbour.",
+        "steps": [
+          {
+            "title": "Collect the parcels",
+            "hint": "Pick up the parcels on the east side of Central Plaza."
+          },
+          {
+            "title": "Deliver to the homes",
+            "hint": "Walk the parcels to the homes in Hearth Row."
+          },
+          {
+            "title": "Calm the neighbour",
+            "prompt": "A neighbour is upset their parcel came late. What do you say?",
+            "options": [
+              "Sorry for the wait. I came as fast as I could, and it is all here.",
+              "Late is better than never.",
+              "Take it up with the post office."
+            ]
+          }
+        ]
+      },
+      "nightPatrol": {
+        "title": "Night patrol",
+        "body": "Check three posts on the wall and report the one thing out of place.",
+        "steps": [
+          {
+            "title": "North post",
+            "hint": "Walk to the north post of Watchtower Gate."
+          },
+          {
+            "title": "East post",
+            "hint": "Walk along the wall to the east post."
+          },
+          {
+            "title": "Gate post",
+            "hint": "Finish the round at the post beside the gate."
+          },
+          {
+            "title": "Report what was odd",
+            "prompt": "Which one did not belong on the wall tonight?",
+            "options": [
+              "A lit torch at the north post",
+              "A guard at the east post",
+              "An open gate latch at the gate post"
+            ]
+          }
+        ]
+      },
+      "ruinsExpedition": {
+        "title": "Expedition to the ruins",
+        "body": "Pack supplies, cross the gate and map the ruins beyond the wall.",
+        "steps": [
+          {
+            "title": "Pack supplies",
+            "hint": "Collect supplies on the south side of Central Plaza."
+          },
+          {
+            "title": "Cross the gate",
+            "hint": "Walk through the gate into the Outer Frontier."
+          },
+          {
+            "title": "Reach the ruins",
+            "hint": "Walk to the old ruins deep in the frontier."
+          },
+          {
+            "title": "Map the ruins",
+            "prompt": "Draw the map from the gate outward: the old road leads from the gate to the broken tower, and the vault lies past the tower.",
+            "pieces": [
+              "Gate",
+              "Old road",
+              "Broken tower",
+              "Buried vault"
+            ]
+          }
+        ]
+      },
+      "blackoutNight": {
+        "title": "Blackout Night",
+        "body": "Every stat has a job: fix the generator, calm the crowd, find the cause.",
+        "steps": [
+          {
+            "title": "Fix the generator",
+            "prompt": "Restart the generator safely: open the fuel first, then start it, and switch the main breaker on last.",
+            "pieces": [
+              "Fuel valve",
+              "Starter switch",
+              "Main breaker"
+            ]
+          },
+          {
+            "title": "Calm the crowd",
+            "prompt": "The plaza is dark and people are worried. What do you say?",
+            "options": [
+              "Run home!",
+              "Stay together, the lights will be back in minutes.",
+              "It is not my problem."
+            ]
+          },
+          {
+            "title": "Find the cause",
+            "prompt": "What tripped the city power?",
+            "options": [
+              "An overloaded line at the forge",
+              "The fountain",
+              "A full moon"
+            ]
+          }
+        ]
+      }
+    },
+    "stepGoto": "Walk {name} to the marker on the map.",
+    "stepTalk": "Pick the best reply.",
+    "stepPuzzle": "Tap the pieces in the right order.",
+    "chooseStat": "Pick the credit you want",
+    "creditFor": "Credit for {stat}",
+    "continue": "CONTINUE IN CITY",
+    "answer": "ANSWER",
+    "solve": "SOLVE",
+    "limits": "{left} of {max} mission credits left today for {name}",
+    "cooldownHint": "{name} already finished this mission today. It opens again tomorrow.",
+    "limitHint": "{name} has earned {max} mission credits today. Come back tomorrow.",
+    "citizenBusyHint": "{name} is on another mission. Finish or abandon it first.",
+    "nextDay": "NEXT DAY (MOCK)",
+    "nextDayHint": "Mock only: moves the season clock one day to reset the daily limits.",
+    "points": "+{points} season points",
+    "trackerTitle": "MISSION",
+    "trackerStep": "Step {step} of {steps}",
+    "wrongTitle": "NOT QUITE",
+    "wrongAnswer": "That is not it. Read the question again and pick another reply.",
+    "wrongOrder": "Wrong order. The pieces were put back, try again.",
+    "puzzleProgress": "{placed} of {total} placed",
+    "close": "CLOSE",
+    "arrived": "Arrived",
+    "centerMap": "CENTER MAP",
+    "statusDone": "DONE TODAY",
+    "stepsCount": "{count} steps",
+    "slotFirst": "first",
+    "slotLast": "last"
   },
   "training": {
-    "costHint": "Each preview upgrade uses one matching Training Credit and estimates the configured token cost. Token decimals and addresses are unverified; no tokens are transferred or burned.",
-    "attributeHeading": "CITIZEN ATTRIBUTES",
-    "creditsHeading": "PREVIEW TRAINING CREDITS",
-    "creditCount": "Preview: {count} {label} Credit",
-    "creditCountPlural": "Preview: {count} {label} Credits",
-    "creditCost": "+1 {stat} • {cost} {symbol} • {credits} {creditLabel} Credit",
-    "buttonTitle": "Train {stat} by one point",
-    "maxLevel": "MAX LEVEL",
-    "noCredit": "NO MATCHING CREDIT",
-    "previewReady": "Preview ready. Choose an attribute to simulate training.",
-    "previewSuccess": "Preview upgrade complete. {stat} is now {value}. Estimated cost: {cost} {symbol}. No tokens were transferred.",
-    "maxModalTitle": "MAXIMUM SCORE",
-    "maxModal": "{citizen} has reached the maximum score of {max} for {stat}.",
-    "creditModalTitle": "NO MATCHING CREDIT",
-    "creditModal": "This citizen has no matching preview Training Credit for {stat}. In the live system, earn this credit through an authorized mission or verified district event.",
-    "backHint": "Return to the district",
-    "switchToTraining": "⚔ TRAIN",
-    "selectCitizen": "SELECT A CITIZEN",
-    "switchCitizen": "SWITCH CITIZENS:",
-    "clickToSelect": "CLICK TO SELECT",
-    "backHotkeyLabel": "ESC"
+    "title": "TRAINING",
+    "subtitle": "Spend one credit and burn {symbol} to raise one stat by 1",
+    "noCredit": "No credit yet",
+    "noCreditHint": "Do a {stat} mission first",
+    "cardLine": "{from} → {to} · {cost} {symbol}",
+    "cardCredits": "{count} credits · Tier {tier}",
+    "cardCredit": "1 credit · Tier {tier}",
+    "maxed": "Maxed at 10",
+    "head": "{stat} {from} → {to}",
+    "reachesTier": "Reaches Tier {tier} and unlocks new content",
+    "staysTier": "Stays Tier {tier} · next tier at {next}",
+    "cost": "Training cost",
+    "rule": "Rule",
+    "ruleValue": "100 × (current score + 1)",
+    "creditUsed": "Credit used",
+    "creditValue": "1 {stat} ({before} → {after})",
+    "walletAfter": "Wallet after",
+    "where": "Where the tokens go",
+    "burned": "100% burned",
+    "ladder": "COST PER LEVEL",
+    "ladderNote": "Bar = cost to reach that score. 100 at 1, up to 1,000 at 10.",
+    "mockNote": "Mock mode: nothing is signed or burned. With a wallet this sends one upgrade_score transaction.",
+    "cta": "BURN {cost} {symbol} AND TRAIN",
+    "speechReady": "Ready when you are. {stat} {from} → {to}.",
+    "speechTier": "One more {stat} and I reach Tier {tier}. Let's go.",
+    "speechMaxed": "My {stat} is already at the top.",
+    "notYours": "{name} belongs to another player. Pick one of your citizens to train.",
+    "viewProfile": "VIEW PROFILE",
+    "pickCitizen": "SWITCH CITIZEN"
+  },
+  "season": {
+    "title": "SEASON {number}",
+    "subtitle": "Day {day} of {length} · ends in {left} days",
+    "bracketLabel": "Bracket",
+    "brackets": {
+      "open": "OPEN",
+      "rookie": "ROOKIE 1–3",
+      "skilled": "SKILLED 4–6",
+      "elite": "ELITE 7–9",
+      "master": "MASTER 10"
+    },
+    "bracketNames": {
+      "open": "Open",
+      "rookie": "Rookie",
+      "skilled": "Skilled",
+      "elite": "Elite",
+      "master": "Master"
+    },
+    "bracketHeading": "{bracket} BRACKET",
+    "entries": "{entries} valid entries → up to {winners} cash winners",
+    "noBoard": "The leaderboard for this bracket opens when it has five valid entries.",
+    "previewOnly": "This preview has leaderboard rows for the Skilled bracket only.",
+    "rank": "RANK",
+    "citizen": "CITIZEN",
+    "role": "ROLE",
+    "points": "POINTS",
+    "prize": "PRIZE",
+    "you": "YOU",
+    "titleOnly": "title only",
+    "cutline": "CASH PRIZES STOP AT RANK {rank} · ACHIEVEMENT TITLES CONTINUE",
+    "rules": "Points reset each season. Scores, achievements and history stay with the citizen. One wallet enters one citizen per competition.",
+    "vault": "PRIZE VAULT",
+    "noWithdraw": "NO WITHDRAW",
+    "explorer": "View on explorer",
+    "inVault": "In the vault",
+    "locked": "Locked for Season {number}",
+    "pools": "SEASON {number} POOLS",
+    "maxWinners": "{count} max",
+    "howFundsLeave": "HOW FUNDS LEAVE",
+    "stepEnd": "DAY {day}",
+    "stepEndText": "Season ends",
+    "stepPosted": "+1 DAY",
+    "stepPostedText": "Winners posted",
+    "stepChallenge": "48H",
+    "stepChallengeText": "Challenge window",
+    "stepClaim": "CLAIM",
+    "stepClaimText": "Winner signs",
+    "disclosure": "Funded only by Pump.fun creator fees under a locked 50 / 30 / 20 split. Prize amounts are not guaranteed. Holding a citizen does not earn rewards.",
+    "explorerTitle": "MOCK VAULT",
+    "explorerMessage": "This vault is mock data. The real address appears here after the prize_vault program is deployed."
+  },
+  "errors": {
+    "not-owner": {
+      "title": "NOT YOUR CITIZEN",
+      "message": "Only the owner of a citizen can train it or take missions with it."
+    },
+    "stat-at-max": {
+      "title": "STAT AT MAXIMUM",
+      "message": "This stat is already at 10, the highest score."
+    },
+    "no-credit": {
+      "title": "NO CREDIT",
+      "message": "Training needs one credit of the same stat. Finish a mission to earn one."
+    },
+    "insufficient-balance": {
+      "title": "NOT ENOUGH TOKENS",
+      "message": "The wallet does not hold enough tokens for this training."
+    },
+    "district-locked": {
+      "title": "DISTRICT LOCKED",
+      "message": "This citizen cannot enter that district yet."
+    },
+    "mission-busy": {
+      "title": "MISSION TAKEN",
+      "message": "Another of your citizens is already on this mission."
+    },
+    "mission-closed": {
+      "title": "NOT OPEN YET",
+      "message": "This mission cannot be started yet."
+    },
+    "citizen-busy": {
+      "title": "ALREADY ON A MISSION",
+      "message": "This citizen is on another mission. Finish or abandon it first."
+    },
+    "mission-cooldown": {
+      "title": "DONE TODAY",
+      "message": "This citizen already finished this mission today. It opens again tomorrow."
+    },
+    "daily-limit": {
+      "title": "DAILY LIMIT",
+      "message": "A citizen earns up to 3 mission credits per day. Come back tomorrow."
+    },
+    "invalid-stat": {
+      "title": "WRONG CREDIT",
+      "message": "This mission does not give a credit for that stat."
+    }
   },
   "actions": {
-    "previewRegistrationTitle": "PREVIEW REGISTRATION",
-    "noSlotsTitle": "NO PREVIEW SLOTS",
-    "noSlotsMessage": "No local preview slots remain.",
-    "allRegisteredTitle": "ALL SAMPLE CITIZENS REGISTERED",
-    "allRegisteredMessage": "All {count} sample citizens in this preview are registered.",
-    "previewRegistrationMessage": "{name} ({code}) is now registered in this local preview. No Core asset was minted and no on-chain transaction was sent. Role: {role}. Remaining preview slots: {remaining} / {total}.",
-    "walletUnavailableTitle": "WALLET NOT CONNECTED",
-    "walletUnavailableMessage": "Wallet connection is not available in this local preview. No wallet has been connected.",
-    "closeModal": "CLOSE"
-  },
-  "status": {
-    "previewNotice": "LOCAL PREVIEW • NOT CONNECTED TO SOLANA • PLACEHOLDER CONFIG • NETWORK: {network} • PROGRAM: {program}",
-    "footer": "Token decimals, addresses and deployment status have not been verified."
+    "closeModal": "CLOSE",
+    "walletTitle": "MOCK WALLET",
+    "walletMessage": "This preview uses a mock wallet with mock tokens. Wallet connection arrives with the devnet step."
   },
   "a11y": {
-    "loggedInTitle": "A wallet connector is not enabled in this preview.",
-    "loginButton": "WALLET CONNECTOR UNAVAILABLE",
-    "audioOnTitle": "Turn 8-bit audio off",
-    "audioOffTitle": "Turn 8-bit audio on"
-  },
-  "metadata": {
-    "title": "Pixel District Preview",
-    "titleTemplate": "%s - Pixel District Preview",
-    "description": "A local preview of citizen content and stat progression.",
-    "applicationName": "Pixel District"
+    "map": "Isometric map of District 01",
+    "sound": "Sound",
+    "soundOn": "Turn sound off",
+    "soundOff": "Turn sound on",
+    "selectCitizen": "Select {name}"
   }
 }

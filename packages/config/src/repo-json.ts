@@ -1,37 +1,49 @@
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve as resolvePath } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const WORKSPACE_MARKER = 'pnpm-workspace.yaml';
+const MAX_WALK_DEPTH = 8;
 
 /**
- * Directory of this module. Works when the package is consumed as TypeScript
- * source (`<pkg>/src`) and when it is compiled (`<pkg>/dist`).
+ * Directory of this module, in `<pkg>/src` or `<pkg>/dist`.
+ *
+ * `fileURLToPath` rather than `URL#pathname`: on Windows the pathname is
+ * `/C:/...`, which no file system call accepts.
  */
 function currentDir(): string {
   const metaUrl = (import.meta as { url?: string }).url;
-  if (metaUrl) {
-    return dirname(new URL(metaUrl).pathname);
+  if (metaUrl?.startsWith('file:')) {
+    return dirname(fileURLToPath(metaUrl));
   }
-  return __dirname;
+  return typeof __dirname === 'string' ? __dirname : process.cwd();
 }
 
-/**
- * Repository root, found by walking up from this module.
- * Derived from the module location instead of `process.cwd()` so the loader
- * also works in scripts and tests launched from inside a workspace package.
- */
-export function findRepoRoot(): string {
-  let dir = currentDir();
-
-  for (let depth = 0; depth < 8; depth += 1) {
-    if (existsSync(join(dir, 'pnpm-workspace.yaml'))) {
+function walkUpToWorkspace(start: string): string | undefined {
+  let dir = start;
+  for (let depth = 0; depth < MAX_WALK_DEPTH; depth += 1) {
+    if (existsSync(join(dir, WORKSPACE_MARKER))) {
       return dir;
     }
     const parent = dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
+  return undefined;
+}
 
-  throw new Error('[@bas/config] cannot locate the repository root (pnpm-workspace.yaml not found)');
+/**
+ * Repository root, found by walking up from this module and, failing that,
+ * from the working directory. The module location comes first so scripts and
+ * tests launched from inside a workspace package still resolve the same root.
+ */
+export function findRepoRoot(): string {
+  const root = walkUpToWorkspace(currentDir()) ?? walkUpToWorkspace(process.cwd());
+  if (!root) {
+    throw new Error(`[@bas/config] cannot locate the repository root (${WORKSPACE_MARKER} not found)`);
+  }
+  return root;
 }
 
 /**

@@ -1,7 +1,7 @@
 # Architecture and repository layout
 
 This document explains how the repository is organised. Product requirements
-live in [`specs/PIXEL_DISTRICT_SPEC_V2_ID.md`](./specs/PIXEL_DISTRICT_SPEC_V2_ID.md)
+live in [`specs/BAS_DISTRICT_SPEC_V2_ID.md`](./specs/BAS_DISTRICT_SPEC_V2_ID.md)
 and the mandated technology choices in [`id/TECH_STACK_ID.md`](./id/TECH_STACK_ID.md).
 
 ## 1. Layout
@@ -19,8 +19,8 @@ apps/
         modal/             global dialog
         ui/                shared primitives (PixelIcon, PixelSprite, StatMeter, TrainStatButton)
       config/              presentation constants, stage tuning, stat metadata, copy
-      lib/                 audio synthesizer, hooks, class helper
-      stores/              zustand store factory, provider, selectors
+      lib/                 audio synthesizer, DOM effects, hooks, class helper
+      stores/              zustand store: types, slices/ (registry, training, ui), provider, selectors
     public/
       avatars/             120x57 portraits referenced by content
       characters/          1000x1000 sprites referenced by content
@@ -35,11 +35,18 @@ packages/
 programs/
   Anchor.toml              Anchor toolchain and program ids
   district/                Anchor program: citizen registration and token-burn training
-    src/lib.rs             instructions and account constraints
-    src/state.rs           DistrictConfig, CitizenState, CitizenStat, STAT_MAX
+    src/lib.rs             #[program] entry points only; each delegates to its instruction
+    src/instructions/      one file per instruction: its Accounts struct and handler
+    src/state/             DistrictConfig, ApprovedTemplate, CitizenState/CitizenStat, ClaimReceipt
+    src/constants.rs       PDA seeds, STAT_MAX, tiers, layout versions
+    src/progression.rs     training cost formula and tiers
+    src/mpl_core.rs        Metaplex Core AssetV1 reader and the shared membership check
+    src/utility_token.rs   SPL Token / Token-2022 mint verification
+    src/pda.rs             PDA addresses and prefund-safe account creation
+    src/roles.rs           seven-role registry
     src/errors.rs          DistrictError
-    src/events.rs          CitizenRegistered, StatTrained, DistrictPausedChanged
-    src/mpl_core.rs        Metaplex Core AssetV1 prefix reader + Rust unit tests
+    src/events.rs          §13 events plus ConfigUpdated
+    tests/integration/     solana-program-test suite: harness/ plus one file per area
 
 config/
   devnet.json              devnet addresses and parameters
@@ -157,8 +164,8 @@ keep them outside the working tree.
 
 ## 6. Launch gate
 
-`config/*.json` still ships placeholder addresses. `programId` is 42
-characters, which is not a valid Solana public key (43–44 base58 characters).
+`config/*.json` still ships placeholder addresses. They are well-formed public
+keys, so everything compiles, but none of them is deployed.
 
 `@bas/config` therefore validates in two tiers:
 
@@ -169,7 +176,12 @@ characters, which is not a valid Solana public key (43–44 base58 characters).
   `*.invalid` and `example.com`. `findPlaceholderAddresses(config)` reports
   the address portion, while `findPlaceholderConfiguration(config)` reports
   both addresses and the approved-template URI prefix. Call these from
-  deployment and release checks, never from rendering.
+  deployment and release checks, never from rendering. A config test fails if
+  any critical address in either shipped manifest slips past the gate.
+
+The program enforces the release order itself (SPEC §5.7): only the upgrade
+authority can run `initialize_config`, the district always starts paused, and
+`set_paused(false)` is refused until the utility mint is bound and locked.
 
 Before any deployment: generate the program keypair, deploy, then write the
 same public key into `config/devnet.json`, `config/mainnet.json` and
@@ -194,14 +206,16 @@ pull request:
 | Job | Steps | Notes |
 | --- | --- | --- |
 | `typescript` | install (runs `postinstall` → `build:packages`), `pnpm typecheck`, `pnpm test`, `pnpm lint`, `node scripts/check-assets.mjs`, `pnpm build` | The web build uses self-hosted `@fontsource` assets and does not require Google Fonts egress |
-| `programs` | `cargo check --all-targets`, then `cargo test --lib`, then `cargo test --test integration -- --test-threads=1` | Catches Rust syntax and type errors, runs the 9 host-side unit tests for the Metaplex Core asset parser — the only automated proof that the collection check reads the right offsets — and then the 18 instruction-level tests (D-0012). The job sets `RUSTFLAGS: -A unexpected_cfgs` and `RUST_LOG: error`, without which anchor macro warnings and runtime debug logs bury the summary. A real `anchor build` / `anchor test` against a validator must still run before deployment |
+| `programs` | `cargo fmt --check`, `cargo check --all-targets`, `cargo test --lib`, then `cargo test --test integration -- --test-threads=1` | 29 unit tests (Core parser, template allowlist, state, roles, cost formula) and 63 instruction-level tests, including adversarial cases for forged assets, front-run initialization, cross-citizen claims and prefunded receipts (D-0012, D-0016). `RUSTFLAGS: -A unexpected_cfgs` and `RUST_LOG: error` keep macro warnings and runtime logs out of the summary. A real `anchor build` / `anchor test` against a validator must still run before deployment |
 
 ## 9. Known gaps
 
 Tracked in [`DECISIONS.md`](./DECISIONS.md):
 
-- `register_citizen` verifies collection membership by reading the Metaplex
-  Core asset itself (D-0005, D-0011). Compressed assets are rejected, because a
+- `register_citizen`, `claim_training_credit` and `upgrade_score` verify
+  collection membership by reading the Metaplex Core asset itself, and the
+  asset account must be owned by the pinned Core program id (D-0011, D-0016).
+  Compressed assets are rejected, because a
   `HashedAssetV1` account stores no readable owner or collection. Supporting
   them would need a Merkle tree and a separate decision.
 - The web app has no wallet integration yet: `walletAddress` is a placeholder
@@ -213,14 +227,13 @@ Tracked in [`DECISIONS.md`](./DECISIONS.md):
   required `tests/e2e` and `tests/integration` directories are present; the
   former is reserved for future Playwright browser tests, while program
   instruction tests currently live beside the Anchor crate.
-- `programs/district` now has an instruction-level suite: 18 tests in
-  `programs/district/tests/integration.rs` run the real program logic inside
-  `solana-program-test`, next to `cargo check --all-targets` and the 9 host-side
-  unit tests (D-0012). Two things still need `anchor build` and `anchor test`
-  against a real validator before deploying: the emitted event payloads, which
-  this harness structurally cannot observe, and everything specific to the BPF
-  target, including real compute-unit limits. `set_paused` also still needs
-  owner sign-off, because it touches authority (D-0006).
+- `programs/district/tests/integration/` runs the real program logic inside
+  `solana-program-test` (D-0012). Two things still need `anchor build` and
+  `anchor test` against a real validator before deploying: the emitted event
+  payloads, which this harness cannot observe, and everything specific to the
+  BPF target, including real compute-unit limits.
+- The interactive district is React/CSS today. `TECH_STACK_ID.md` mandates
+  Phaser 3 for Stage 4; that scene has not been built yet.
 - `packages/metaplex-client`, the off-chain adapter required by
   `TECH_STACK_ID.md` §11, still does not exist. On-chain verification does not
   depend on it, but a wallet integration will.

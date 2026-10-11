@@ -1,4 +1,4 @@
-# Pixel District — Agent Start Here
+# BAS District — Agent Start Here
 
 Status: Mandatory implementation handoff. This document is agent-facing and written in English. Internal owner-facing product documents remain in Indonesian.
 
@@ -6,7 +6,7 @@ Status: Mandatory implementation handoff. This document is agent-facing and writ
 
 Read these files before proposing architecture or writing code:
 
-1. `docs/specs/PIXEL_DISTRICT_SPEC_V2_ID.md`
+1. `docs/specs/BAS_DISTRICT_SPEC_V2_ID.md`
    - Primary source of truth for product behavior, architecture boundaries, economics, security constraints, language rules, network parity, release order, and acceptance tests.
 2. `docs/id/TECH_STACK_ID.md`
    - Required implementation languages, frameworks, infrastructure, monorepo structure, tests, and staged build order.
@@ -23,8 +23,8 @@ The owner controls the visual direction and will provide approved design assets 
 
 If two artifacts appear inconsistent, use this order:
 
-1. Requirements marked `[FINAL]` in `docs/specs/PIXEL_DISTRICT_SPEC_V2_ID.md`.
-2. Other explicit requirements in `docs/specs/PIXEL_DISTRICT_SPEC_V2_ID.md`.
+1. Requirements marked `[FINAL]` in `docs/specs/BAS_DISTRICT_SPEC_V2_ID.md`.
+2. Other explicit requirements in `docs/specs/BAS_DISTRICT_SPEC_V2_ID.md`.
 3. Specialized competition rules in `docs/id/PRIZE_POOL_MODEL.md`.
 4. Technology decisions in `docs/id/TECH_STACK_ID.md`.
 5. Approved entries in `docs/DECISIONS.md`.
@@ -38,7 +38,7 @@ An agent assumption must never override an explicit requirement.
 
 - Use Rust and Anchor for security-critical Solana programs.
 - Use strict TypeScript for the web app, server routes, worker, clients, scripts, and tests.
-- Use Next.js/React for the application shell and Phaser 3 for the interactive pixel district.
+- Use Next.js/React for the application shell and Phaser 3 for the interactive district map.
 - Use `@solana/kit` and Wallet Standard for new Solana frontend work.
 - Isolate Metaplex Umi/Core/Candy Machine integration behind a dedicated adapter package.
 - Use Metaplex Core Candy Machine on devnet and mainnet.
@@ -99,7 +99,7 @@ For every pull request or deliverable:
 Mandatory:
 
 - `docs/AGENT_START_HERE.md`
-- `docs/specs/PIXEL_DISTRICT_SPEC_V2_ID.md`
+- `docs/specs/BAS_DISTRICT_SPEC_V2_ID.md`
 - `docs/id/TECH_STACK_ID.md`
 - `docs/DECISIONS.md`
 
@@ -110,7 +110,7 @@ Add `docs/id/PRIZE_POOL_MODEL.md` when working on competition programs, prize va
 Mandatory:
 
 - `docs/AGENT_START_HERE.md`
-- `docs/specs/PIXEL_DISTRICT_SPEC_V2_ID.md`
+- `docs/specs/BAS_DISTRICT_SPEC_V2_ID.md`
 - `docs/id/TECH_STACK_ID.md`
 - `docs/id/OWNER_VALUE_FLOW_ID.html`
 - `docs/DECISIONS.md`
@@ -122,7 +122,7 @@ Implement the application in Next.js/React/Phaser using only visual direction an
 Mandatory:
 
 - `docs/AGENT_START_HERE.md`
-- `docs/specs/PIXEL_DISTRICT_SPEC_V2_ID.md`
+- `docs/specs/BAS_DISTRICT_SPEC_V2_ID.md`
 - `docs/id/TECH_STACK_ID.md`
 - `docs/id/OWNER_VALUE_FLOW_ID.html`
 - `docs/DECISIONS.md`
@@ -134,7 +134,7 @@ The AI response is untrusted presentation data. Validate structured output and n
 Mandatory:
 
 - `docs/AGENT_START_HERE.md`
-- `docs/specs/PIXEL_DISTRICT_SPEC_V2_ID.md`
+- `docs/specs/BAS_DISTRICT_SPEC_V2_ID.md`
 - `docs/id/PRIZE_POOL_MODEL.md`
 - `docs/id/TECH_STACK_ID.md`
 - `docs/id/OWNER_VALUE_FLOW_ID.html`
@@ -145,7 +145,7 @@ Mandatory:
 Mandatory:
 
 - `docs/AGENT_START_HERE.md`
-- `docs/specs/PIXEL_DISTRICT_SPEC_V2_ID.md`
+- `docs/specs/BAS_DISTRICT_SPEC_V2_ID.md`
 - `docs/id/TECH_STACK_ID.md`
 - `docs/id/PRIZE_POOL_MODEL.md`
 - `docs/DECISIONS.md`

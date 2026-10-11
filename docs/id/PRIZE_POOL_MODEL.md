@@ -1,4 +1,4 @@
-# Pixel District — Model Prize Pool dan Kompetisi
+# BAS District — Model Prize Pool dan Kompetisi
 
 _Status: PROPOSED. Dokumen internal berbahasa Indonesia. Public rules, UI, code, database, event names, dan contract identifiers wajib berbahasa Inggris._
 
@@ -11,10 +11,12 @@ Berdasarkan dokumentasi resmi Pump.fun yang diperiksa pada Oktober 2026:
 - Pada bonding curve, total platform fee saat ini 1.25% dari trade.
 - Creator fee yang diterima creator saat ini 0.30% dari trade.
 - Sisanya adalah protocol fee.
-- Setelah token berpindah ke canonical PumpSwap pool, creator fee berubah menurut market-cap tier dan saat ini dapat berkisar dari 0.95% sampai 0.05%.
-- Jadwal fee dapat berubah karena ditentukan platform Pump.fun, bukan kontrak Pixel District.
+- Setelah token berpindah ke canonical PumpSwap pool, creator fee berubah menurut market-cap tier: 0.30% pada tier pertama (market cap di bawah 420 SOL), lalu 0.95% dan turun bertingkat sampai 0.05% (98,240 SOL ke atas).
+- Jadwal fee dapat berubah karena ditentukan platform Pump.fun, bukan kontrak BAS District.
 
 Karena itu, seluruh dokumen publik harus memakai istilah **creator fees actually received**, bukan “1.2% project tax”.
+
+Catatan: angka "Total Tax 2% / 2%" yang ditampilkan GMGN untuk sebagian token bukan pajak token. Untuk token yang diperiksa pada Oktober 2026, angka itu adalah fee swap pool Meteora DLMM (`fee_ratio: 0.02`) yang masuk ke penyedia likuiditas, sementara data keamanan GMGN sendiri mencatat `buy_tax: 0` dan `sell_tax: 0`. BAS District tidak memakai cara itu (lihat §4).
 
 Sumber resmi:
 
@@ -65,32 +67,56 @@ Permanent citizen progression menentukan bracket yang dapat dimasuki. Seasonal p
 
 ## 4. Sumber dana
 
-Creator fees dari Pump.fun/PumpSwap masuk ke project fee recipient sesuai mekanisme platform. Setelah fee benar-benar dapat diklaim, project treasury melakukan alokasi tercatat.
+Satu-satunya sumber dana adalah creator fee Pump.fun/PumpSwap, dibagi langsung oleh fitur fee sharing Pump.fun (D-0019). Treasury tidak melakukan alokasi manual.
 
-Pembagian awal yang direkomendasikan:
+Penerima di `sharing_config` Pump.fun:
 
-| Allocation | Share of net creator fees actually received | Purpose |
+| Penerima | `share_bps` | Purpose |
 | --- | ---: | --- |
-| Seasonal prize pool | 50% | Fund published competitions |
-| Product and AI operations | 30% | RPC, database, LLM, storage, monitoring |
-| Security and reserve | 20% | Audit, incident reserve, monitoring, and operational support |
+| `PrizePoolVault` (PDA program `prize_vault`) | 5000 | Fund published competitions |
+| `OperationsTreasury` (multisig) | 3000 | RPC, database, LLM, storage, monitoring |
+| `SecurityReserve` (multisig) | 2000 | Audit, incident reserve, monitoring, and operational support |
 
-`Net creator fees actually received` berarti creator fees yang sudah masuk/claimable setelah biaya network dan biaya claim yang nyata. Nilai ini bukan proyeksi trading volume.
+Alur dana:
 
-Persentase ini harus disimpan dalam treasury policy, bukan di citizen upgrade contract. Perubahan persentase membutuhkan:
+```text
+trade on bonding curve or PumpSwap
+→ creator fee waits on BondingCurve / Pool
+→ sweep_creator_fee                 (Pump, and PumpSwap after migration)
+→ transfer_creator_fees_to_pump_v2  (PumpSwap → Pump creator vault)
+→ distribute_creator_fees_v2        (SOL straight to each address by share_bps)
+```
 
-- Multisig approval.
-- Public announcement.
-- Minimum seven-day notice.
-- Updated public treasury page.
+Ketiga langkah permissionless: siapa pun boleh menjalankannya, dan bot proyek menjalankannya secara rutin. Untuk koin berpasangan SOL, fee tiba sebagai SOL, jadi hadiah dibayar dalam SOL.
+
+Penguncian:
+
+- `update_fee_shares_v2` dijalankan sekali saat launch. Setelah itu `admin_revoked = true` dan tim tidak bisa mengubah penerima maupun persentase.
+- Karena tidak bisa diubah, alamat `PrizePoolVault`, kedua multisig dan program ID `prize_vault` harus final sebelum langkah ini.
+- Pengecualian: Pump.fun memiliki instruksi `admin_cto_sharing_config` untuk community takeover yang bisa memasang admin baru. Kunci ini berlaku terhadap tim, bukan terhadap Pump.fun, dan hal ini harus disebut di disclosure.
+
+Yang tidak dipakai:
+
+- Pajak transfer Token-2022 (`TransferFeeConfig`), karena butuh withdraw authority yang bisa menarik dana dan tidak tersedia sebagai fitur creator Pump.fun.
+- Pool sendiri dengan fee tinggi (misalnya Meteora DLMM 2%), karena butuh modal likuiditas sendiri, terkena impermanent loss, dan bisa dihindari pembeli lewat pool lain.
+
+`Net creator fees actually received` berarti creator fees yang sudah terdistribusi ke alamat penerima setelah biaya network yang nyata. Nilai ini bukan proyeksi trading volume.
 
 ## 5. Prize vault
 
-Gunakan wallet/PDA atau multisig account khusus:
+`PrizePoolVault` adalah PDA milik program `prize_vault`. Tidak ada private key untuk alamat ini, dan program sengaja tidak punya instruksi `withdraw`.
 
-```text
-PrizePoolVault
-```
+| Instruksi | Fungsi |
+| --- | --- |
+| `initialize` | Membuat akun vault (rent-exempt) sebelum alamatnya dipasang di `sharing_config` |
+| `fund_season` | Menyisihkan jumlah tetap untuk satu season; tidak bisa dikurangi setelah season dibuka |
+| `finalize_winners` | Menyimpan Merkle root pemenang setelah season berakhir, lalu membuka masa sanggah |
+| `claim` | Pemenang menandatangani sendiri dengan bukti Merkle setelah masa sanggah; batas per pemenang dan 35 pemenang dicek program |
+| `rollover` | Hadiah yang tidak diklaim sampai batas waktu pindah ke season berikutnya |
+
+Dana hanya bisa keluar ke wallet pemenang lewat `claim`. Upgrade authority program dipegang multisig dengan timelock, lalu dicabut setelah audit.
+
+Harus diuji sebelum launch: `distribute_creator_fees_v2` mengirim SOL ke PDA milik `prize_vault` di test fork mainnet (program Pump.fun disalin dari mainnet).
 
 Prize vault dipisahkan dari:
 
@@ -304,7 +330,7 @@ SeasonClosed
 
 Contoh teks publik:
 
-> Seasonal prize pools are funded only from creator fees actually received and allocated by the project treasury. Prize amounts are not guaranteed and may vary. Holding a Citizen NFT does not automatically earn rewards. Prizes require active participation in published skill-based competitions and are subject to eligibility and anti-fraud review.
+> Seasonal prize pools are funded only from Pump.fun creator fees actually received by the on-chain prize vault, under a fee split that is locked on Pump.fun. Prize amounts are not guaranteed and may vary. Holding a Citizen NFT does not automatically earn rewards. Prizes require active participation in published skill-based competitions and are subject to eligibility and anti-fraud review.
 
 Hindari teks:
 
@@ -327,6 +353,7 @@ Real-money prize pools tidak boleh diluncurkan sebelum:
 6. At least one full zero-value test season selesai di devnet.
 7. Payout simulation dan dispute flow lulus test.
 8. Seluruh funded pool sudah tersedia di PrizePoolVault sebelum diumumkan.
+9. Distribusi fee Pump.fun ke PrizePoolVault lulus test fork mainnet, dan `sharing_config` sudah dikunci ke alamat final (D-0019).
 
 ## 16. Hubungan dengan nilai Citizen NFT
 

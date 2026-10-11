@@ -23,7 +23,10 @@
     "verify": "pnpm typecheck && pnpm test && pnpm lint && pnpm build",
     "program:check": "cargo check --all-targets",
     "program:test": "cargo test --manifest-path programs/district/Cargo.toml",
-    "program:build": "anchor build",
+    "program:build": "cargo build-sbf --manifest-path programs/district/Cargo.toml",
+    "program:test-sbf": "cargo test-sbf --manifest-path programs/district/Cargo.toml -- --test-threads=1",
+    "devnet:deploy": "bash scripts/devnet/deploy.sh",
+    "devnet:setup": "node scripts/devnet/setup.mjs",
     "clean": "pnpm --filter \"@bas/*\" clean && rm -rf apps/web/.next"
   },
   "devDependencies": {

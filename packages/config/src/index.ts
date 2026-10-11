@@ -4,16 +4,16 @@ import { resolveNetwork } from './env.js';
 import type { DistrictNetworkConfig, NetworkConfigFile, SupportedNetwork } from './types.js';
 
 export type { DistrictNetworkConfig, SupportedNetwork };
+export { NETWORK_CONFIG_FIELDS, NETWORK_CONFIG_FILES, parseNetworkConfig } from './network.js';
 export {
-  NETWORK_CONFIG_FIELDS,
-  NETWORK_CONFIG_FILES,
   PRODUCTION_CRITICAL_ADDRESS_FIELDS,
   REPO_PLACEHOLDER_ADDRESSES,
   findPlaceholderAddresses,
   findPlaceholderConfiguration,
-  parseNetworkConfig,
   validateProductionReadiness,
-} from './network.js';
+} from './readiness.js';
+export { isWellFormedPublicKey } from './pubkey.js';
+export { MAX_TEMPLATE_URI_PREFIX_LENGTH, isValidTemplateUriPrefix } from './template-uri.js';
 export { DEFAULT_NETWORK, NETWORK_ENV_VAR, resolveNetwork } from './env.js';
 export { findRepoRoot, loadRepoJson } from './repo-json.js';
 

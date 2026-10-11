@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import '@fontsource/pixelify-sans/latin-400.css';
 import '@fontsource/pixelify-sans/latin-500.css';
 import '@fontsource/pixelify-sans/latin-600.css';
@@ -21,6 +21,13 @@ export const metadata: Metadata = {
   applicationName: MESSAGES.metadata.applicationName,
 };
 
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: '#0c1622',
+};
+
 export default function RootLayout({
   children,
 }: {
@@ -31,21 +38,19 @@ export default function RootLayout({
 
   return (
     <html lang="en">
-      <body className="m-0 h-screen w-screen select-none overflow-hidden bg-[#0c1622] p-1.5 font-pixel text-[#1a2734] antialiased selection:bg-[#4d7ca8] selection:text-white md:p-2">
+      <body className="m-0 h-dvh w-screen overflow-hidden bg-[#0c1622] font-pixel text-[#1a2734] antialiased">
         {/*
-          Static cluster telemetry plus one session store seeded with the
-          validated roster. Both live in the layout so session progression
-          (trained stats, minted citizens) survives client-side navigation
-          between the district and the dojo.
+          Cluster telemetry plus one session store seeded with the validated
+          roster. Both live in the layout so progress made in mock mode
+          (training, missions) survives navigation between screens.
         */}
         <DistrictTelemetryProvider telemetry={telemetry}>
           <BasStoreProvider
             citizens={citizens}
-            maxSupply={telemetry.maxSupply}
             trainingConfig={{
               baseTrainingCostAtoms: telemetry.baseTrainingCostAtoms,
               tokenDecimals: telemetry.tokenDecimals,
-              tokenSymbol: MESSAGES.app.burnTokenSymbol,
+              tokenSymbol: MESSAGES.app.tokenSymbol,
             }}
           >
             {children}

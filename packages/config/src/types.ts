@@ -1,7 +1,7 @@
 /**
  * Shared configuration for one Solana cluster.
  *
- * The manifest names follow `docs/specs/PIXEL_DISTRICT_SPEC_V2_ID.md` §4.3 so
+ * The manifest names follow `docs/specs/BAS_DISTRICT_SPEC_V2_ID.md` §4.3 so
  * the deployment files and the product specification can be compared without
  * an adapter or a second set of aliases. `baseTrainingCostAtoms` stays a
  * decimal string: token atoms are integers, and JSON numbers cannot safely
@@ -52,6 +52,11 @@ export interface DistrictNetworkConfig {
   approvedTemplateUriPrefix: string;
   /** Mock collection supply for UI preview; the Candy Machine enforces live supply. */
   maxSupply: number;
+  /**
+   * Public mint price in lamports, charged by the Candy Guard `solPayment`
+   * guard and paid to `solTreasury` (D-0024). `10000000` is 0.01 SOL.
+   */
+  mintPriceLamports: string;
 }
 
 export type SupportedNetwork = 'devnet' | 'mainnet-beta';

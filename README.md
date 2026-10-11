@@ -1,4 +1,4 @@
-# BAS — Pixel District
+# BAS — BAS District
 
 Living pixel-art world and citizen progression on Solana. Citizens register in
 District 01, train three attributes, and burn the one official utility token to
@@ -6,10 +6,10 @@ raise a canonical score.
 
 > **Status:** Stage 1–4 of the build order in
 > [`docs/id/TECH_STACK_ID.md`](docs/id/TECH_STACK_ID.md) are partially in place.
-> The web app runs end to end against authored content. The Anchor program is a
-> draft that has not been compiled, deployed, or audited, and every address in
-> `config/*.json` is still a placeholder. Nothing here is launch ready — see
-> [Launch gate](#launch-gate).
+> The web app runs end to end against authored content. The Anchor program
+> compiles and passes its host-side test suites, but it has never been built
+> for BPF, deployed or audited, and every address in `config/*.json` is still a
+> placeholder. Nothing here is launch ready — see [Launch gate](#launch-gate).
 
 ## Quick start
 
@@ -36,13 +36,36 @@ pnpm test             # node:test suites + the asset guard
 pnpm assets           # asset guard only: no orphan and no duplicate public file
 pnpm dev:packages     # tsc --watch for packages/* (run beside pnpm dev)
 pnpm program:check    # cargo check --all-targets (requires the Rust toolchain)
-pnpm program:test     # cargo test: 9 unit tests + 18 instruction-level tests
+pnpm program:test     # cargo test: 31 unit tests + 63 instruction-level tests
+pnpm program:build    # cargo build-sbf: the deployable target/deploy/district.so
+pnpm program:test-sbf # the same tests against the built SBF binary
 pnpm clean            # remove dist/, .next/ and tsbuildinfo files
 ```
 
 Do not run `pnpm build` while `pnpm dev` is running: both write to
 `apps/web/.next` and the dev server then fails on a stale chunk. See
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+## Building the program
+
+The SBF build needs the Solana 1.18.26 release (`cargo-build-sbf`,
+`cargo-test-sbf`, `solana-test-validator`), which brings platform-tools v1.41
+and its rustc 1.75. `rust-version = "1.75.0"` in `Cargo.toml` keeps
+`Cargo.lock` on dependency versions that compiler accepts, and the lock file
+stays at format version 3, the newest its cargo reads. Anchor CLI 0.30.1 is
+only needed for `anchor deploy` and `anchor keys sync`: `anchor build` rewrites
+`declare_id!` from a fresh `target/deploy` keypair, so it is not used here.
+
+Measured on 9 October 2026 with those versions:
+
+| What | Result |
+| --- | --- |
+| `district.so` | 469,304 bytes |
+| Deploy to a local validator | 3.27 SOL of rent for the program data account |
+| Unit tests | 31 passed |
+| Instruction tests on the SBF binary | 63 passed |
+| Largest compute use | `initialize_config` 29,589 CU, `register_citizen` 24,804, `claim_training_credit` 24,943, `upgrade_score` 20,499 (limit 200,000) |
+| `initialize_config` on `solana-test-validator` | succeeded, 29,129 CU |
 
 ## Continuous integration
 
@@ -51,11 +74,13 @@ request:
 
 - **typescript** — install (builds the packages), typecheck, unit tests, lint,
   the asset guard, and a Next.js production build using self-hosted fonts.
-- **programs** — `cargo check --all-targets`, then `cargo test --lib` (the Rust
-  unit tests for the Metaplex Core asset parser), then `cargo test --test
-  integration` (18 instruction-level tests that run the real program logic
-  inside `solana-program-test`). No validator, no BPF build and no Anchor CLI
-  are involved; see D-0012 for what that can and cannot prove.
+- **programs** — `cargo fmt --check`, `cargo check --all-targets`, then
+  `cargo test --lib` (unit tests for the Core parser, template allowlist,
+  state, roles and cost formula), then `cargo test --test integration`
+  (instruction-level tests that run the real program logic inside
+  `solana-program-test`, including attacks such as forged Core assets and
+  front-run initialization). No validator, no BPF build and no Anchor CLI are
+  involved; see D-0012 for what that can and cannot prove.
 
 The Silkscreen and Pixelify Sans fonts are bundled from pinned `@fontsource`
 packages, so the production build does not need access to Google Fonts. Their
@@ -69,8 +94,10 @@ apps/web            Next.js 15 App Router application
 packages/config     typed cluster configuration, read from config/*.json
 packages/content    content schema, validation, and server-only loaders
 packages/chain-client  typed client for the District program
-programs/district   Anchor program (registration, pause, token-burn training)
-                    src/mpl_core.rs verifies Metaplex Core collection membership
+programs/district   Anchor program (registration, mission credits, token-burn training)
+                    src/instructions/ one module per instruction
+                    src/mpl_core.rs   pinned Metaplex Core membership check
+                    tests/integration/ instruction tests, harness + one file per area
 config/             devnet.json, mainnet.json — the canonical addresses
 content/en/         citizens.json — the authored English roster
 scripts/            check-assets.mjs — the asset guard
@@ -89,7 +116,7 @@ reading order and the authority order for every other document.
 | Document | Purpose |
 | --- | --- |
 | [`docs/AGENT_START_HERE.md`](docs/AGENT_START_HERE.md) | Agent handoff and non-negotiable implementation rules |
-| [`docs/specs/PIXEL_DISTRICT_SPEC_V2_ID.md`](docs/specs/PIXEL_DISTRICT_SPEC_V2_ID.md) | Product source of truth (Indonesian) |
+| [`docs/specs/BAS_DISTRICT_SPEC_V2_ID.md`](docs/specs/BAS_DISTRICT_SPEC_V2_ID.md) | Product source of truth (Indonesian) |
 | [`docs/id/TECH_STACK_ID.md`](docs/id/TECH_STACK_ID.md) | Mandated stack, monorepo structure, staged build order |
 | [`docs/id/PRIZE_POOL_MODEL.md`](docs/id/PRIZE_POOL_MODEL.md) | Competitions, prize pools, winner caps, payout integrity |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | Append-only implementation decision log |
@@ -135,48 +162,62 @@ findPlaceholderConfiguration(DEVNET_CONFIG); // public keys and metadata origin
 validateProductionReadiness(DEVNET_CONFIG);   // throws until both are production-ready
 ```
 
-The `programId` is the public half of a generated, never-deployed keypair, so
-the Anchor program compiles and CI can run `cargo check`. Replace it before any
-deployment:
+The program id is the devnet program (D-0027), whose keypair lives in the
+gitignored `programs/district/keypair.json`. Devnet is deployed and set up
+from the owner's machine with
+[`docs/id/DEVNET_DEPLOY_ID.md`](docs/id/DEVNET_DEPLOY_ID.md):
 
 ```bash
-solana-keygen new -o programs/district/keypair.json   # gitignored
-anchor keys sync                                      # rewrites declare_id! and Anchor.toml
+bash scripts/devnet/deploy.sh   # WSL or Linux: solana program deploy
+pnpm devnet:setup                # token mirror, Core collection, initialize, lock, unpause
 ```
 
-Then write the same public key into `config/devnet.json` and
-`config/mainnet.json`. `pnpm test` fails if `declare_id!`, `Anchor.toml` and the
-two config files disagree, and `validateProductionReadiness` keeps throwing
-while any critical address is still one of the shipped placeholders
-(`REPO_PLACEHOLDER_ADDRESSES`) or the approved-template URI still points at a
-reserved example host. Configure a real production metadata origin before launch.
+`pnpm devnet:setup` writes the new addresses into `config/devnet.json`.
+`pnpm test` fails if `declare_id!`, `Anchor.toml` and the two config files
+disagree. `validateProductionReadiness` keeps throwing for mainnet while any
+critical address is a shipped placeholder (`REPO_PLACEHOLDER_ADDRESSES`) or the
+devnet program id (`DEVNET_ONLY_ADDRESSES`), or while the approved-template URI
+points at a reserved example host. Mainnet gets its own program keypair and a
+real production metadata origin before launch.
 
-Generate the program keypair, deploy, then write the same 43–44 character
-base58 public key into `config/devnet.json`, `config/mainnet.json` and
-`programs/Anchor.toml`. The mandatory release sequence is in
+The mandatory release sequence is in
 [`docs/AGENT_START_HERE.md`](docs/AGENT_START_HERE.md#4-required-delivery-sequence):
 devnet first, mainnet deployed paused, token launched and mint bound, then
 unpause, and only then open the NFT mint.
 
+The program enforces that order on chain (D-0016):
+
+1. `initialize_config` only succeeds when signed by the program's upgrade
+   authority, so run it right after the deploy with the deploy key and
+   before transferring the upgrade authority to the multisig. The district
+   always starts paused.
+2. `set_utility_mint(expected_decimals)` accepts an initialized SPL Token or
+   Token-2022 mint whose decimals match `tokenDecimals` (D-0017).
+3. `lock_utility_mint` makes the binding permanent.
+4. Only then does `set_paused(false)` succeed.
+
 ## Known gaps
 
-- No wallet integration: `LOGIN` toggles local state and the address shown is a
-  placeholder. `@solana/kit` plus Wallet Standard is the mandated integration.
+- No wallet integration: the web app runs on the mock data source (D-0020) with
+  a mock wallet. `@solana/kit` plus Wallet Standard is the mandated integration.
 - Scores in the browser are presentation state. Only `programs/district` and
   trusted server logic may write canonical progression.
-- `register_citizen` now verifies Metaplex Core collection membership on-chain
-  (D-0005, D-0011) and rejects compressed assets. `packages/metaplex-client`,
-  the off-chain adapter from `TECH_STACK_ID.md` §11, still does not exist; a
-  wallet integration will need it.
-- `programs/district` passes `cargo check --all-targets`, 9 unit tests and 18
-  instruction-level tests in CI, but it has never been deployed. The
-  instruction tests run inside `solana-program-test`, which cannot observe
-  `emit!` and does not exercise the BPF target, so the emitted event payloads
-  and the real compute-unit limits are unverified: `anchor build` and
-  `anchor test` against a validator must still run before any deployment.
-  `set_paused` also needs owner sign-off because it touches authority (D-0006).
-- `apps/worker` and the remaining packages listed in `TECH_STACK_ID.md` §11 do
-  not exist yet.
+- Every instruction that acts on a citizen verifies Metaplex Core collection
+  membership on chain against the pinned Core program id (D-0011, D-0016) and
+  rejects compressed assets. `packages/metaplex-client`, the off-chain adapter
+  from `TECH_STACK_ID.md` §11, still does not exist; a wallet integration will
+  need it.
+- `programs/district` is built and tested as SBF and runs on a local validator
+  (see Building the program), but it has not been deployed to devnet and has
+  not been audited (SPEC §16). Event payloads from `emit!` are still not
+  asserted by any test.
+- A citizen's role is read from its metadata file name, `<serial>-<role>.json`
+  under the approved template prefix (D-0022), so every metadata file must be
+  named that way before mint. A file without a known role cannot register.
+- The isometric city (Phaser 3, D-0021) and the mission, training, season and
+  profile screens run on mock data. Mission steps are checked in the browser
+  only until the mission server exists (D-0025). `apps/worker` and the
+  remaining packages listed in `TECH_STACK_ID.md` §11 do not exist yet.
 
 Details and the reasoning behind each omission are recorded in
 [`docs/DECISIONS.md`](docs/DECISIONS.md).

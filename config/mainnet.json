@@ -1,6 +1,6 @@
 {
   "cluster": "mainnet-beta",
-  "districtProgramId": "D8HGhXUqHx7UXysCMEBDzvd3FS4XGEMNjCR6Eaj8CRbV",
+  "districtProgramId": "82zccW1Z97ic24aCrt2c3U6qDUZMfbHufZMCjv2dm1Ym",
   "coreCollection": "BASCo11ect1onMa1nnet111111111111111111111111",
   "candyMachine": "BASCandyMach1neMa1nnet111111111111111111111",
   "candyGuard": "DLS5g62wAFpTr8sdeE2roEj3rm6cujo6HyuimDUWJTET",
@@ -16,5 +16,6 @@
   "tokenDecimals": 6,
   "approvedTemplateId": 7,
   "maxSupply": 100,
+  "mintPriceLamports": "10000000",
   "approvedTemplateUriPrefix": "https://metadata.example.invalid/templates/7/"
 }

@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
-import { findRepoRoot } from '@bas/config';
+import { DEVNET_CONFIG, MAINNET_CONFIG, findRepoRoot } from '@bas/config';
 import {
   ContentValidationError,
   MAX_STAT_SCORE,
@@ -35,6 +35,7 @@ function assertValidCitizen(citizen: CitizenRecord): void {
   assert.ok(citizen.code.startsWith('#'), 'code must be a #NNN tag');
   assert.ok(citizen.avatar.startsWith('/avatars/'), 'avatar must be a public path');
   assert.ok(citizen.image.startsWith('/characters/'), 'image must be a public path');
+  assert.ok(citizen.sprite.startsWith('/sprites/citizens/'), 'sprite must be a public path');
   assert.ok(ROLE_KEYS.includes(citizen.roleKey));
   assert.ok(ROLE_LABELS.includes(citizen.role));
   for (const stat of STAT_KEYS) {
@@ -88,7 +89,7 @@ describe('@bas/content server loaders', () => {
 
   it('only references sprites that exist in apps/web/public', () => {
     for (const citizen of getCitizens()) {
-      for (const asset of [citizen.image, citizen.avatar]) {
+      for (const asset of [citizen.image, citizen.avatar, citizen.sprite]) {
         assert.ok(existsSync(join(publicDir, asset)), `missing public asset ${asset}`);
       }
     }
@@ -128,6 +129,7 @@ describe('@bas/content validation', () => {
     roleKey: 'artisan',
     image: '/characters/1.png',
     avatar: '/avatars/1.png',
+    sprite: '/sprites/citizens/1.png',
     intelligence: 0,
     alignment: 1,
     compute: 2,
@@ -175,5 +177,29 @@ describe('@bas/content validation', () => {
         : role))),
       /three starting points/,
     );
+    assert.throws(
+      () => parseRoleRoster(roles.map((role, i) => (i === 0 ? { ...role, mintSupply: 0 } : role))),
+      /at least one citizen/,
+    );
+  });
+
+  it('splits the mint supply across the roles with Sentinel and Navigator rarest (D-0023)', () => {
+    const roles = getCitizenRoles();
+    const total = roles.reduce((sum, role) => sum + role.mintSupply, 0);
+    assert.equal(total, DEVNET_CONFIG.maxSupply, 'roles must add up to the devnet supply');
+    assert.equal(total, MAINNET_CONFIG.maxSupply, 'roles must add up to the mainnet supply');
+
+    const fewest = Math.min(...roles.map((role) => role.mintSupply));
+    const rarest = roles.filter((role) => role.mintSupply === fewest).map((role) => role.key);
+    assert.deepEqual(rarest.sort(), ['navigator', 'sentinel']);
+
+    // Art already drawn must fit the split, so no role is over-drawn before mint.
+    const authored = ['content/en/citizens.json', 'content/en/citizens.archive.json'].flatMap(
+      (file) => JSON.parse(readFileSync(join(repoRoot, file), 'utf8')) as Array<{ roleKey: string }>,
+    );
+    for (const role of roles) {
+      const drawn = authored.filter((citizen) => citizen.roleKey === role.key).length;
+      assert.ok(drawn <= role.mintSupply, `${role.key}: ${drawn} drawn, ${role.mintSupply} planned`);
+    }
   });
 });

@@ -15,6 +15,12 @@ const nextConfig = {
     unoptimized: true,
   },
 
+  // The dev-only route badge sat on top of the My citizens panel.
+  devIndicators: {
+    appIsrStatus: false,
+    buildActivityPosition: 'top-right',
+  },
+
   eslint: {
     dirs: ['src'],
   },

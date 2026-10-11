@@ -5,6 +5,9 @@ members = ["programs/district"]
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
+# The SBF compiler in Solana platform-tools v1.41 (Solana 1.18.26) is rustc 1.75.
+# Cargo picks dependency versions that still build with it.
+rust-version = "1.75.0"
 license = "UNLICENSED"
 repository = "https://github.com/minramram206-boop/BAS-NFT"
 

@@ -28,18 +28,18 @@ export const PixelModal: React.FC = () => {
         onClick={(event) => event.stopPropagation()}
         className="flex w-full max-w-sm flex-col gap-3 rounded-xl border-[3px] border-[#1a2734] bg-[#c5d5e5] p-5 text-center shadow-2xl"
       >
-        <div className="border-b border-[#8ba5ba] pb-2 font-heading text-sm font-bold text-[#1a2938]">
+        <div className="border-b border-[#8ba5ba] pb-2 font-heading text-[16px] font-bold tracking-wide text-[#1a2938]">
           {modal.title}
         </div>
 
-        <p className="whitespace-pre-line font-pixel text-xs leading-relaxed text-[#27384a]">
+        <p className="whitespace-pre-line font-pixel text-[15px] leading-relaxed text-[#27384a]">
           {modal.message}
         </p>
 
         <button
           type="button"
           onClick={closeModal}
-          className="mt-2 self-center rounded-lg border-2 border-[#1a3854] bg-[#3b74a6] px-5 py-2 font-heading text-xs font-bold text-white shadow-[0_2px_0_#1a3854] transition-all hover:bg-[#2d5d86] active:translate-y-0.5"
+          className="mt-2 self-center rounded-lg border-2 border-[#1a3854] bg-[#3b74a6] px-5 py-2.5 font-heading text-[13px] font-bold tracking-wide text-white shadow-[0_2px_0_#1a3854] transition-all hover:bg-[#2d5d86] active:translate-y-0.5"
         >
           {MESSAGES.actions.closeModal}
         </button>

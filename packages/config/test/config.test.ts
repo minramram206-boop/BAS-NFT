@@ -9,6 +9,7 @@ import {
   MAINNET_CONFIG,
   NETWORK_CONFIG_FILES,
   REPO_PLACEHOLDER_ADDRESSES,
+  PRODUCTION_CRITICAL_ADDRESS_FIELDS,
   findPlaceholderAddresses,
   findPlaceholderConfiguration,
   findRepoRoot,
@@ -84,6 +85,7 @@ describe('@bas/config', () => {
     assert.equal(DEVNET_CONFIG.approvedTemplateId, file.approvedTemplateId);
     assert.equal(DEVNET_CONFIG.approvedTemplateUriPrefix, file.approvedTemplateUriPrefix);
     assert.equal(DEVNET_CONFIG.maxSupply, file.maxSupply);
+    assert.equal(DEVNET_CONFIG.mintPriceLamports, file.mintPriceLamports);
   });
 
   it('loads the mainnet config from config/mainnet.json', () => {
@@ -106,7 +108,11 @@ describe('@bas/config', () => {
     assert.equal(DEVNET_CONFIG.dailyMessageLimit, MAINNET_CONFIG.dailyMessageLimit);
     assert.equal(DEVNET_CONFIG.tokenDecimals, MAINNET_CONFIG.tokenDecimals);
     assert.equal(DEVNET_CONFIG.approvedTemplateId, MAINNET_CONFIG.approvedTemplateId);
-    assert.equal(DEVNET_CONFIG.approvedTemplateUriPrefix, MAINNET_CONFIG.approvedTemplateUriPrefix);
+    // The template prefix differs on purpose: devnet serves metadata from the
+    // devnet web app, mainnet from its own permanent host (D-0024).
+    // D-0024: minting costs 0.01 SOL on both clusters.
+    assert.equal(DEVNET_CONFIG.mintPriceLamports, '10000000');
+    assert.equal(MAINNET_CONFIG.mintPriceLamports, DEVNET_CONFIG.mintPriceLamports);
     assert.notEqual(DEVNET_CONFIG.rpcUrl, MAINNET_CONFIG.rpcUrl, 'only endpoints may differ');
   });
 
@@ -142,6 +148,8 @@ describe('@bas/config', () => {
     assert.throws(() => parseNetworkConfig({ ...valid, baseTrainingCostAtoms: '-1' }, 'devnet'));
     assert.throws(() => parseNetworkConfig({ ...valid, baseTrainingCostAtoms: 100 }, 'devnet'));
     assert.throws(() => parseNetworkConfig({ ...valid, baseTrainingCostAtoms: '18446744073709551616' }, 'devnet'));
+    assert.throws(() => parseNetworkConfig({ ...valid, mintPriceLamports: '0' }, 'devnet'));
+    assert.throws(() => parseNetworkConfig({ ...valid, mintPriceLamports: 0.01 }, 'devnet'));
     assert.throws(() => parseNetworkConfig({ ...valid, maxScore: 20 }, 'devnet'));
     assert.throws(() => parseNetworkConfig({ ...valid, burnBps: 8000 }, 'devnet'));
     assert.throws(() => parseNetworkConfig({ ...valid, dailyMessageLimit: 0 }, 'devnet'));
@@ -185,7 +193,7 @@ describe('@bas/config', () => {
 
   it('keeps reserved metadata URI hosts behind the launch gate', () => {
     const readyAddresses = {
-      ...DEVNET_CONFIG,
+      ...MAINNET_CONFIG,
       districtProgramId: REAL_LOOKING_KEY,
       coreCollection: REAL_LOOKING_KEY,
       candyMachine: REAL_LOOKING_KEY,
@@ -204,8 +212,23 @@ describe('@bas/config', () => {
     );
   });
 
+  // Devnet holds real devnet deployments once it is set up (D-0027); mainnet
+  // must still block every critical address until its own launch.
+  it('flags every critical mainnet address the repository ships', () => {
+    const flagged = new Set(findPlaceholderAddresses(MAINNET_CONFIG).map(({ field }) => field));
+    for (const field of PRODUCTION_CRITICAL_ADDRESS_FIELDS) {
+      assert.ok(flagged.has(field), `mainnet.${field}="${MAINNET_CONFIG[field]}" slipped past the launch gate`);
+    }
+  });
+
+  it('keeps the devnet program id out of a mainnet launch', () => {
+    const programId = findPlaceholderAddresses(MAINNET_CONFIG).find(({ field }) => field === 'districtProgramId');
+    assert.ok(programId?.reason.includes('devnet deployment'));
+    assert.ok(!findPlaceholderAddresses(DEVNET_CONFIG).some(({ field }) => field === 'districtProgramId'));
+  });
+
   it('rejects well-formed placeholders by value, not by shape', () => {
-    const placeholders = findPlaceholderAddresses(DEVNET_CONFIG);
+    const placeholders = findPlaceholderAddresses(MAINNET_CONFIG);
     assert.ok(
       placeholders.some(({ reason }) => reason.includes('repository placeholder')),
       'a well-formed but undeployed key must still block the launch gate',

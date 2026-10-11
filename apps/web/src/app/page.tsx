@@ -1,10 +1,6 @@
-import { DistrictApp } from '@/components/district/DistrictApp';
+import { CityScreen } from '@/components/city/CityScreen';
 
-/**
- * District 01 plaza.
- * The citizen roster is loaded and validated once in `app/layout.tsx` by
- * `@bas/content/server`. The dojo lives on `/training`.
- */
-export default function DistrictPage() {
-  return <DistrictApp />;
+/** District 01: the isometric city. The roster is loaded once in `app/layout.tsx`. */
+export default function CityPage() {
+  return <CityScreen />;
 }

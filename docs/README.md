@@ -1,9 +1,9 @@
-# BAS Pixel District — documentation index
+# BAS District — documentation index
 
 | Document | Language | Purpose |
 | --- | --- | --- |
 | [`AGENT_START_HERE.md`](./AGENT_START_HERE.md) | English | Mandatory agent handoff: reading order, authority order, non-negotiable rules, responsibility packets |
-| [`specs/PIXEL_DISTRICT_SPEC_V2_ID.md`](./specs/PIXEL_DISTRICT_SPEC_V2_ID.md) | Indonesian | Primary source of truth for product behaviour, economics, security and release order |
+| [`specs/BAS_DISTRICT_SPEC_V2_ID.md`](./specs/BAS_DISTRICT_SPEC_V2_ID.md) | Indonesian | Primary source of truth for product behaviour, economics, security and release order |
 | [`id/TECH_STACK_ID.md`](./id/TECH_STACK_ID.md) | Indonesian | Required languages, frameworks, infrastructure, monorepo structure and staged build order |
 | [`id/PRIZE_POOL_MODEL.md`](./id/PRIZE_POOL_MODEL.md) | Indonesian | Competitions, funded prize pools, brackets, winner caps, payout integrity |
 | [`id/OWNER_VALUE_FLOW_ID.html`](./id/OWNER_VALUE_FLOW_ID.html) | Indonesian | Explanatory owner value-flow reference |

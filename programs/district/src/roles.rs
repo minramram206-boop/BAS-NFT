@@ -1,51 +1,30 @@
-//! The citizen role registry (`PIXEL_DISTRICT_SPEC_V2_ID.md` §6.3 items 4 and
-//! 6, §8 Phase A "Seven role registry").
+//! The seven-role registry (SPEC §6.3 and §8 Phase A, decisions D-0015 and
+//! D-0022).
 //!
-//! `register_citizen` reads a citizen's initial stats from here instead of
-//! accepting them from the caller. That is the point: before this existed the
-//! instruction took `initial_int`/`initial_aln`/`initial_cmp` as arguments, so
-//! anyone registering their own NFT could simply pass `10, 10, 10` and start at
-//! the maximum score without burning a single token. Initial stats are now a
-//! property of the role, which the program picks, and progression past them
-//! still costs tokens plus earned Training Credits.
-//!
-//! The spec fixes the *count* (seven) and the fact that stats depend on role,
-//! but does not name the roles or their values. Those are chosen here and
-//! recorded as D-0013, following §0: the simplest option that adds no feature.
-//! Names are English because §1.3 requires it for code and identifiers, and
-//! they are drawn from the occupations already present in
-//! `content/en/citizens.json` so the roster and the registry describe the same
-//! district.
+//! A citizen's role is fixed by its metadata file name and `register_citizen`
+//! takes the initial stats from here, never from the caller. Every role starts
+//! with three points in total and below Tier 1, so the role changes the shape
+//! of a citizen, not its strength.
+//! `content/en/roles.json` and `packages/chain-client` mirror this table.
 
 use crate::errors::DistrictError;
 use anchor_lang::prelude::*;
 
-/// How many roles the registry holds (§8 Phase A).
 pub const ROLE_COUNT: usize = 7;
 
 /// A role and the stats a citizen of that role starts with.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RoleTemplate {
-    /// Stable on-chain index, also stored in `CitizenState::role`.
+    /// Stored in `CitizenState::role`.
     pub index: u8,
-    /// Internal code name (§1.3: identifiers are English).
     pub code_name: &'static str,
-    /// Public English label shown in the UI (§7: no Indonesian in public UI).
     pub public_label: &'static str,
-    /// Starting `intelligence` — public label Insight.
     pub initial_intelligence: u8,
-    /// Starting `alignment` — public label Bond.
     pub initial_alignment: u8,
-    /// Starting `compute` — public label Craft.
     pub initial_compute: u8,
 }
 
 /// The seven roles, in index order.
-///
-/// Every template grants exactly 3 points spread across the three stats, so no
-/// role begins ahead of another in total score and the choice is about shape
-/// rather than strength. No role starts at a tier boundary (§7 Tier 1 is 3+),
-/// so the first upgrade always changes something a player can see.
 pub const ROLE_TEMPLATES: [RoleTemplate; ROLE_COUNT] = [
     RoleTemplate {
         index: 0,
@@ -105,11 +84,7 @@ pub const ROLE_TEMPLATES: [RoleTemplate; ROLE_COUNT] = [
     },
 ];
 
-/// Looks a role up by its on-chain index.
-///
-/// An unknown index is an error rather than a fallback: §6.3 item 4 says the
-/// template is read from the registry, so a role that is not in the registry
-/// has no defined initial stats and must not be guessed.
+/// Looks a role up by index. Unknown roles are an error, never a default.
 pub fn role_template(index: u8) -> Result<&'static RoleTemplate> {
     ROLE_TEMPLATES
         .iter()
@@ -117,7 +92,24 @@ pub fn role_template(index: u8) -> Result<&'static RoleTemplate> {
         .ok_or_else(|| DistrictError::InvalidRole.into())
 }
 
-/// A role as passed by a caller, checked before it is stored.
+/// Reads the role out of an approved metadata file name (D-0022).
+///
+/// Files are named `<serial>-<role>.json`, for example `018-navigator.json`:
+/// the role is the lowercase code name after the last `-`, and the serial in
+/// front of it must not be empty.
+pub fn role_from_metadata_file(file_name: &str) -> Result<&'static RoleTemplate> {
+    let code_name = file_name
+        .strip_suffix(".json")
+        .and_then(|stem| stem.rsplit_once('-'))
+        .filter(|(serial, _)| !serial.is_empty())
+        .map(|(_, code_name)| code_name)
+        .ok_or(DistrictError::InvalidRole)?;
+    ROLE_TEMPLATES
+        .iter()
+        .find(|template| template.code_name == code_name)
+        .ok_or_else(|| DistrictError::InvalidRole.into())
+}
+
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum CitizenRole {
@@ -131,7 +123,6 @@ pub enum CitizenRole {
 }
 
 impl CitizenRole {
-    /// Rejects any byte that is not one of the seven roles.
     pub fn from_index(index: u8) -> Result<Self> {
         match index {
             0 => Ok(CitizenRole::Pioneer),
@@ -145,12 +136,10 @@ impl CitizenRole {
         }
     }
 
-    /// The registry entry for this role.
     pub fn template(&self) -> &'static RoleTemplate {
         &ROLE_TEMPLATES[*self as usize]
     }
 
-    /// Public English label (§7: the UI never shows an internal code name).
     pub fn public_label(&self) -> &'static str {
         self.template().public_label
     }
@@ -159,11 +148,15 @@ impl CitizenRole {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::STAT_MAX;
+    use crate::constants::{STAT_MAX, TIER_1_SCORE};
 
     #[test]
     fn the_registry_holds_exactly_seven_roles() {
-        assert_eq!(ROLE_TEMPLATES.len(), 7, "SPEC §8 Phase A: Seven role registry");
+        assert_eq!(
+            ROLE_TEMPLATES.len(),
+            7,
+            "SPEC §8 Phase A: Seven role registry"
+        );
         assert_eq!(ROLE_COUNT, 7);
     }
 
@@ -203,21 +196,27 @@ mod tests {
             let total = u16::from(template.initial_intelligence)
                 + u16::from(template.initial_alignment)
                 + u16::from(template.initial_compute);
-            assert_eq!(total, 3, "{} starts with {total} points", template.code_name);
+            assert_eq!(
+                total, 3,
+                "{} starts with {total} points",
+                template.code_name
+            );
         }
     }
 
     #[test]
     fn no_role_starts_on_a_tier_boundary() {
-        // A first upgrade has to move the player past something visible (§7
-        // Tier 1 starts at 3), so no starting score may already be 3.
         for template in ROLE_TEMPLATES.iter() {
             for score in [
                 template.initial_intelligence,
                 template.initial_alignment,
                 template.initial_compute,
             ] {
-                assert!(score < 3, "{} starts at a tier boundary", template.code_name);
+                assert!(
+                    score < TIER_1_SCORE,
+                    "{} starts at a tier boundary",
+                    template.code_name
+                );
             }
         }
     }
@@ -236,7 +235,10 @@ mod tests {
 
         for template in ROLE_TEMPLATES.iter() {
             assert!(
-                template.code_name.chars().all(|c| c.is_ascii_lowercase() || c == '_'),
+                template
+                    .code_name
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c == '_'),
                 "{} is not a lowercase identifier",
                 template.code_name
             );
@@ -244,6 +246,46 @@ mod tests {
                 template.public_label.is_ascii() && !template.public_label.is_empty(),
                 "{} is not English ASCII",
                 template.public_label
+            );
+        }
+    }
+
+    #[test]
+    fn every_role_is_read_from_its_metadata_file_name() {
+        for template in ROLE_TEMPLATES.iter() {
+            let file_name = format!("018-{}.json", template.code_name);
+            let found = role_from_metadata_file(&file_name).expect("a named role");
+            assert_eq!(found.index, template.index, "{file_name}");
+        }
+        // The serial may contain dashes; only the last segment names the role.
+        assert_eq!(
+            role_from_metadata_file("s1-018-mentor.json")
+                .unwrap()
+                .code_name,
+            "mentor"
+        );
+    }
+
+    #[test]
+    fn metadata_file_names_without_a_known_role_are_rejected() {
+        for file_name in [
+            "018.json",
+            "navigator.json",
+            "-navigator.json",
+            "018-.json",
+            "018-wizard.json",
+            "018-Navigator.json",
+            "018-navigator-2.json",
+            "018-navigator.json.bak",
+            "018-navigator",
+            "",
+        ] {
+            assert!(
+                matches!(
+                    role_from_metadata_file(file_name),
+                    Err(err) if err == DistrictError::InvalidRole.into()
+                ),
+                "{file_name:?} must not name a role"
             );
         }
     }

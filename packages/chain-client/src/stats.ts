@@ -94,6 +94,28 @@ export function roleKeys(): readonly string[] {
 }
 
 /**
+ * Role named by a metadata file `<serial>-<role>.json` (D-0022), exactly as
+ * `role_from_metadata_file` in `roles.rs` reads it. `undefined` means the
+ * program would refuse to register the asset.
+ */
+export function roleFromMetadataFile(fileName: string): RoleTemplate | undefined {
+  if (!fileName.endsWith('.json')) return undefined;
+  const stem = fileName.slice(0, -'.json'.length);
+  const dash = stem.lastIndexOf('-');
+  if (dash <= 0) return undefined;
+  const key = stem.slice(dash + 1);
+  return ROLE_TEMPLATES.find((role) => role.key === key);
+}
+
+/** The metadata file name the mint must use for a citizen of `key`. */
+export function metadataFileName(serial: string, key: RoleTemplate['key']): string {
+  if (!/^[A-Za-z0-9_.-]+$/.test(serial) || serial.includes('..')) {
+    throw new Error(`serial "${serial}" is not a plain file-name part`);
+  }
+  return `${serial}-${key}.json`;
+}
+
+/**
  * Stat field of the on-chain record that holds this stat's credits.
  *
  * Three pools, not one balance (§5.3): a credit claimed for Insight cannot pay

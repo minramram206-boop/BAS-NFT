@@ -3,6 +3,7 @@
     "index": 0,
     "key": "pioneer",
     "label": "Pioneer",
+    "mintSupply": 16,
     "initialStats": {
       "intelligence": 1,
       "alignment": 1,
@@ -13,6 +14,7 @@
     "index": 1,
     "key": "steward",
     "label": "Steward",
+    "mintSupply": 18,
     "initialStats": {
       "intelligence": 1,
       "alignment": 2,
@@ -23,6 +25,7 @@
     "index": 2,
     "key": "artisan",
     "label": "Artisan",
+    "mintSupply": 20,
     "initialStats": {
       "intelligence": 0,
       "alignment": 1,
@@ -33,6 +36,7 @@
     "index": 3,
     "key": "sentinel",
     "label": "Sentinel",
+    "mintSupply": 10,
     "initialStats": {
       "intelligence": 0,
       "alignment": 2,
@@ -43,6 +47,7 @@
     "index": 4,
     "key": "scholar",
     "label": "Scholar",
+    "mintSupply": 14,
     "initialStats": {
       "intelligence": 2,
       "alignment": 1,
@@ -53,6 +58,7 @@
     "index": 5,
     "key": "navigator",
     "label": "Navigator",
+    "mintSupply": 10,
     "initialStats": {
       "intelligence": 2,
       "alignment": 0,
@@ -63,6 +69,7 @@
     "index": 6,
     "key": "mentor",
     "label": "Mentor",
+    "mintSupply": 12,
     "initialStats": {
       "intelligence": 1,
       "alignment": 0,

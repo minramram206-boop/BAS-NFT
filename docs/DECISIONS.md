@@ -1,10 +1,10 @@
-# Pixel District — Catatan Keputusan
+# BAS District — Catatan Keputusan
 
 Dokumen internal untuk mencatat keputusan implementasi ketika spesifikasi tidak menjelaskan suatu hal secara lengkap.
 
 ## Aturan
 
-1. Ketentuan `[FINAL]` dalam `docs/specs/PIXEL_DISTRICT_SPEC_V2_ID.md` tidak boleh diubah melalui dokumen ini.
+1. Ketentuan `[FINAL]` dalam `docs/specs/BAS_DISTRICT_SPEC_V2_ID.md` tidak boleh diubah melalui dokumen ini.
 2. Gunakan solusi paling sederhana yang tidak menambah fitur.
 3. Alasan produk ditulis dalam bahasa Indonesia.
 4. Identifier teknis, nama kode, schema, event, error, test, API field, dan path implementasi tetap dalam bahasa Inggris.
@@ -13,8 +13,8 @@ Dokumen internal untuk mencatat keputusan implementasi ketika spesifikasi tidak 
 
 ## Urutan sumber keputusan
 
-1. Ketentuan `[FINAL]` dalam `docs/specs/PIXEL_DISTRICT_SPEC_V2_ID.md`.
-2. Ketentuan eksplisit lain dalam `docs/specs/PIXEL_DISTRICT_SPEC_V2_ID.md`.
+1. Ketentuan `[FINAL]` dalam `docs/specs/BAS_DISTRICT_SPEC_V2_ID.md`.
+2. Ketentuan eksplisit lain dalam `docs/specs/BAS_DISTRICT_SPEC_V2_ID.md`.
 3. Aturan kompetisi khusus dalam `docs/id/PRIZE_POOL_MODEL.md`.
 4. Keputusan teknologi dalam `docs/id/TECH_STACK_ID.md`.
 5. Entri yang telah disetujui dalam dokumen ini.
@@ -120,7 +120,7 @@ bukan untuk mengganti persyaratan yang sudah eksplisit.
 - Status: Approved
 - Pemilik keputusan: Owner
 - Konteks: Root repositori berisi 74 gambar hasil eksperimen (crop, preview, percobaan courtyard dan header, `1.png`–`20.png`, foto Telegram) yang tidak dirujuk kode mana pun. `avatars/` identik byte-per-byte dengan `apps/web/public/avatars/`, `1.png`–`20.png` identik dengan `apps/web/public/characters/`, dan seluruh pohon `pixel-district/` identik dengan dokumen di root. `apps/web/public/icons/` memuat 23 ikon sementara hanya 6 yang dirender UI, dan `header_live_compiled.png` identik dengan `header_live_virtual.png`.
-- Keputusan: Menghapus aset duplikat dan aset yang tidak dirujuk, menyisakan 47 berkas gambar yang benar-benar dipakai. Dokumen digabung ke `docs/` (`AGENT_START_HERE.md`, `DECISIONS.md`, `specs/PIXEL_DISTRICT_SPEC_V2_ID.md`, `id/`). Aset panggung dipindah ke `apps/web/public/images/district/`. `config/*.json` dan `content/en/` dipertahankan karena diwajibkan `TECH_STACK_ID.md` §11.
+- Keputusan: Menghapus aset duplikat dan aset yang tidak dirujuk, menyisakan 47 berkas gambar yang benar-benar dipakai. Dokumen digabung ke `docs/` (`AGENT_START_HERE.md`, `DECISIONS.md`, `specs/BAS_DISTRICT_SPEC_V2_ID.md`, `id/`). Aset panggung dipindah ke `apps/web/public/images/district/`. `config/*.json` dan `content/en/` dipertahankan karena diwajibkan `TECH_STACK_ID.md` §11.
 - Alasan: Struktur yang diminta pemilik (modular dan rapi) dan penghapusan duplikasi yang membuat tidak jelas salinan mana yang kanonik.
 - Dampak: Semua berkas yang dihapus tetap dapat dipulihkan dari riwayat Git pada commit `37b3d6a`. Berkas `.tsbuildinfo` dan `dist/` kini diabaikan, dan `apps/web/public` hanya memuat aset yang ikut ter-deploy.
 - Komponen terkait: seluruh root repositori, `docs/`, `apps/web/public/`, `.gitignore`
@@ -210,3 +210,173 @@ bukan untuk mengganti persyaratan yang sudah eksplisit.
 - Dampak: Font masuk dalam dependency dan bundle first-party. Teks lisensi OFL beserta copyright notice kedua font disediakan di `apps/web/public/licenses/`, sehingga tetap tersedia pada deploy. Build mengecek bahwa stylesheet dan font files lokal benar-benar terpakai.
 - Komponen terkait: `apps/web/src/app/layout.tsx`, `apps/web/src/app/globals.css`, `apps/web/package.json`, `pnpm-lock.yaml`, `scripts/check-font-licenses.mjs`, `.github/workflows/verify.yml`, `docs/ARCHITECTURE.md`
 - Menggantikan: Pengecualian build produksi di D-0009.
+
+## D-0015 — Registry tujuh role dan role dipilih saat registrasi
+
+- Tanggal: 2026-10-09
+- Status: Superseded sebagian oleh D-0022 (registry tujuh role tetap berlaku; role tidak lagi dipilih saat registrasi)
+- Pemilik keputusan: Owner
+- Konteks: SPEC §6.3 dan §8 Phase A meminta tujuh role dengan stat awal berbeda, tetapi tidak menamai role maupun nilainya, dan tidak menyebut dari mana role sebuah NFT berasal. `roles.rs` sebelumnya merujuk ke "D-0013" untuk hal ini, padahal D-0013 membahas registry URI.
+- Keputusan: `programs/district/src/roles.rs` berisi tujuh role (Pioneer, Steward, Artisan, Sentinel, Scholar, Navigator, Mentor). Setiap role memberi total 3 poin dan tidak ada stat yang mulai di Tier 1. Role dipilih oleh pemegang NFT sebagai argumen `register_citizen`; stat awal selalu dibaca dari registry, tidak pernah dari input pemanggil.
+- Alasan: Karena total poin semua role sama, pilihan role hanya mengubah bentuk citizen, bukan kekuatannya. Ini opsi paling sederhana tanpa membaca atribut NFT.
+- Dampak: Role tidak dijamin cocok dengan art NFT. Bila pemilik ingin role terikat ke NFT, role perlu diturunkan dari metadata (misalnya nama file URI template) dan ini butuh keputusan baru.
+- Komponen terkait: `programs/district/src/roles.rs`, `programs/district/src/instructions/register_citizen.rs`, `content/en/roles.json`, `packages/chain-client/src/constants.ts`
+- Menggantikan: —
+
+## D-0016 — Pengerasan keamanan program district
+
+- Tanggal: 2026-10-09
+- Status: Implemented (29 unit test dan 63 integration test lulus; audit independen tetap wajib)
+- Pemilik keputusan: Security
+- Konteks: Review kode menemukan beberapa celah. (1) Account `mpl_core_program` diisi bebas oleh pemanggil, sehingga constraint `owner = mpl_core_program` bisa dipenuhi oleh program buatan penyerang yang menulis byte asset palsu; asumsi di D-0005 dan D-0011 bahwa constraint itu membuat byte "bisa dipercaya" ternyata salah. (2) `initialize_config` bisa dipanggil siapa saja yang lebih dulu, sehingga kursi admin bisa diserobot setelah deploy. (3) `claim_training_credit` tidak mengikat `citizen_state` ke `asset` yang dicek kepemilikannya. (4) Unpause dan upgrade tidak mensyaratkan mint yang sudah dikunci, padahal SPEC §5.2 dan §12 memintanya. (5) Receipt klaim dibuat dengan `create_account`, yang gagal bila seseorang lebih dulu mengirim lamport ke alamat PDA yang bisa ditebak. (6) `update_config` menerima biaya training nol dan alamat kosong tanpa event.
+- Keputusan: (1) Asset harus dimiliki tepat oleh `MPL_CORE_PROGRAM_ID`; account `mpl_core_program` dihapus dari ketiga instruksi dan pengecekan dipusatkan di `mpl_core::load_collection_member`. (2) `initialize_config` mewajibkan account ProgramData program ini dan signer harus upgrade authority-nya. (3) PDA `citizen_state` di claim dan upgrade diturunkan dari `asset.key()`. (4) District selalu mulai paused; `set_paused(false)` dan `upgrade_score` menolak dengan `UtilityMintNotLocked` sampai mint dikunci. (5) Pembuatan receipt memakai `pda::create_pda_account`, yang tetap berhasil pada alamat yang sudah berisi lamport. (6) `initialize_config` dan `update_config` menolak alamat kosong dan biaya nol (`InvalidConfig`), dan `update_config` mengeluarkan `ConfigUpdated`. Argumen `start_paused` dihapus.
+- Alasan: Semua poin di atas adalah syarat eksplisit SPEC §5.2, §5.7 dan §12 atau celah yang memungkinkan citizen palsu, pengambilalihan admin, atau klaim yang diblokir. Menegakkannya di program lebih aman daripada mengandalkan urutan langkah manual.
+- Dampak: Daftar account `register_citizen`, `claim_training_credit` dan `upgrade_score` berubah (tanpa `mpl_core_program`), dan `initialize_config` butuh account `program_data`. `initialize_config` harus dijalankan oleh deploy key sebelum upgrade authority dipindah ke multisig. Program immutable tanpa upgrade authority tidak bisa diinisialisasi. Setiap perbaikan punya test serangan yang gagal bila perbaikannya dicabut.
+- Komponen terkait: `programs/district/src/instructions/*`, `programs/district/src/mpl_core.rs`, `programs/district/src/pda.rs`, `programs/district/src/errors.rs`, `programs/district/src/events.rs`, `programs/district/tests/integration/*`
+- Menggantikan: bagian alasan keamanan di D-0005 dan D-0011 yang bergantung pada account `mpl_core_program`
+
+## D-0017 — Token utility boleh SPL Token atau Token-2022
+
+- Tanggal: 2026-10-09
+- Status: Implemented — mirror devnet dibuat Token-2022 dengan 6 decimals karena `create_v2` Pump.fun membuat mint seperti itu (dokumentasi Pump.fun, Oktober 2026); cek sekali program mint asli setelah koin dibuat
+- Pemilik keputusan: Engineering
+- Konteks: Program sebelumnya hanya menerima SPL Token lama. Pump.fun juga punya jalur pembuatan koin Token-2022, jadi token resmi bisa berada di program mana pun. Bila salah, `upgrade_score` tidak akan pernah bisa dipakai. `set_utility_mint` juga belum memverifikasi token program dan decimals seperti diminta SPEC §5.2 dan §5.6.
+- Keputusan: `upgrade_score` memakai `anchor_spl::token_interface` sehingga menerima kedua program, dengan constraint bahwa mint dan token account dimiliki token program yang dikirim. `set_utility_mint(expected_decimals)` menolak account yang bukan milik SPL Token atau Token-2022 (`InvalidTokenProgram`), mint yang belum diinisialisasi, dan mint dengan decimals berbeda (`InvalidUtilityMint`). Event `UtilityMintSet` mencatat token program dan decimals.
+- Alasan: Satu jalur kode untuk kedua standar menghindari rilis ulang program bila token resmi ternyata Token-2022, dan pengecekan decimals mencegah harga training meleset 10^n kali.
+- Dampak: Mirror token devnet harus dibuat di program dan dengan decimals yang sama dengan token mainnet (SPEC §5.1).
+- Komponen terkait: `programs/district/src/utility_token.rs`, `programs/district/src/instructions/set_utility_mint.rs`, `programs/district/src/instructions/upgrade_score.rs`
+- Menggantikan: —
+
+## D-0018 — Struktur modular dan perbaikan gerbang rilis
+
+- Tanggal: 2026-10-09
+- Status: Implemented
+- Pemilik keputusan: Engineering
+- Konteks: `lib.rs` berisi semua instruksi dan account (849 baris), `tests/integration.rs` 2.560 baris, `packages/config/src/network.ts` mencampur parsing, validasi public key dan gerbang rilis, dan store web mencampur roster, training dan UI. Selain itu `REPO_PLACEHOLDER_ADDRESSES` berisi string yang tidak sama dengan isi `config/*.json`, sehingga `validateProductionReadiness` tidak menandai koleksi devnet serta koleksi dan treasury mainnet.
+- Keputusan: Program dipecah menjadi `instructions/` (satu file per instruksi), `state/`, `constants.rs`, `progression.rs`, `pda.rs` dan `utility_token.rs`; test integrasi menjadi `tests/integration/` dengan `harness/` dan satu file per area. `@bas/config` dipecah menjadi `network.ts`, `pubkey.ts`, `readiness.ts` dan `template-uri.ts`. Store web dipecah menjadi `stores/slices/` dengan API publik yang sama. String placeholder diperbaiki dan sebuah test memastikan setiap alamat kritis di kedua manifest ditandai. Workflow sementara `.github/workflows/diagnose.yml` dihapus, dan CI menambahkan `cargo fmt --check`.
+- Alasan: File kecil dengan satu tanggung jawab lebih mudah direview dan diaudit; bug placeholder membuat gerbang rilis bisa lolos dengan alamat palsu.
+- Dampak: Tidak ada perubahan perilaku web; urutan interaksi yang sama menghasilkan output yang identik sebelum dan sesudah refactor. Path file yang dirujuk entri lama (misalnya `src/lib.rs`, `src/state.rs`, `tests/integration.rs`) kini berada di lokasi baru di atas.
+- Komponen terkait: `programs/district/src/**`, `programs/district/tests/integration/**`, `packages/config/src/*`, `apps/web/src/stores/**`, `.github/workflows/verify.yml`
+- Menggantikan: —
+
+## D-0019 — Prize pool dibiayai fee sharing Pump.fun ke vault program
+
+- Tanggal: 2026-10-09
+- Status: Approved (pemilik, 2026-10-09) — program `prize_vault` belum dibuat
+- Pemilik keputusan: Pemilik proyek
+- Konteks: Pemilik ingin prize pool dibiayai dari "tax" dan dana itu tidak bisa ditarik tim. Pump.fun tidak punya pajak beli/jual untuk creator; yang ada creator fee (0.30% di bonding curve; di PumpSwap 0.30% pada tier pertama, lalu 0.95% turun bertingkat sampai 0.05%). Angka "tax 2%" di GMGN pada token pembanding ternyata fee pool Meteora DLMM untuk penyedia likuiditas, bukan pajak token. Dokumentasi resmi Pump.fun menunjukkan fee sharing bisa membagi creator fee ke maksimal 10 alamat, daftar penerimanya hanya bisa diatur sekali (`update_fee_shares_v2`, lalu `admin_revoked = true`), dan distribusinya (`sweep_creator_fee`, `transfer_creator_fees_to_pump_v2`, `distribute_creator_fees_v2`) permissionless, dengan SOL dikirim langsung ke tiap alamat.
+- Keputusan: Prize pool hanya dibiayai creator fee lewat fee sharing Pump.fun dengan pembagian 5000 / 3000 / 2000 bps ke `PrizePoolVault` (PDA program `prize_vault`), `OperationsTreasury` (multisig) dan `SecurityReserve` (multisig). Pembagian dikunci sekali saat launch. Program `prize_vault` hanya punya `initialize`, `fund_season`, `finalize_winners`, `claim` dan `rollover`, tanpa `withdraw`. Bot proyek menjalankan distribusi fee secara rutin. Tidak memakai pajak transfer Token-2022 dan tidak membuat pool likuiditas sendiri.
+- Alasan: Satu-satunya jalur yang tidak butuh kunci pribadi tim untuk memindahkan dana ke vault, bisa dicek publik di akun `sharing_config`, dan tidak butuh modal likuiditas.
+- Dampak: Hadiah dibayar dalam SOL. Persentase tidak bisa diubah setelah dikunci, jadi aturan lama "perubahan persentase lewat multisig dan pengumuman tujuh hari" di PRIZE_POOL_MODEL §4 dihapus. Alamat vault, kedua multisig dan program ID `prize_vault` harus final sebelum launch. Pump.fun tetap bisa memasang admin baru lewat `admin_cto_sharing_config` (community takeover), dan ini harus diungkapkan. Pengiriman SOL ke PDA program harus lulus test fork mainnet sebelum launch. "Multisig prize vault" di SPEC §5.8 kini berarti vault milik program, dengan multisig sebagai authority finalisasi.
+- Komponen terkait: `docs/id/PRIZE_POOL_MODEL.md` §0, §4, §5, §14, §15; `programs/prize_vault` (belum ada)
+- Menggantikan: alokasi manual oleh treasury di PRIZE_POOL_MODEL §4 versi sebelumnya
+
+## D-0020 — UI/UX dikerjakan dulu dengan data mock
+
+- Tanggal: 2026-10-09
+- Status: Approved (pemilik, 2026-10-09)
+- Pemilik keputusan: Pemilik proyek
+- Konteks: Program `district` sudah lulus test, tetapi alur di layar (kota, NFT berjalan, misi, training, season) belum bisa dicoba. Mendesain contract lanjutan sebelum alurnya terasa berisiko menghasilkan instruksi yang tidak dipakai.
+- Keputusan: UI/UX dikerjakan lebih dulu dengan data mock, lalu disambungkan ke chain. Semua akses data web lewat satu interface adapter dengan dua implementasi, `mock` dan `chain`. Data mock memakai bentuk yang sama dengan account on-chain (`CitizenState`, `Config`, receipt) dan aturan yang sama (stat maksimal 10, tier 3/6/10, biaya training dari `progression`), sehingga UI tidak menjanjikan hal yang tidak bisa dilakukan program.
+- Alasan: Iterasi UI murah, contract mahal diubah setelah audit. Mock yang mengikuti bentuk account membuat penggantian ke chain hanya mengganti adapter.
+- Dampak: Urutan kerja di dokumen status berubah: UI/UX + mock sebelum deploy devnet dan integrasi wallet. Perubahan aturan yang ditemukan saat mencoba UI dicatat sebagai keputusan baru sebelum program diubah.
+- Komponen terkait: `apps/web/src/stores/**`, `packages/chain-client`
+- Menggantikan: urutan kerja sebelumnya di dokumen status (validator → devnet → mint → wallet → UI)
+
+## D-0021 — Kota 2D isometrik dengan Phaser 3, citizen memakai art NFT
+
+- Tanggal: 2026-10-09
+- Status: Approved (pemilik, 2026-10-09) — scene Phaser dan semua layar sudah jalan di web dengan data mock (9 Okt 2026); kanvas desain awal dihapus karena website sekarang jadi acuannya
+- Pemilik keputusan: Pemilik proyek
+- Konteks: Pemilik membandingkan kota 3D (Three.js lewat React Three Fiber) dengan 2D. Art citizen berupa potret statis 1000×1000 tanpa sprite jalan, dan background courtyard yang sudah ada berbentuk isometrik. Kota 3D butuh versi voxel per citizen dan kira-kira 1,5–2 kali waktu pengerjaan.
+- Keputusan: Kota dibuat 2D isometrik dengan Phaser 3. Citizen di kota memakai art NFT asli yang diperkecil dan bergerak dengan animasi lompat (hop dan squash), tanpa sprite jalan baru. Layar didesain dulu sebelum coding: peta kota, profil citizen, papan misi, training, season dan prize vault, serta versi HP. Distrik yang terkunci di peta mengikuti tier citizen yang sedang dipilih.
+- Alasan: Paling cepat dibuat, langsung cocok dengan art NFT dan aset yang ada, dan ringan di HP.
+- Dampak: Pertanyaan "Phaser 3" di dokumen status terjawab. Tileset kota final masih butuh art; desain sekarang memakai peta mock yang digambar dari kode. Sprite jalan bisa ditambahkan nanti tanpa mengubah alur.
+- Komponen terkait: `apps/web/src/game/*` (scene Phaser), `apps/web/src/components/**` (layar), `scripts/mock-city/generate_city.py` (peta mock), `apps/web/public/sprites/citizens/*`
+- Menggantikan: —
+
+## D-0022 — Role citizen dibaca dari nama file metadata
+
+- Tanggal: 2026-10-09
+- Status: Implemented (pemilik menyetujui 2026-10-09; 31 unit test dan 63 integration test lulus)
+- Pemilik keputusan: Pemilik proyek
+- Konteks: D-0015 membiarkan pemegang memilih role sebagai argumen `register_citizen`, sehingga role tidak dijamin cocok dengan art. Art setiap citizen sudah menunjukkan role-nya, `content/en/citizens.json` sudah memetakan role per karakter, dan lapisan kelangkaan "sebaran role" di desain hanya berlaku bila role tetap sejak mint. Membaca plugin atribut Metaplex Core di program terlalu rumit dibanding nama file yang sudah diperiksa D-0013.
+- Keputusan: File metadata dinamai `<serial>-<role>.json` di bawah prefix template yang disetujui, misalnya `018-navigator.json`. `register_citizen` tidak lagi punya argumen; program mengambil nama file dari URI asset lewat `ApprovedTemplate::approved_file_name`, lalu `roles::role_from_metadata_file` membaca code name huruf kecil setelah `-` terakhir. Serial di depannya tidak boleh kosong. Nama file tanpa role yang dikenal ditolak dengan `InvalidRole`. Role tetap ditulis sebagai atribut di JSON metadata agar tampil di marketplace, tetapi program tidak membacanya.
+- Alasan: Role melekat pada NFT sejak mint, cocok dengan art, bisa dilihat pembeli sebelum membeli, dan sebaran role bisa dikendalikan. Caranya memakai pemeriksaan URI yang sudah ada, tanpa parser atribut baru.
+- Dampak: Penamaan file metadata wajib benar sebelum mint karena role tidak bisa diubah setelahnya; daftar file harus dicek sebelum Candy Machine diisi. `@bas/chain-client` mengekspor `roleFromMetadataFile` dan `metadataFileName` dengan aturan yang sama, dan test paritas membandingkannya dengan `roles.rs`. Fixture test kini memakai `013-pioneer.json`.
+- Komponen terkait: `programs/district/src/roles.rs`, `programs/district/src/state/approved_template.rs`, `programs/district/src/instructions/register_citizen.rs`, `programs/district/src/lib.rs`, `programs/district/tests/integration/{harness,register.rs,pause.rs}`, `packages/chain-client/src/{stats,types}.ts`, `README.md`
+- Menggantikan: pemilihan role sebagai argumen `register_citizen` di D-0015
+
+## D-0023 — Sebaran role saat mint, clan sebagai fitur tahap berikutnya
+
+- Tanggal: 2026-10-09
+- Status: Approved (pemilik, 2026-10-09) — sebaran role sudah ada di content dan test; clan belum dibuat
+- Pemilik keputusan: Pemilik proyek
+- Konteks: Role kini melekat di NFT sejak mint (D-0022), sehingga jumlah warga per role ditetapkan saat mint dan menjadi lapisan kelangkaan. Pemilik juga menanyakan apakah konsep ini seperti clan.
+- Keputusan: (1) Supply 100 dibagi: Artisan 20, Steward 18, Pioneer 16, Scholar 14, Mentor 12, Sentinel 10, Navigator 10, disimpan sebagai `mintSupply` di `content/en/roles.json`. Sebelum mint, angka ini dicocokkan dengan art yang ada; kalau art per role berbeda, angka disesuaikan ke art lewat keputusan baru. (2) Clan adalah tim lintas role, bukan role. Clan dikerjakan setelah kota, misi, training dan season berjalan. Versi pertama: 5–7 citizen dari wallet berbeda dengan minimal 3 role berbeda, poin clan dari event distrik dan leaderboard clan per season, hadiah berupa title, banner dan kosmetik tanpa uang, dan data disimpan di server tanpa program on-chain baru. Clan hanya ikut prize pool SOL lewat keputusan baru.
+- Alasan: Role memberi identitas dan kelangkaan, jadi harus selesai sebelum mint. Clan memberi komunitas dan baru berguna setelah ada cukup pemain dan event. Event seperti Blackout Night butuh tiga stat, sehingga clan berisi satu role saja tidak bisa menyelesaikannya.
+- Dampak: Test `@bas/content` memastikan total `mintSupply` sama dengan `maxSupply` devnet dan mainnet, dan Sentinel serta Navigator paling langka; mengubah `maxSupply` berarti mengubah sebaran ini juga. File metadata harus mengikuti sebaran ini (`<serial>-<role>.json`). Prize pool tetap per citizen: satu wallet, satu citizen per kompetisi.
+- Komponen terkait: `content/en/roles.json`, `packages/content/src/{types,validate}.ts`, `packages/content/test/citizens.test.ts`, doc desain dan doc status
+- Menggantikan: —
+
+## D-0024 — Parameter peluncuran: harga mint, biaya training, art, tileset, multisig, host metadata
+
+- Tanggal: 2026-10-09
+- Status: Approved (pemilik meminta rekomendasi diterapkan, 2026-10-09) — harga mint sudah ada di config dan test; butir lain adalah langkah persiapan sebelum mint
+- Pemilik keputusan: Pemilik proyek
+- Konteks: Lima pertanyaan terbuka di dokumen status perlu jawaban sebelum mint, dan pemilik menetapkan bahwa mint tidak gratis tetapi berbiaya 0,01 SOL.
+- Keputusan:
+  1. Harga mint 0,01 SOL. `mintPriceLamports` bernilai `"10000000"` di `config/devnet.json` dan `config/mainnet.json`; guard `solPayment` di Candy Guard menariknya ke `solTreasury`. Dengan 100 citizen, total pendapatan mint 1 SOL, jadi harga ini terutama menyaring spam dan bot, bukan sumber dana utama.
+  2. Biaya dasar training tetap 100 token per level (`baseTrainingCostAtoms` `100000000` pada 6 decimals). Menaikkan satu stat dari 0 ke 10 butuh 5.500 token. Harga token baru diketahui setelah launch, jadi nilai ini boleh diubah lewat `update_config` oleh multisig, dengan pengumuman lebih dulu dan event `ConfigUpdated`.
+  3. Sebaran role dan art: 20 art yang sudah ada (Artisan 5, Steward 4, Sentinel 4, Scholar 2, Mentor 2, Navigator 2, Pioneer 1) masih di bawah kuota D-0023. Sisa 80 art digambar mengikuti sisa kuota: Artisan 15, Pioneer 15, Steward 14, Scholar 12, Mentor 10, Navigator 8, Sentinel 6. Test `@bas/content` gagal bila art suatu role melebihi kuotanya.
+  4. Tileset kota final: tileset isometrik original dengan ubin 64×32 piksel, digambar artist dalam gaya pixel yang sama dengan art NFT, dengan palet berbeda per distrik. Sampai tileset jadi, kota memakai peta mock yang digambar dari kode. Aset pihak ketiga hanya boleh dipakai dengan lisensi komersial yang dicatat di `apps/web/public/licenses`.
+  5. Multisig: Squads v4, 2-of-3. Satu multisig memegang admin program, upgrade authority (dengan time lock 48 jam), update authority Core Collection, dan authority finalisasi pemenang; `OperationsTreasury` dan `SecurityReserve` memakai vault terpisah di dalam multisig yang sama. Tiga signer di perangkat berbeda, minimal satu hardware wallet, dan tidak ada kunci yang dipegang AI atau server. Disiapkan dan diuji di devnet dulu.
+  6. Host metadata: devnet memakai hosting web app sendiri (gratis), misalnya `https://<app>/templates/7/`. Untuk mainnet, ditinjau ulang sebelum launch; kandidat utamanya Arweave lewat Turbo (ar.io/ArDrive), diunggah sebagai satu folder dengan path manifest berisi `templates/7/`, sehingga `approvedTemplateUriPrefix` menjadi `https://arweave.net/<manifest-id>/templates/7/`. Data di Arweave permanen dan tidak bisa diubah, cocok dengan role yang dikunci di nama file (D-0022). Upload dilakukan sekali setelah ke-100 file metadata dan gambar dicek. Bukan lewat Irys: endpoint Irys yang menyimpan ke Arweave dihentikan 1 November 2026 dan upload barunya pindah ke jaringan Irys sendiri. Metaplex Umi punya `@metaplex-foundation/umi-uploader-arweave-via-turbo`. Biaya dibayar sekali di muka dengan Turbo Credits (kartu, SOL atau USDC); perkiraan Oktober 2026 untuk 100 gambar sekitar 44 MB adalah beberapa dolar, dan file JSON di bawah 105 KiB gratis.
+- Alasan: Harga mint kecil tetap menyaring bot tanpa menghalangi pemain. Biaya training dipertahankan karena sudah dipakai di test dan desain, dan tetap bisa disesuaikan setelah harga token terlihat. Tileset original menjaga gaya yang sama dengan art NFT. Multisig 2-of-3 menghindari satu kunci yang bisa menarik atau mengganti program. Arweave membuat metadata dan role tidak bisa diganti diam-diam.
+- Dampak: `@bas/config` memvalidasi `mintPriceLamports` sebagai string desimal positif dan test memastikan devnet dan mainnet sama-sama 0,01 SOL. Prefix `metadata.example.invalid` tetap ditolak gerbang rilis sampai diganti alamat Arweave. Alamat multisig dan vault harus final sebelum fee sharing Pump.fun dikunci (D-0019).
+- Komponen terkait: `config/devnet.json`, `config/mainnet.json`, `packages/config/src/{types,network}.ts`, `packages/config/test/config.test.ts`, `packages/content/test/citizens.test.ts`, doc status
+- Menggantikan: —
+
+## D-0025 — Cara misi dimainkan, batas harian, pilihan stat, dan poin season
+
+- Tanggal: 2026-10-09
+- Status: Approved (pemilik meminta rekomendasi diterapkan, 2026-10-09) — sudah jalan di web dengan data mock; mission server dan program belum
+- Pemilik keputusan: Pemilik proyek
+- Konteks: Training butuh credit dari misi, tetapi langkah misi di preview masih berupa tombol. Pemilik meminta empat hal terbuka diputuskan sesuai rekomendasi: bentuk tiap langkah, batas misi, misi dengan dua pilihan stat, dan poin season.
+- Keputusan:
+  1. Tiap langkah misi memakai satu dari tiga jenis: `goto` (jalankan citizen di mode CONTROL ke penanda di peta; langkah selesai saat citizen tiba), `talk` (pilih satu dari tiga jawaban; jawaban salah boleh diulang) dan `puzzle` (susun bagian dalam urutan yang benar; salah urutan mengulang dari awal). Langkah, lokasi tujuan dan teksnya ditulis di definisi misi, bukan di kode layar.
+  2. Batas: satu misi hanya bisa diselesaikan sekali per citizen per hari season, maksimal 3 credit misi per citizen per hari, dan satu citizen hanya mengerjakan satu misi pada satu waktu. Event distrik mengikuti jadwal event-nya sendiri.
+  3. Misi dengan dua pilihan stat (Night patrol, Expedition to the ruins): pemain memilih stat credit saat menekan START, dan pilihan itu tidak bisa diganti sampai misi selesai atau dibatalkan.
+  4. Poin season: 100 poin per misi selesai dan 150 poin per tugas event. Training tidak memberi poin, sehingga peringkat datang dari aktivitas, bukan dari banyaknya token yang dibakar.
+- Alasan: Tanpa batas harian, credit bisa di-farm dan kenaikan stat hanya soal token. Tiga jenis langkah cukup untuk misi pertama dan semuanya bisa diperiksa mission server. Memilih stat di awal membuat klaim yang ditandatangani server terikat ke satu stat sejak misi dimulai.
+- Dampak: Mission server (Stage 5) harus memeriksa urutan langkah, batas harian dan stat pilihan sebelum ikut menandatangani `claim_training_credit`. Program tidak berubah: batas harian dijaga server, dan program tetap menolak klaim yang dipakai ulang. Di web, adapter mock menjalankan aturan yang sama dan punya tombol "next day" khusus mock untuk menguji batas harian.
+- Komponen terkait: `apps/web/src/lib/data/{types,missions}.ts`, `apps/web/src/lib/data/mock/*`, `apps/web/src/components/missions/*`, `apps/web/src/game/CityScene.ts`, `apps/web/src/messages/en.json`
+- Menggantikan: —
+
+## D-0026 — Build SBF dengan toolchain Solana 1.18.26, tanpa `anchor build`
+
+- Tanggal: 2026-10-09
+- Status: Approved (pemilik meminta langkah validator dikerjakan, 2026-10-09) — build dan test SBF lolos, belum di-deploy ke devnet
+- Pemilik keputusan: Pemilik proyek
+- Konteks: Program baru diuji di host. Saat build SBF pertama, `Cargo.lock` berisi versi dependency yang butuh Rust lebih baru dari rustc 1.75 milik platform-tools v1.41, dan formatnya versi 4 yang tidak dibaca cargo 1.75. `anchor build` 0.30.1 juga menulis ulang `declare_id!` dari keypair acak di `target/deploy`, dan build IDL-nya mencoba mengunduh toolchain lain.
+- Keputusan: (1) `rust-version = "1.75.0"` di workspace, sehingga cargo memilih versi dependency yang masih bisa di-build platform-tools dan `Cargo.lock` tetap format 3. `blake3` dikunci ke 1.5.5 karena tidak mencantumkan versi Rust minimum. (2) Build memakai `pnpm program:build` (`cargo build-sbf`) dan test pada binary SBF memakai `pnpm program:test-sbf` (`cargo test-sbf`). Anchor CLI 0.30.1 hanya dipakai untuk deploy. (3) `programs/Anchor.toml` mendaftarkan program di `[workspace] members = ["district"]`, karena file itu ada di `programs/`, bukan di root.
+- Alasan: Program harus di-build dengan compiler yang sama dengan yang dipakai saat deploy. Program id tidak boleh berubah diam-diam saat build, karena dicek oleh test paritas.
+- Dampak: Hasil 9 Oktober 2026: `district.so` 469.304 byte; 31 unit test dan 63 test instruksi lolos pada binary SBF; compute unit terbesar 29.589 (`initialize_config`, batas 200.000); `initialize_config` berhasil di `solana-test-validator` dengan 29.129 CU. Deploy program butuh sekitar 3,27 SOL untuk rent, jadi wallet devnet perlu minimal sekitar 4 SOL devnet ditambah biaya transaksi. Test paritas program id tetap jalan.
+- Komponen terkait: `Cargo.toml`, `Cargo.lock`, `programs/district/Cargo.toml`, `programs/Anchor.toml`, `package.json`, `README.md`
+- Menggantikan: —
+
+## D-0027 — Program id devnet, script deploy, dan prefix metadata devnet
+
+- Tanggal: 2026-10-09
+- Status: Approved (pemilik meminta semua disesuaikan, 2026-10-09) — script sudah diuji lengkap di validator lokal; deploy devnet menunggu pemilik menjalankannya
+- Pemilik keputusan: Pemilik proyek
+- Konteks: Jaringan devnet tidak bisa dihubungi dari ruang kerja Claude, jadi deploy harus dijalankan dari laptop pemilik. Program id lama (`D8HG…`) hanya placeholder dan keypair-nya tidak ada.
+- Keputusan:
+  1. Program id devnet adalah `82zccW1Z97ic24aCrt2c3U6qDUZMfbHufZMCjv2dm1Ym`, dengan keypair di `programs/district/keypair.json` (di-gitignore). Keypair ini hanya dipakai saat deploy pertama; setelah itu yang berkuasa adalah upgrade authority, yaitu wallet deployer milik pemilik. Mainnet membuat keypair sendiri sebelum build mainnet, dan gerbang rilis mainnet menolak id devnet (`DEVNET_ONLY_ADDRESSES`).
+  2. Deploy lewat `scripts/devnet/deploy.sh` (WSL), setup lewat `pnpm devnet:setup` (`scripts/devnet/setup.mjs`, hanya modul bawaan Node). Setup membuat mission authority, token tiruan Token-2022 dengan 6 desimal dan 1.000.000 token uji, koleksi Metaplex Core, lalu menjalankan `initialize_config`, `set_utility_mint`, `lock_utility_mint` dan unpause. Script bisa diulang dan langkah yang sudah selesai dilewati.
+  3. Treasury SOL devnet memakai wallet deployer. Prefix metadata devnet adalah `https://bas-district-devnet.vercel.app/templates/7/`. Prefix ini tidak bisa diubah setelah `initialize_config`, jadi web app devnet di-deploy dengan nama proyek Vercel itu.
+  4. Prefix metadata devnet dan mainnet boleh berbeda: devnet memakai web app devnet, mainnet memakai host permanen (D-0024 butir 6).
+- Alasan: Kunci deployer tetap di tangan pemilik. Script tanpa dependency tidak perlu `pnpm install` baru dan tidak menambah library Solana kedua ke repositori. Urutan setup mengikuti D-0016: mulai dalam keadaan pause, mint diikat dan dikunci, baru unpause.
+- Dampak: Rehearsal lengkap di `solana-test-validator`, dengan program Metaplex Core asli dimuat, berhasil pada 9 Oktober 2026. Hasilnya: deploy, token, koleksi, config, mint terkunci dan district live; menjalankan ulang tidak mengubah apa-apa. Test `@bas/config` dan `@bas/chain-client` tetap lolos sebelum dan sesudah `config/devnet.json` diisi alamat asli. Mint NFT (Candy Machine, Candy Guard, royalti) adalah langkah berikutnya.
+- Komponen terkait: `scripts/devnet/{deploy.sh,solana.mjs,setup.mjs}`, `docs/id/DEVNET_DEPLOY_ID.md`, `programs/district/src/lib.rs`, `programs/Anchor.toml`, `config/*.json`, `packages/config/src/readiness.ts`, `packages/config/test/config.test.ts`, `packages/chain-client/test/chain-client.test.ts`, `.gitignore`, `package.json`
+- Menggantikan: placeholder program id `D8HG…` dari D-0010 (untuk devnet)

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Guard the one public English copy catalog against protocol names and Indonesian labels. */
+/** Guard the public English copy and citizen rosters against protocol names and Indonesian labels. */
 
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -33,4 +33,19 @@ assert.deepEqual(
   'internal stat keys must map to the approved public English labels',
 );
 
-console.log(`public copy passed (${copy.length} strings checked)`);
+// Citizen names are public copy too. Honorifics and words used as names in
+// Indonesian (Pak, Bu, Mbah, Kapten, ...) keep the roster tied to one country.
+const IndonesianNameParts =
+  /\b(?:pak|bu|ibu|bapak|mas|mbak|mbah|kang|neng|dik|adik|bos|kapten|udara|tani|pejabat|kupluk|koper|petualang)\b/i;
+const rosters = ['content/en/citizens.json', 'content/en/citizens.archive.json'];
+let names = 0;
+for (const roster of rosters) {
+  const citizens = JSON.parse(await readFile(join(repoRoot, roster), 'utf8'));
+  for (const citizen of citizens) {
+    names += 1;
+    assert.doesNotMatch(citizen.name, IndonesianNameParts, `${roster}: "${citizen.name}" must be an English name`);
+    assert.doesNotMatch(citizen.lore, IndonesianUiTerms, `${roster}: lore of "${citizen.name}" must be English`);
+  }
+}
+
+console.log(`public copy passed (${copy.length} strings and ${names} citizen names checked)`);

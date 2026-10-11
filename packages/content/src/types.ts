@@ -61,6 +61,12 @@ export interface CitizenRoleRecord {
   index: RoleIndex;
   key: RoleKey;
   label: RoleLabel;
+  /**
+   * How many citizens of this role the collection mints (D-0023). The roles
+   * add up to `maxSupply`, and the metadata files must follow this split
+   * because the role is fixed by the file name (D-0022).
+   */
+  mintSupply: number;
   initialStats: RoleStartingStats;
 }
 
@@ -77,6 +83,8 @@ export interface CitizenRecord {
   image: string;
   /** Public path of the portrait used in lists, e.g. `/avatars/1.png`. */
   avatar: string;
+  /** Public path of the 128 px map sprite, e.g. `/sprites/citizens/1.png`. */
+  sprite: string;
   intelligence: number;
   alignment: number;
   compute: number;

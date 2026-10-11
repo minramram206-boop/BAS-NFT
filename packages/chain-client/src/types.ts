@@ -32,10 +32,10 @@ export const STAT_LABELS: Readonly<Record<StatType, string>> = {
 /**
  * Phase A role (SPEC v2 §6.5).
  *
- * The role is chosen at registration and determines the starting stats, which
- * the program derives from its own registry — never from caller input, because
- * caller-supplied stats would let anyone self-register at 10/10/10 without
- * burning a single token.
+ * The role is named by the NFT's metadata file (`018-navigator.json`, D-0022)
+ * and determines the starting stats, which the program derives from its own
+ * registry — never from caller input, because caller-supplied stats would let
+ * anyone self-register at 10/10/10 without burning a single token.
  */
 export type RoleTemplate = (typeof ROLE_TEMPLATES)[number];
 
@@ -59,7 +59,7 @@ export interface ApprovedTemplateOnChain {
 /**
  * Canonical citizen progression state as stored by the District program.
  *
- * Mirrors `CitizenState` in `programs/district/src/state.rs` (SPEC v2 §6.4).
+ * Mirrors `CitizenState` in `programs/district/src/state/citizen.rs` (SPEC v2 §6.4).
  * It is the on-chain record, so it carries the protocol's internal names and
  * its byte-order fields; it is deliberately *not* shaped like a UI view model.
  */

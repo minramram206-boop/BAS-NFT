@@ -1,4 +1,4 @@
-# Pixel District — Technology Stack
+# BAS District — Technology Stack
 
 _Status: RECOMMENDED. Dokumen internal berbahasa Indonesia. Seluruh source code, comments, identifiers, logs, errors, tests, API schemas, dan public UI menggunakan bahasa Inggris._
 
@@ -11,7 +11,7 @@ _Status: RECOMMENDED. Dokumen internal berbahasa Indonesia. Seluruh source code,
 | Solana client | TypeScript | `@solana/kit` + Wallet Standard | RPC, transactions, wallet connection |
 | Metaplex client | TypeScript | Umi + `mpl-core` + `mpl-core-candy-machine` | Core assets and Candy Machine interaction |
 | Web application | TypeScript | Next.js App Router + React | Public website, owner dashboard, chat, profiles |
-| Pixel district | TypeScript | Phaser 3 | Sprite rendering, scene, animation, input, district events |
+| District map | TypeScript | Phaser 3 | Sprite rendering, scene, animation, input, district events |
 | UI styling | CSS/TypeScript | Tailwind CSS + CSS variables + Radix primitives | Responsive global English UI |
 | Client state | TypeScript | Zustand + TanStack Query | UI state and server/on-chain query cache |
 | Backend API | TypeScript | Next.js Route Handlers | Authentication, ownership checks, chat, mission claims |
@@ -266,13 +266,13 @@ export interface CitizenChainState {
 Use:
 
 - Tailwind CSS for layout and responsive utilities.
-- CSS variables for the Pixel District palette.
+- CSS variables for the BAS District palette.
 - Radix UI primitives for accessible dialogs, menus, tabs, and tooltips.
 - Custom components for the visual identity.
 
 Avoid generic dashboard component kits that make the project look like a normal SaaS application.
 
-### 4.5 Pixel district renderer
+### 4.5 District renderer
 
 Use Phaser 3 as an isolated client-only canvas component.
 

@@ -18,7 +18,7 @@ import type {
  * Browser-safe: it only inspects data and never touches the file system.
  */
 
-const STRING_FIELDS = ['name', 'code', 'image', 'avatar', 'lore'] as const;
+const STRING_FIELDS = ['name', 'code', 'image', 'avatar', 'sprite', 'lore'] as const;
 
 export class ContentValidationError extends Error {
   constructor(message: string) {
@@ -103,6 +103,7 @@ export function parseCitizen(raw: unknown, index: number): CitizenRecord {
     roleKey: roleKeyText,
     image: source.image as string,
     avatar: source.avatar as string,
+    sprite: source.sprite as string,
     intelligence: requireScore(source.intelligence, index, 'intelligence'),
     alignment: requireScore(source.alignment, index, 'alignment'),
     compute: requireScore(source.compute, index, 'compute'),
@@ -141,6 +142,11 @@ export function parseRoleRoster(raw: unknown): readonly CitizenRoleRecord[] {
       invalid(position, 'label', `expected "${ROLE_LABELS[position]}"`);
     }
 
+    const mintSupply = requireInteger(source.mintSupply, position, 'mintSupply');
+    if (mintSupply < 1) {
+      invalid(position, 'mintSupply', 'expected at least one citizen of every role');
+    }
+
     const rawStats = source.initialStats;
     if (typeof rawStats !== 'object' || rawStats === null || Array.isArray(rawStats)) {
       invalid(position, 'initialStats', 'expected an object');
@@ -163,6 +169,7 @@ export function parseRoleRoster(raw: unknown): readonly CitizenRoleRecord[] {
       index: index as RoleIndex,
       key: keyText,
       label: labelText,
+      mintSupply,
       initialStats: Object.freeze(initialStats),
     });
   });

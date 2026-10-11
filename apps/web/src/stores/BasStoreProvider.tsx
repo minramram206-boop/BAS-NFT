@@ -2,19 +2,13 @@
 
 import React, { createContext, useContext, useRef } from 'react';
 import type { CitizenRecord } from '@bas/content';
-import {
-  createBasStore,
-  type BasStoreApi,
-  type TrainingPreviewConfig,
-} from './basStore';
+import { createBasStore, type BasStoreApi, type TrainingConfig } from './basStore';
 
 export interface BasStoreProviderProps {
   /** Validated roster produced by `@bas/content/server`. */
   citizens: readonly CitizenRecord[];
-  /** Maximum sample supply from the selected cluster manifest. */
-  maxSupply: number;
-  /** Manifest values used only for local training-cost estimates. */
-  trainingConfig: TrainingPreviewConfig;
+  /** Manifest values used for training costs. */
+  trainingConfig: TrainingConfig;
   children: React.ReactNode;
 }
 
@@ -26,14 +20,9 @@ const BasStoreContext = createContext<BasStoreApi | null>(null);
  * A per-request store keeps server rendering isolated between requests and
  * guarantees the client hydrates from the same roster the server rendered.
  */
-export const BasStoreProvider: React.FC<BasStoreProviderProps> = ({
-  citizens,
-  maxSupply,
-  trainingConfig,
-  children,
-}) => {
+export const BasStoreProvider: React.FC<BasStoreProviderProps> = ({ citizens, trainingConfig, children }) => {
   const storeRef = useRef<BasStoreApi | null>(null);
-  storeRef.current ??= createBasStore({ citizens, maxSupply, trainingConfig });
+  storeRef.current ??= createBasStore({ citizens, trainingConfig });
 
   return <BasStoreContext.Provider value={storeRef.current}>{children}</BasStoreContext.Provider>;
 };

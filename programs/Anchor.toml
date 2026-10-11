@@ -2,15 +2,20 @@
 anchor_version = "0.30.1"
 solana_version = "1.18.26"
 
+# This file lives in programs/, so the program sits at ./district rather than
+# Anchor's default programs/*.
+[workspace]
+members = ["district"]
+
 [features]
 resolution = true
 skip-lint = false
 
 [programs.devnet]
-district = "D8HGhXUqHx7UXysCMEBDzvd3FS4XGEMNjCR6Eaj8CRbV"
+district = "82zccW1Z97ic24aCrt2c3U6qDUZMfbHufZMCjv2dm1Ym"
 
 [programs.mainnet]
-district = "D8HGhXUqHx7UXysCMEBDzvd3FS4XGEMNjCR6Eaj8CRbV"
+district = "82zccW1Z97ic24aCrt2c3U6qDUZMfbHufZMCjv2dm1Ym"
 
 [registry]
 url = "https://api.apr.dev"
@@ -20,18 +25,13 @@ cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
-# Integration tests run against solana-program-test's simulated bank, so they
-# need neither a validator nor the Anchor CLI. `anchor test` still works if you
-# have the toolchain; it just runs this.
+# The instruction tests run in solana-program-test. `pnpm program:test-sbf`
+# runs the same tests against the built SBF binary.
 test = "cargo test --manifest-path programs/district/Cargo.toml"
 
 # NOTE
-# The program id above is the public half of a generated, NEVER DEPLOYED
-# keypair, and it is identical to the one in declare_id! and config/*.json so
-# that `cargo check` succeeds. It controls nothing. Before deploying:
-#   solana-keygen new -o programs/district/keypair.json   (gitignored)
-#   anchor keys sync
-# then write the new pubkey into config/devnet.json and config/mainnet.json.
-# `pnpm test` fails if the four copies drift apart;
-# `findPlaceholderAddresses(DEVNET_CONFIG)` lists every address still to be
-# replaced before a launch.
+# The program id above is the devnet program (D-0027). Its keypair is
+# programs/district/keypair.json, which is gitignored and only needed for the
+# first `solana program deploy`. Mainnet gets its own keypair before the
+# mainnet build; `pnpm test` fails if declare_id!, this file and
+# config/*.json drift apart.

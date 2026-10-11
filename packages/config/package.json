@@ -2,7 +2,7 @@
   "name": "@bas/config",
   "version": "1.0.0",
   "private": true,
-  "description": "Shared typed cluster configuration for BAS Pixel District",
+  "description": "Shared typed cluster configuration for BAS District",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

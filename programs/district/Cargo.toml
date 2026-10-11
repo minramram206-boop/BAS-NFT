@@ -3,6 +3,7 @@ name = "district"
 description = "BAS District 01 - Citizen Progression and Token Burn Anchor Program"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
@@ -11,24 +12,21 @@ crate-type = ["cdylib", "lib"]
 name = "district"
 
 [features]
+default = []
+cpi = ["no-entrypoint"]
 no-entrypoint = []
 no-idl = []
 no-log-ix-name = []
-cpi = ["no-entrypoint"]
-default = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 
 [dependencies]
 anchor-lang = { workspace = true }
 anchor-spl = { workspace = true }
 solana-program = { workspace = true }
-# Used by set_utility_mint to unpack and validate the mint it is about to bind
-# permanently. Same version and feature set anchor-spl 0.30.1 already pulls in,
-# so this adds no new code to the BPF binary.
-spl-token = { workspace = true }
 
-# Only used by tests/integration.rs, which runs the instructions against
-# solana-program-test's simulated bank. None of this reaches the BPF binary.
+# Host-side instruction tests only (tests/integration). Not in the BPF binary.
 [dev-dependencies]
 solana-program-test = { workspace = true }
 solana-sdk = { workspace = true }
+spl-token = { workspace = true }
 tokio = { workspace = true }

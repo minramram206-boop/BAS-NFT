@@ -27,6 +27,8 @@ import {
   creditFieldOf,
   formatTokenAtoms,
   isStatType,
+  metadataFileName,
+  roleFromMetadataFile,
   roleTemplate,
   tierOf,
   trainingCostAtoms,
@@ -112,7 +114,7 @@ describe('@bas/chain-client network contract', () => {
 
 describe('@bas/chain-client protocol parity', () => {
   it('keeps the maximum score and tiers in parity with Rust and content', () => {
-    const state = source('programs/district/src/state.rs');
+    const constants = source('programs/district/src/constants.rs');
     assert.equal(STAT_MAX, MAX_STAT_SCORE);
     assert.equal(STAT_MAX, DEVNET_CONFIG.maxScore);
     assert.equal(STAT_MAX, 10, 'SPEC v2 §7: Maximum score: 10');
@@ -120,10 +122,10 @@ describe('@bas/chain-client protocol parity', () => {
     assert.equal(TIER_2_SCORE, 6);
     assert.equal(TIER_3_SCORE, 10);
     assert.equal(TIER_3_SCORE, STAT_MAX);
-    assert.match(state, /pub const STAT_MAX: u8 = 10;/);
-    assert.match(state, /pub const TIER_1_SCORE: u8 = 3;/);
-    assert.match(state, /pub const TIER_2_SCORE: u8 = 6;/);
-    assert.match(state, /pub const TIER_3_SCORE: u8 = STAT_MAX;/);
+    assert.match(constants, /pub const STAT_MAX: u8 = 10;/);
+    assert.match(constants, /pub const TIER_1_SCORE: u8 = 3;/);
+    assert.match(constants, /pub const TIER_2_SCORE: u8 = 6;/);
+    assert.match(constants, /pub const TIER_3_SCORE: u8 = STAT_MAX;/);
   });
 
   it('keeps the internal stat names and public English labels separate', () => {
@@ -138,9 +140,9 @@ describe('@bas/chain-client protocol parity', () => {
     assert.ok(!isStatType('charisma'));
     assert.ok(!isStatType(undefined));
 
-    const state = source('programs/district/src/state.rs');
-    assert.match(state, /Compute = 2/);
-    assert.doesNotMatch(state, /Composure/);
+    const citizen = source('programs/district/src/state/citizen.rs');
+    assert.match(citizen, /Compute = 2/);
+    assert.doesNotMatch(citizen, /Composure/);
   });
 
   it('mirrors the Phase A seven-role registry in content and Rust', () => {
@@ -183,14 +185,29 @@ describe('@bas/chain-client protocol parity', () => {
   });
 
   it('uses the exact CitizenState seeds and account fields from the spec', () => {
-    const lib = source('programs/district/src/lib.rs');
-    const state = source('programs/district/src/state.rs');
-    assert.equal(PROGRAM_SEEDS.districtConfig, 'district_config');
-    assert.equal(PROGRAM_SEEDS.citizen, 'citizen');
-    assert.equal(PROGRAM_SEEDS.claim, 'claim');
-    assert.match(lib, /seeds = \[b"citizen", asset\.key\(\)\.as_ref\(\)\]/);
-    assert.match(lib, /seeds = \[b"citizen", citizen_state\.asset\.as_ref\(\)\]/);
-    assert.match(lib, /b"claim",\s*ctx\.accounts\.asset\.key\(\)\.as_ref\(\),\s*&args\.mission_id\.to_le_bytes\(\),\s*&args\.nonce\.to_le_bytes\(\),/);
+    const constants = source('programs/district/src/constants.rs');
+    const state = source('programs/district/src/state/citizen.rs');
+    const instructions = ['register_citizen', 'claim_training_credit', 'upgrade_score'].map((name) =>
+      source(`programs/district/src/instructions/${name}.rs`),
+    );
+    for (const [key, seed] of Object.entries({
+      CONFIG_SEED: PROGRAM_SEEDS.districtConfig,
+      APPROVED_TEMPLATE_SEED: PROGRAM_SEEDS.approvedTemplate,
+      CITIZEN_SEED: PROGRAM_SEEDS.citizen,
+      CLAIM_SEED: PROGRAM_SEEDS.claim,
+    })) {
+      assert.match(constants, new RegExp(`pub const ${key}: &\\[u8\\] = b"${seed}";`));
+    }
+    // Every instruction that touches a citizen derives its PDA from the asset
+    // it verified, never from data stored in the citizen account.
+    for (const rust of instructions) {
+      assert.match(rust, /seeds = \[CITIZEN_SEED, asset\.key\(\)\.as_ref\(\)\]/);
+      assert.doesNotMatch(rust, /citizen_state\.asset\.as_ref\(\)/);
+    }
+    assert.match(
+      instructions[1] as string,
+      /CLAIM_SEED,\s*asset\.key\(\)\.as_ref\(\),\s*args\.mission_id\.to_le_bytes\(\)\.as_ref\(\),\s*args\.nonce\.to_le_bytes\(\)\.as_ref\(\)/,
+    );
     const citizenState = state.match(/pub struct CitizenState\s*\{[\s\S]*?\n\}/)?.[0];
     assert.ok(citizenState, 'CitizenState declaration must exist');
     const citizenFields = [...citizenState.matchAll(/^\s*pub ([a-z_]+): ([^,]+),/gm)]
@@ -209,31 +226,63 @@ describe('@bas/chain-client protocol parity', () => {
       'craft_training_credits: u16',
     ]);
     assert.doesNotMatch(citizenState, /pub composure:|pub owner: Pubkey/);
-    assert.equal(DISTRICT_CONFIG_VERSION, Number(rustConst('programs/district/src/state.rs', 'DISTRICT_CONFIG_VERSION')));
+    assert.equal(DISTRICT_CONFIG_VERSION, Number(rustConst('programs/district/src/constants.rs', 'DISTRICT_CONFIG_VERSION')));
   });
 
   it('requires an immutable approved-template PDA and verifies the Core asset URI', () => {
-    const program = source('programs/district/src/lib.rs');
-    const state = source('programs/district/src/state.rs');
+    const program = source('programs/district/src/instructions/register_citizen.rs');
+    const state = source('programs/district/src/state/approved_template.rs');
     const coreReader = source('programs/district/src/mpl_core.rs');
     const prefix = DEVNET_CONFIG.approvedTemplateUriPrefix;
 
     assert.match(program, /pub approved_template: Account<'info, ApprovedTemplate>/);
     assert.match(
       program,
-      /seeds = \[\s*b"approved_template"\.as_ref\(\),\s*config\.approved_template_id\.to_le_bytes\(\)\.as_ref\(\)\s*\]/,
+      /seeds = \[\s*APPROVED_TEMPLATE_SEED,\s*config\.approved_template_id\.to_le_bytes\(\)\.as_ref\(\)\s*\]/,
     );
-    assert.match(program, /ctx\.accounts\.approved_template\.approves_uri\(asset_uri\)/);
+    assert.match(program, /\.approved_template\s*\.approved_file_name\(read_core_asset_uri\(&data\)\?\)/);
+    assert.match(program, /role_from_metadata_file\(file_name\)\?/);
+    assert.match(program, /pub fn process\(ctx: Context<Self>\) -> Result<\(\)>/);
     assert.match(coreReader, /pub fn read_core_asset_uri\(data: &\[u8\]\) -> Result<&str>/);
     assert.match(state, /pub fn approves_uri\(&self, uri: &str\) -> bool/);
     assert.match(state, /uri\.strip_prefix\(&self\.uri_prefix\)/);
     assert.match(state, /filename\.ends_with\("\.json"\)/);
     assert.ok(prefix.endsWith(`/templates/${DEVNET_CONFIG.approvedTemplateId}/`));
-    assert.equal(prefix, MAINNET_CONFIG.approvedTemplateUriPrefix);
+    assert.ok(MAINNET_CONFIG.approvedTemplateUriPrefix.endsWith(`/templates/${MAINNET_CONFIG.approvedTemplateId}/`));
+  });
+
+  it('reads the role from the metadata file name the way roles.rs does', () => {
+    const rust = source('programs/district/src/roles.rs');
+    assert.match(rust, /pub fn role_from_metadata_file\(file_name: &str\)/);
+    assert.match(rust, /\.strip_suffix\("\.json"\)/);
+    assert.match(rust, /\.rsplit_once\('-'\)/);
+
+    for (const role of ROLE_TEMPLATES) {
+      const fileName = metadataFileName('018', role.key);
+      assert.equal(fileName, `018-${role.key}.json`);
+      assert.equal(roleFromMetadataFile(fileName)?.index, role.index);
+    }
+    assert.equal(roleFromMetadataFile('s1-018-mentor.json')?.key, 'mentor');
+    for (const fileName of [
+      '018.json',
+      'navigator.json',
+      '-navigator.json',
+      '018-.json',
+      '018-wizard.json',
+      '018-Navigator.json',
+      '018-navigator-2.json',
+      '018-navigator.json.bak',
+      '018-navigator',
+      '',
+    ]) {
+      assert.equal(roleFromMetadataFile(fileName), undefined, fileName);
+    }
+    assert.throws(() => metadataFileName('../018', 'pioneer'), /plain file-name part/);
+    assert.throws(() => metadataFileName('018/x', 'pioneer'), /plain file-name part/);
   });
 
   it('keeps the marginal token-cost formula in parity with the Rust unit tests', () => {
-    const rust = source('programs/district/src/state.rs');
+    const rust = source('programs/district/src/progression.rs');
     assert.equal(trainingCostAtoms('100000000', 0), 100_000_000n);
     assert.equal(trainingCostAtoms('100000000', 1), 200_000_000n);
     assert.equal(trainingCostAtoms('100000000', 8), 900_000_000n);
@@ -242,7 +291,7 @@ describe('@bas/chain-client protocol parity', () => {
     assert.throws(() => trainingCostAtoms('0', 0), /must be positive/);
     assert.throws(() => trainingCostAtoms('not atoms', 0), /decimal integer/);
     assert.match(rust, /training_cost = base_training_cost × \(current_score \+ 1\)/);
-    assert.equal(Number(rustConst('programs/district/src/state.rs', 'CREDITS_PER_UPGRADE')), 1);
+    assert.equal(Number(rustConst('programs/district/src/constants.rs', 'CREDITS_PER_UPGRADE')), 1);
     assert.equal(CREDITS_PER_UPGRADE, 1);
   });
 
@@ -293,6 +342,13 @@ describe('@bas/chain-client protocol parity', () => {
     const programId = /pub const MPL_CORE_PROGRAM_ID: Pubkey = pubkey!\("([^"]+)"\)/.exec(rust);
     assert.ok(programId, 'mpl_core.rs must declare MPL_CORE_PROGRAM_ID');
     assert.equal(MPL_CORE_PROGRAM_ID, programId[1]);
+    // The asset owner is pinned to this constant, never to a caller account.
+    assert.match(rust, /require_keys_eq!\(\s*\*asset\.owner,\s*MPL_CORE_PROGRAM_ID/);
+    for (const name of ['register_citizen', 'claim_training_credit', 'upgrade_score']) {
+      const instruction = source(`programs/district/src/instructions/${name}.rs`);
+      assert.match(instruction, /owner = MPL_CORE_PROGRAM_ID @ DistrictError::InvalidAssetState/);
+      assert.doesNotMatch(instruction, /mpl_core_program/);
+    }
 
     function rustNumber(name: string): number {
       const match = new RegExp(`pub const ${name}: (?:u8|usize) = (\\d+)`).exec(rust);

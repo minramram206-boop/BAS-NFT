@@ -33,3 +33,5 @@ test-ledger/
 keypair.json
 *-keypair.json
 programs/*/keypair.json
+# Devnet keys written by scripts/devnet (deployer, mission authority)
+.keys/
