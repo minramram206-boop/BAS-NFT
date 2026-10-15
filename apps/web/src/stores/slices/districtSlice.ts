@@ -14,7 +14,7 @@ import type {
   MissionDefinition,
   StepProof,
 } from '@/lib/data/types';
-import { auctionClockOf, clockSpan, formatSolExact, splitSale } from '@/lib/data/market';
+import { auctionClockOf, auctionStage, clockSpan, formatSolExact, splitSale } from '@/lib/data/market';
 import { districtName } from '@/lib/format';
 import { retroAudio } from '@/lib/audio/RetroAudioSynthesizer';
 import { spawnFloatingStatEffect } from '@/lib/effects/floatingStatEffect';
@@ -313,6 +313,8 @@ export function createDistrictSlice(options: CreateBasStoreOptions, set: SetStat
     settleAuction: async (citizenId) => {
       const auction = get().market.auctions.find((item) => item.citizenId === citizenId);
       const name = get().citizens.find((item) => item.id === citizenId)?.name ?? '';
+      // The wallet's part in the auction is read before it is settled: afterwards the auction is gone.
+      const stage = auction ? auctionStage(auction, get().owned.includes(citizenId), Math.floor(Date.now() / 1000)) : null;
       const next = await run(() => source.settleAuction(citizenId));
       if (!next || !auction) return Boolean(next);
       const copy = MESSAGES.market;
@@ -327,6 +329,17 @@ export function createDistrictSlice(options: CreateBasStoreOptions, set: SetStat
         retroAudio.play('mint');
         set({ selectedCitizenId: citizenId });
         get().openModal(copy.wonTitle, formatMessage(copy.wonMessage, { name, price: formatSolExact(price) }));
+      } else if (stage === 'collect') {
+        retroAudio.play('mint');
+        set({ selectedCitizenId: pickSelected(next, get().selectedCitizenId) });
+        get().openModal(
+          copy.collectedTitle,
+          formatMessage(copy.collectedMessage, {
+            name,
+            price: formatSolExact(price),
+            amount: formatSolExact(splitSale(price, next.market.royaltyBps).proceedsLamports),
+          }),
+        );
       } else {
         retroAudio.play('mint');
         set({ selectedCitizenId: pickSelected(next, get().selectedCitizenId) });

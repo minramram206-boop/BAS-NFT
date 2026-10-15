@@ -76,7 +76,11 @@ so_bytes="$(stat -c %s "$PROGRAM_SO")"
 data_bytes="$(solana program show "$program_id" --url "$RPC_URL" 2>/dev/null | sed -n 's/^Data Length: \([0-9]*\).*/\1/p')"
 if [ -n "$data_bytes" ] && [ "$so_bytes" -gt "$data_bytes" ]; then
   extra=$((so_bytes - data_bytes))
-  echo "Extending program data by $extra bytes ($data_bytes -> $so_bytes)"
+  # The loader refuses to extend by less than 10,240 bytes at a time, so a
+  # binary that grew only a little still gets that much room.
+  min_extend=10240
+  if [ "$extra" -lt "$min_extend" ]; then extra=$min_extend; fi
+  echo "Extending program data by $extra bytes ($data_bytes -> $((data_bytes + extra)), binary $so_bytes)"
   solana program extend "$program_id" "$extra" \
     --keypair "$DEPLOYER" \
     --url "$RPC_URL"

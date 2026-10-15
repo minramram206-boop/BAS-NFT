@@ -197,7 +197,11 @@ export type MarketNotice =
       readonly citizenId: number;
       /** The wallet's bid, paid back in full. */
       readonly refundedLamports: bigint;
-    };
+    }
+  /** An auction the wallet won has ended and waits for it to claim the citizen. */
+  | { readonly id: string; readonly kind: 'claim'; readonly citizenId: number; readonly priceLamports: bigint }
+  /** An auction the wallet ran has ended with a winner and waits for it to collect the payment. */
+  | { readonly id: string; readonly kind: 'collect'; readonly citizenId: number; readonly priceLamports: bigint };
 
 /** The fixed-price market (D-0082): the listings and the rules every sale follows. */
 export interface MarketSnapshot {

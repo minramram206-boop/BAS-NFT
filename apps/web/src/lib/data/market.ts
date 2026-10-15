@@ -203,6 +203,52 @@ export function shownAuctions(
 /** Notice ids one browser remembers per wallet; the oldest are forgotten first. */
 export const SEEN_NOTICES_LIMIT = 200;
 
+/**
+ * What the connected wallet can do with an auction. The auction stops taking
+ * bids on its own at `endsAt`; only handing the citizen over needs a
+ * transaction (`settle_auction`), and the program lets anyone send it. The
+ * screens offer it to the side that gains from it:
+ *
+ * - `live`: still taking bids;
+ * - `claim`: the wallet won and claims the citizen; the seller is paid in the same step;
+ * - `collect`: the wallet sold it and collects the payment; the citizen goes to the winner in the same step;
+ * - `take-back`: nobody bid and the wallet, the seller, frees its citizen;
+ * - `refund`: the seller stopped the auction and the wallet takes its highest bid back;
+ * - `close`: the wallet stopped its own auction and ends it, paying the highest bid back;
+ * - `waiting`: over, and up to the winner or the seller.
+ */
+export type AuctionStage = 'live' | 'claim' | 'collect' | 'take-back' | 'refund' | 'close' | 'waiting';
+
+export function auctionStage(auction: MarketAuction, mine: boolean, now: number | null): AuctionStage {
+  const stopped = !auction.deliverable && auction.bidCount > 0;
+  const ended = now !== null && now >= auction.endsAt;
+  if (stopped) return auction.leading ? 'refund' : mine ? 'close' : 'waiting';
+  if (!ended) return 'live';
+  if (auction.bidCount === 0) return mine ? 'take-back' : 'waiting';
+  return auction.leading ? 'claim' : mine ? 'collect' : 'waiting';
+}
+
+/**
+ * Notices for ended auctions that wait on the wallet: one it won and one it
+ * sold. The id holds the end time, which no longer moves once the auction is over.
+ */
+export function auctionNotices(
+  auctions: readonly MarketAuction[],
+  owned: readonly number[],
+  now: number | null,
+): MarketNotice[] {
+  const notices: MarketNotice[] = [];
+  for (const auction of auctions) {
+    const price = auction.highestBidLamports;
+    if (price === null) continue;
+    const stage = auctionStage(auction, owned.includes(auction.citizenId), now);
+    if (stage === 'claim' || stage === 'collect') {
+      notices.push({ id: `${stage}-${auction.citizenId}-${auction.endsAt}`, kind: stage, citizenId: auction.citizenId, priceLamports: price });
+    }
+  }
+  return notices;
+}
+
 /** The notices not shown yet, newest first as they came. */
 export function unseenNotices(notices: readonly MarketNotice[], seen: readonly string[]): readonly MarketNotice[] {
   const known = new Set(seen);

@@ -1,13 +1,15 @@
 'use client';
 
+import { usePathname, useRouter } from 'next/navigation';
 import React, { useEffect, useState } from 'react';
-import type { CitizenRecord } from '@bas/content';
-import type { MarketNotice } from '@/lib/data/types';
-import { formatSolExact, markNoticesSeen, unseenNotices } from '@/lib/data/market';
-import { MESSAGES, formatMessage } from '@/messages';
 import { createPortal } from 'react-dom';
+import type { CitizenRecord } from '@bas/content';
 import { PixelMessageFrame } from '@/components/modal/PixelModal';
-import { useCitizens, useDataMode, useMarket, useWallet } from '@/stores/selectors';
+import type { MarketNotice } from '@/lib/data/types';
+import { auctionNotices, formatSolExact, markNoticesSeen, unseenNotices } from '@/lib/data/market';
+import { useNow } from '@/lib/utils/useNow';
+import { MESSAGES, formatMessage } from '@/messages';
+import { useCitizens, useDataMode, useMarket, useOwnedIds, useWallet } from '@/stores/selectors';
 
 const copy = MESSAGES.market;
 /** Lines shown at once; the rest are counted. */
@@ -26,8 +28,15 @@ function noticeText(notice: MarketNotice, citizens: readonly CitizenRecord[]): s
       return formatMessage(copy.noticeWon, { name, price: formatSolExact(notice.priceLamports) });
     case 'outbid':
       return formatMessage(copy.noticeOutbid, { name, amount: formatSolExact(notice.refundedLamports) });
+    case 'claim':
+      return formatMessage(copy.noticeClaim, { name, price: formatSolExact(notice.priceLamports) });
+    case 'collect':
+      return formatMessage(copy.noticeCollect, { name, price: formatSolExact(notice.priceLamports) });
   }
 }
+
+/** Notices that ask the wallet to act in the market, rather than tell it what happened. */
+const waitsOnWallet = (notice: MarketNotice) => notice.kind === 'claim' || notice.kind === 'collect';
 
 function readSeen(key: string): string[] {
   try {
@@ -40,14 +49,20 @@ function readSeen(key: string): string[] {
 
 /**
  * Tells the wallet what happened to it in the market while it was away: a
- * citizen sold, an auction won, a bid beaten. Each notice is shown once; this
+ * citizen sold, an auction won, a bid beaten. It also says when an auction the
+ * wallet won or sold has ended and waits for it to claim the citizen or collect
+ * the payment, with a way to the market. Each notice is shown once; this
  * browser remembers which ones per wallet. Without storage they show once per visit.
  */
 export const MarketNotices: React.FC = () => {
-  const { notices } = useMarket();
+  const market = useMarket();
+  const owned = useOwnedIds();
+  const now = useNow();
   const wallet = useWallet();
   const mode = useDataMode();
   const citizens = useCitizens();
+  const router = useRouter();
+  const pathname = usePathname();
   const key = wallet.connected || mode === 'mock' ? `bas.market.seen.${mode}.${wallet.label}` : null;
   const [seen, setSeen] = useState<{ key: string; ids: readonly string[] } | null>(null);
 
@@ -56,8 +71,10 @@ export const MarketNotices: React.FC = () => {
   }, [key]);
 
   if (!key || !seen || seen.key !== key) return null;
+  const notices = [...auctionNotices(market.auctions, owned, now), ...market.notices];
   const fresh = unseenNotices(notices, seen.ids);
   if (fresh.length === 0) return null;
+  const actionable = fresh.some(waitsOnWallet);
 
   const dismiss = () => {
     const ids = markNoticesSeen(seen.ids, notices);
@@ -71,7 +88,21 @@ export const MarketNotices: React.FC = () => {
 
   // Drawn on the page body, like the other dialogs, so no screen layer clips it.
   return createPortal(
-    <PixelMessageFrame title={copy.noticeTitle} onClose={dismiss}>
+    <PixelMessageFrame
+      title={fresh.every(waitsOnWallet) ? copy.noticeEndedTitle : copy.noticeTitle}
+      onClose={dismiss}
+      {...(actionable && pathname !== '/market'
+        ? {
+            action: {
+              label: copy.noticeOpenMarket,
+              onClick: () => {
+                dismiss();
+                router.push('/market');
+              },
+            },
+          }
+        : {})}
+    >
       <ul className="m-0 flex list-none flex-col p-0 font-pixel text-[15px] leading-relaxed text-[#27384a]">
         {fresh.slice(0, SHOWN).map((notice) => (
           <li key={notice.id} className="border-b border-dashed border-[#8ba5ba] py-1.5 first:pt-0 last:border-b-0 last:pb-0">

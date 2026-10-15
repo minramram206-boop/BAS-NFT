@@ -4,16 +4,24 @@ import React from 'react';
 import { useCloseModal, useModalState } from '@/stores/selectors';
 import { MESSAGES } from '@/messages';
 
+const BUTTON =
+  'rounded-lg border-2 border-[#1a3854] px-5 py-2.5 font-heading text-[13px] font-bold tracking-wide shadow-[0_2px_0_#1a3854] transition-all active:translate-y-0.5';
+const PRIMARY_BUTTON = `${BUTTON} bg-[#3b74a6] text-white hover:bg-[#2d5d86]`;
+const SECONDARY_BUTTON = `${BUTTON} bg-[#e3ecf4] text-[#1a2938] hover:bg-[#d3dde6]`;
+
 /**
- * Frame of the short arcade messages: a title, the message and one Close
- * button. The global modal and the market's notices both draw with it, so
- * every message of that kind looks the same.
+ * Frame of the short arcade messages: a title, the message and a Close
+ * button, with one more button when the message leads somewhere. The global
+ * modal and the market's notices both draw with it, so every message of that
+ * kind looks the same.
  */
-export const PixelMessageFrame: React.FC<{ title: string; onClose: () => void; children: React.ReactNode }> = ({
-  title,
-  onClose,
-  children,
-}) => (
+export const PixelMessageFrame: React.FC<{
+  title: string;
+  onClose: () => void;
+  /** A second button, drawn first, for a message that leads somewhere. */
+  action?: { label: string; onClick: () => void };
+  children: React.ReactNode;
+}> = ({ title, onClose, action, children }) => (
   <div
     role="presentation"
     onClick={onClose}
@@ -30,13 +38,16 @@ export const PixelMessageFrame: React.FC<{ title: string; onClose: () => void; c
 
       {children}
 
-      <button
-        type="button"
-        onClick={onClose}
-        className="mt-2 self-center rounded-lg border-2 border-[#1a3854] bg-[#3b74a6] px-5 py-2.5 font-heading text-[13px] font-bold tracking-wide text-white shadow-[0_2px_0_#1a3854] transition-all hover:bg-[#2d5d86] active:translate-y-0.5"
-      >
-        {MESSAGES.actions.closeModal}
-      </button>
+      <div className="mt-2 flex flex-wrap justify-center gap-2">
+        {action && (
+          <button type="button" onClick={action.onClick} className={PRIMARY_BUTTON}>
+            {action.label}
+          </button>
+        )}
+        <button type="button" onClick={onClose} className={action ? SECONDARY_BUTTON : PRIMARY_BUTTON}>
+          {MESSAGES.actions.closeModal}
+        </button>
+      </div>
     </div>
   </div>
 );

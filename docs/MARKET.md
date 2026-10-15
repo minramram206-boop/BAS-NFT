@@ -25,11 +25,19 @@ ends on 2026-10-17 at 02:58 WIB; finishing it is the one auction step not yet
 seen on devnet. Every bid of an auction is listed beside the cards and in its
 dialog (D-0088).
 
-To test auctions to the end without waiting days, the devnet program is next
-built with the fast test clock, where an auction hour lasts 10 seconds (D-0089
-and "Upgrading the devnet program" below). Sales on chain appear in each
-citizen's public history, and a seller is told when a citizen sold. The
-decision records are D-0082 to D-0089 in `DECISIONS.md`.
+Since 05:13 WIB the same day devnet runs the fast test clock, where an auction
+hour lasts 10 seconds (D-0089): the program data matches the owner's
+`devnet-clock` build byte for byte (sha256 `74a1b781…`) and holds the
+clock's marker. Ivy's auction kept its own end. The first fast auction ran
+right after: Baker Mabel (#013) put up by `5WjX…Wo4y` from 0.03 SOL for "24
+hours", which lasted exactly 240 seconds (05:17:25 to 05:21:25). `CJLT…ZaY1`
+bid 0.034 SOL, `CJkc…t2AK` 0.04 SOL (the 0.034 went back in the same
+transaction), and `CJLT…ZaY1` 0.045 SOL at 05:20:42, inside the last minute,
+which moved the end to 05:21:42, one minute after that bid, and paid the 0.04
+back. An ended auction is finished by the side that gains from it (D-0090):
+the winner claims the citizen or the seller collects the payment. Sales on
+chain appear in each citizen's public history, and a seller is told when a
+citizen sold. The decision records are D-0082 to D-0090 in `DECISIONS.md`.
 
 ## Goal
 
@@ -288,6 +296,17 @@ recorded bidder, and a paused market that takes no bids but still settles.
   without a time. The AUCTIONS tab shows all bids beside the cards, each with
   the citizen, the bidder, the time, the amount and whether it leads or was
   outbid; a row opens its auction, and the dialog lists that auction's bids.
+- Finishing an auction (D-0090): an auction stops taking bids by itself at
+  `ends_at`; only handing the citizen over takes a transaction
+  (`settle_auction`), which the program lets anyone send. The screens offer it
+  to the side that gains from it (`auctionStage` in `lib/data/market.ts`): the
+  winner sees YOU WON and CLAIM CITIZEN, the seller COLLECT PAYMENT, a seller
+  nobody bid for TAKE BACK, the highest bidder of an auction its seller stopped
+  TAKE BID BACK, and that seller END AUCTION. Anyone else sees "Waiting for the
+  winner to claim" and can still finish it from the dialog. Whichever side
+  presses first completes it for both, in one transaction. When an auction the
+  wallet won or sold ends, the wallet gets an AUCTION ENDED notice, with OPEN
+  MARKET on any other screen; the leading bid of an ended auction reads WON.
 
 ## Devnet setup
 
@@ -325,7 +344,9 @@ must have run first.
 6. Auctions, sale history and seller notices. Written and tested (D-0087),
    upgraded on devnet and bid on from three wallets (2026-10-16).
 7. Bid history in the market (D-0088), and the fast devnet auction clock
-   (D-0089) so an auction can be finished on devnet within minutes.
+   (D-0089) so an auction can be finished on devnet within minutes. Deployed
+   and tried with Baker Mabel on 2026-10-16.
+8. Claim and collect instead of one FINISH button (D-0090).
 
 ## The auction clock
 
@@ -358,8 +379,10 @@ accounts are the same in both builds; the seller still picks 24, 48 or 72.
 ## Upgrading the devnet program
 
 `deploy.sh` grows the program account by itself (`solana program extend`) when
-the new `.so` is larger. The fast build is 508,032 bytes, 128 more than the
-deployed one, which keeps about 0.0009 SOL more rent in the program account.
+the new `.so` is larger. The loader takes at least 10,240 bytes per extension,
+so the fast build (508,032 bytes, 128 more than the deployed one) grew the
+account from 507,904 to 518,144 bytes on 2026-10-16, which keeps 0.052 SOL more
+rent in it for good.
 The upgrade buffer needs about 2.58 SOL while the deploy runs and is refunded
 afterwards; the deployer held 3.53 SOL after the upgrade of 2026-10-16. In WSL:
 

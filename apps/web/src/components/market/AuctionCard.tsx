@@ -4,7 +4,7 @@ import Link from 'next/link';
 import React from 'react';
 import { bracketOf } from '@/lib/data/districts';
 import type { MarketAuction } from '@/lib/data/types';
-import { formatSolExact, timeLeftText } from '@/lib/data/market';
+import { auctionStage, formatSolExact, timeLeftText, type AuctionStage } from '@/lib/data/market';
 import { cn } from '@/lib/utils/cn';
 import { MESSAGES, formatMessage } from '@/messages';
 import { useCitizen, useMarket } from '@/stores/selectors';
@@ -24,6 +24,26 @@ export function endsText(auction: MarketAuction, now: number | null): string {
   return now >= auction.endsAt ? copy.ended : formatMessage(copy.endsIn, { time: timeLeftText(auction.endsAt - now) });
 }
 
+/** The card's button for each stage, and whether it is the one to press. */
+export function auctionAction(stage: AuctionStage, mine: boolean, leading: boolean): { label: string; primary: boolean } {
+  switch (stage) {
+    case 'live':
+      return { label: mine ? copy.manage : copy.bid, primary: !mine && !leading };
+    case 'claim':
+      return { label: copy.claim, primary: true };
+    case 'collect':
+      return { label: copy.collect, primary: true };
+    case 'take-back':
+      return { label: copy.takeBack, primary: true };
+    case 'refund':
+      return { label: copy.takeBidBack, primary: true };
+    case 'close':
+      return { label: copy.endAuction, primary: false };
+    case 'waiting':
+      return { label: copy.details, primary: false };
+  }
+}
+
 /** One citizen up for auction: who it is, the bid to beat, the time left and the way to act on it. */
 export const AuctionCard: React.FC<{
   auction: MarketAuction;
@@ -37,7 +57,8 @@ export const AuctionCard: React.FC<{
 
   const ended = now !== null && now >= auction.endsAt;
   const closing = !ended && now !== null && auction.endsAt - now < extensionSeconds;
-  const finishable = ended || (!auction.deliverable && auction.bidCount > 0);
+  const stage = auctionStage(auction, mine, now);
+  const action = auctionAction(stage, mine, auction.leading);
 
   return (
     <li className="bas-panel flex min-w-0 flex-col gap-2 p-2.5">
@@ -50,7 +71,7 @@ export const AuctionCard: React.FC<{
           <img src={citizen.image} alt="" width={160} height={160} className="h-[88%] w-auto object-contain" />
           {auction.leading && (
             <span className="absolute left-2 top-2 rounded border-2 border-[#1b2a38] bg-[#7ed38f] px-1.5 py-0.5 font-heading text-[10px]">
-              {copy.youLead}
+              {stage === 'claim' ? copy.youWon : copy.youLead}
             </span>
           )}
         </div>
@@ -81,13 +102,12 @@ export const AuctionCard: React.FC<{
         <span className="min-w-0 truncate">{mine ? copy.yourAuction : formatMessage(copy.seller, { seller: auction.seller })}</span>
       </div>
       {!auction.deliverable && <span className="text-[13px] font-semibold text-[#9a2b2b]">{copy.stopped}</span>}
+      {stage === 'waiting' && auction.deliverable && (
+        <span className="text-[13px] font-semibold text-[#33485c]">{auction.bidCount > 0 ? copy.waitingWinner : copy.waitingNoBids}</span>
+      )}
 
-      <button
-        type="button"
-        className={cn('bas-btn min-h-10', !mine && !auction.leading && 'bas-btn-primary')}
-        onClick={() => onOpen(citizen.id)}
-      >
-        {finishable ? copy.finish : mine ? copy.manage : copy.bid}
+      <button type="button" className={cn('bas-btn min-h-10', action.primary && 'bas-btn-primary')} onClick={() => onOpen(citizen.id)}>
+        {action.label}
       </button>
     </li>
   );

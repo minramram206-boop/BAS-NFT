@@ -8,6 +8,8 @@ import {
   MIN_PRICE_LAMPORTS,
   ROYALTY_BPS,
   AUCTION_CLOCKS,
+  auctionNotices,
+  auctionStage,
   bidFeed,
   clockSpan,
   endAfterBid,
@@ -378,6 +380,52 @@ describe('auction rules', () => {
     assert.equal(bidFeed([auction(5, [[30n, 300], [20n, 100]])], 1).length, 1);
   });
 
+  it('offers each side of an ended auction its own way to finish it', () => {
+    const auction = (over: Partial<MarketAuction>): MarketAuction => ({
+      citizenId: 5,
+      seller: 'Sell…er1',
+      startPriceLamports: SOL / 100n,
+      highestBidLamports: SOL / 20n,
+      bidCount: 3,
+      bids: [],
+      endsAt: 1_000,
+      minBidLamports: SOL / 10n,
+      leading: false,
+      deliverable: true,
+      ...over,
+    });
+    const stage = (over: Partial<MarketAuction>, mine: boolean, now: number | null) => auctionStage(auction(over), mine, now);
+    // Still running, or the clock is not known yet.
+    assert.equal(stage({}, false, 999), 'live');
+    assert.equal(stage({ leading: true }, false, null), 'live');
+    // Over: the winner claims, the seller collects, anyone else waits for them.
+    assert.equal(stage({ leading: true }, false, 1_000), 'claim');
+    assert.equal(stage({}, true, 1_000), 'collect');
+    assert.equal(stage({}, false, 1_000), 'waiting');
+    // Over without a bid: only the seller has something to take back.
+    assert.equal(stage({ bidCount: 0, highestBidLamports: null }, true, 1_000), 'take-back');
+    assert.equal(stage({ bidCount: 0, highestBidLamports: null }, false, 1_000), 'waiting');
+    // Stopped by the seller: finished at once, the bid goes back.
+    assert.equal(stage({ deliverable: false, leading: true }, false, 10), 'refund');
+    assert.equal(stage({ deliverable: false }, true, 10), 'close');
+    assert.equal(stage({ deliverable: false }, false, 10), 'waiting');
+
+    const notices = auctionNotices(
+      [auction({ citizenId: 5, leading: true }), auction({ citizenId: 6 }), auction({ citizenId: 7 }), auction({ citizenId: 8, endsAt: 5_000, leading: true })],
+      [6],
+      1_000,
+    );
+    assert.deepEqual(
+      notices.map((notice) => [notice.kind, notice.citizenId, notice.id]),
+      [
+        ['claim', 5, 'claim-5-1000'],
+        ['collect', 6, 'collect-6-1000'],
+      ],
+      'nothing for an auction the wallet has no part in, or one still running',
+    );
+    assert.deepEqual(auctionNotices([auction({ leading: true })], [], null), [], 'no notice before the clock is known');
+  });
+
   it('remembers which notices were shown, newest first and capped', () => {
     const notice = (id: string) => ({ id, kind: 'won', citizenId: 1, priceLamports: 1n }) as const;
     const seen = markNoticesSeen(['old'], [notice('b'), notice('old'), notice('a')]);
@@ -493,6 +541,9 @@ describe('auctions in the preview', () => {
     await data.placeBid(id, auction.minBidLamports);
     assert.deepEqual(await data.settleAuction(id), { ok: false, error: 'auction-live' });
     pass(auction.endsAt - START);
+    const won = auctionOf(data, id);
+    assert.ok(won);
+    assert.equal(auctionStage(won, false, auction.endsAt), 'claim', 'the winner is offered the claim');
     assert.ok((await data.settleAuction(id)).ok);
     assert.ok(data.snapshot().owned.includes(id));
     assert.equal(auctionOf(data, id), undefined);
@@ -502,6 +553,9 @@ describe('auctions in the preview', () => {
     assert.ok(data.simulateBid && (await data.simulateBid(FARMER)).ok);
     const sol = data.snapshot().wallet.solLamports;
     pass(24 * 3_600);
+    const sold = auctionOf(data, FARMER);
+    assert.ok(sold);
+    assert.equal(auctionStage(sold, true, sold.endsAt), 'collect', 'the seller is offered the payment');
     assert.ok((await data.settleAuction(FARMER)).ok);
     assert.ok(!data.snapshot().owned.includes(FARMER));
     assert.equal(data.snapshot().wallet.solLamports, sol + splitSale(SOL, ROYALTY_BPS).proceedsLamports);

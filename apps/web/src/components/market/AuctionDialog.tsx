@@ -2,7 +2,19 @@
 
 import React, { useEffect, useState } from 'react';
 import { ReceiptRow } from '@/components/ui/ReceiptRow';
-import { AUCTION_CLOCKS, clockSpan, formatSolExact, parseSolInput, solInputText, suggestedBid, timeLeftText } from '@/lib/data/market';
+import {
+  AUCTION_CLOCKS,
+  auctionStage,
+  clockSpan,
+  formatSolExact,
+  parseSolInput,
+  solInputText,
+  splitSale,
+  suggestedBid,
+  timeLeftText,
+  type AuctionStage,
+} from '@/lib/data/market';
+import { cn } from '@/lib/utils/cn';
 import { useNow } from '@/lib/utils/useNow';
 import { MESSAGES, formatMessage } from '@/messages';
 import {
@@ -61,8 +73,32 @@ export const AuctionDialog: React.FC<{ citizenId: number; onClose: () => void }>
   if (!citizen || !auction) return null;
 
   const ended = now !== null && now >= auction.endsAt;
-  const finishable = ended || (!auction.deliverable && auction.bidCount > 0);
+  const stage = auctionStage(auction, mine, now);
+  const finishable = stage !== 'live';
   const biddable = !finishable && !mine && !auction.leading && auction.deliverable;
+  const finalPrice = auction.highestBidLamports ?? auction.startPriceLamports;
+  const facts = {
+    name: citizen.name,
+    price: formatSolExact(finalPrice),
+    amount: formatSolExact(splitSale(finalPrice, market.royaltyBps).proceedsLamports),
+    percent: `${market.royaltyBps / 100}%`,
+  };
+  const stageNote: Record<Exclude<AuctionStage, 'live'>, string> = {
+    claim: formatMessage(copy.claimNote, facts),
+    collect: formatMessage(copy.collectNote, facts),
+    'take-back': formatMessage(copy.takeBackNote, facts),
+    refund: formatMessage(copy.refundNote, facts),
+    close: formatMessage(copy.closeNote, facts),
+    waiting: auction.deliverable ? copy.waitingNote : copy.stoppedWaitingNote,
+  };
+  const stageAction: Record<Exclude<AuctionStage, 'live'>, string> = {
+    claim: copy.claim,
+    collect: copy.collect,
+    'take-back': copy.takeBack,
+    refund: copy.takeBidBack,
+    close: copy.endAuction,
+    waiting: copy.finish,
+  };
   const needsWallet = mode === 'chain' && !wallet.connected;
 
   const parsed = parseSolInput(text);
@@ -78,7 +114,6 @@ export const AuctionDialog: React.FC<{ citizenId: number; onClose: () => void }>
             : null;
   const valid = parsed !== null && problem === null;
   const enough = valid && wallet.solLamports >= parsed;
-  const percent = `${market.royaltyBps / 100}%`;
   const done = (ok: boolean) => {
     if (ok) onClose();
   };
@@ -103,10 +138,9 @@ export const AuctionDialog: React.FC<{ citizenId: number; onClose: () => void }>
         )}
       </div>
 
-      <AuctionBids bids={auction.bids} now={now} />
+      <AuctionBids bids={auction.bids} now={now} ended={ended} />
 
-      {!auction.deliverable && <Note>{copy.stoppedNote}</Note>}
-      {finishable && auction.deliverable && <Note>{copy.finishNote}</Note>}
+      {stage !== 'live' && <Note strong={stage === 'claim' || stage === 'collect'}>{stageNote[stage]}</Note>}
       {!finishable && auction.leading && <Note strong>{copy.leadNote}</Note>}
       {!finishable && mine && <Note>{auction.bidCount === 0 ? copy.mineNoBids : copy.mineBids}</Note>}
 
@@ -143,7 +177,7 @@ export const AuctionDialog: React.FC<{ citizenId: number; onClose: () => void }>
             </p>
           )}
           <Note>{copy.bidNoteHeld}</Note>
-          <Note>{formatMessage(copy.bidNoteWin, { percent })}</Note>
+          <Note>{formatMessage(copy.bidNoteWin, { percent: facts.percent })}</Note>
           <Note>{formatMessage(copy.auctionNoteLate, { window: clockSpan(market.auctionClock.extensionSeconds) })}</Note>
           {market.auctionClock.hourSeconds !== AUCTION_CLOCKS.real.hourSeconds && (
             <Note>{formatMessage(copy.testClockNote, { hour: clockSpan(market.auctionClock.hourSeconds) })}</Note>
@@ -162,7 +196,7 @@ export const AuctionDialog: React.FC<{ citizenId: number; onClose: () => void }>
       )}
 
       <div className="grid gap-2">
-        {finishable &&
+        {stage !== 'live' &&
           (needsWallet ? (
             <button type="button" className="bas-btn bas-btn-primary min-h-12" onClick={openWallet}>
               {MESSAGES.wallet.connect}
@@ -170,11 +204,11 @@ export const AuctionDialog: React.FC<{ citizenId: number; onClose: () => void }>
           ) : (
             <button
               type="button"
-              className="bas-btn bas-btn-primary min-h-12"
+              className={cn('bas-btn min-h-12', stage !== 'waiting' && stage !== 'close' && 'bas-btn-primary')}
               disabled={busy}
               onClick={() => void settle(citizenId).then(done)}
             >
-              {busy ? copy.working : copy.finish}
+              {busy ? copy.working : stageAction[stage]}
             </button>
           ))}
         {!finishable && mine && auction.bidCount === 0 && (

@@ -10,6 +10,7 @@ import { CitizenSwitcher, SwitcherLabel } from '@/components/citizen/CitizenSwit
 import { ScreenColumns, ScreenShell } from '@/components/layout/ScreenShell';
 import { PanelTab } from '@/components/ui/PanelTab';
 import { PixelIcon } from '@/components/ui/PixelIcon';
+import { auctionAction } from '@/components/market/AuctionCard';
 import { AuctionDialog } from '@/components/market/AuctionDialog';
 import { BuyDialog } from '@/components/market/BuyDialog';
 import { SellDialog } from '@/components/market/SellDialog';
@@ -19,7 +20,7 @@ import { CheckIcon, LockIcon, StarIcon } from '@/components/ui/icons';
 import { STAT_COLORS, STAT_ORDER, TIER_SCORES } from '@/config/constants';
 import { DISTRICT_ORDER, DISTRICT_RULES, bracketOf, highestStat, isDistrictOpen, unlockingStat } from '@/lib/data/districts';
 import type { HistoryEntry } from '@/lib/data/types';
-import { formatSolExact, timeLeftText } from '@/lib/data/market';
+import { auctionStage, formatSolExact, timeLeftText } from '@/lib/data/market';
 import { useNow } from '@/lib/utils/useNow';
 import { districtName, formatTokens, lockedRule, statLabel, tierForScore } from '@/lib/format';
 import { cn } from '@/lib/utils/cn';
@@ -338,6 +339,14 @@ export const ProfileScreen: React.FC<{ id: number }> = ({ id }) => {
   const now = useNow();
   const [marketDialog, setMarketDialog] = React.useState<'buy' | 'sell' | 'auction' | null>(null);
   const closeMarketDialog = React.useCallback(() => setMarketDialog(null), []);
+  /** Same button as the auction's market card, except that a live auction names the bid to beat. */
+  const auctionButton = (current: NonNullable<typeof auction>): { label: string; primary: boolean } => {
+    const stage = auctionStage(current, owned, now);
+    if (stage !== 'live') return auctionAction(stage, owned, current.leading);
+    if (owned) return { label: MESSAGES.market.manage, primary: false };
+    if (current.leading) return { label: MESSAGES.market.youLead, primary: false };
+    return { label: formatMessage(MESSAGES.market.profileBid, { price: formatSolExact(current.minBidLamports) }), primary: true };
+  };
 
   if (!citizen) {
     return (
@@ -420,16 +429,10 @@ export const ProfileScreen: React.FC<{ id: number }> = ({ id }) => {
           {auction ? (
             <button
               type="button"
-              className={cn('bas-btn', !owned && !auction.leading && 'bas-btn-primary')}
+              className={cn('bas-btn', auctionButton(auction).primary && 'bas-btn-primary')}
               onClick={() => setMarketDialog('auction')}
             >
-              {now !== null && now >= auction.endsAt
-                ? MESSAGES.market.finish
-                : owned
-                  ? MESSAGES.market.manage
-                  : auction.leading
-                    ? MESSAGES.market.youLead
-                    : formatMessage(MESSAGES.market.profileBid, { price: formatSolExact(auction.minBidLamports) })}
+              {auctionButton(auction).label}
             </button>
           ) : owned ? (
             <button type="button" className="bas-btn" onClick={() => setMarketDialog('sell')}>

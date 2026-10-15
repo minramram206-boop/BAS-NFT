@@ -12,14 +12,15 @@ const copy = MESSAGES.market;
 /** Rows in the feed beside the auctions; older bids are counted, not drawn. */
 const FEED_LIMIT = 20;
 
-const StatusTag: React.FC<{ leading: boolean }> = ({ leading }) => (
+/** LEADING while the auction runs, WON once it has ended, OUTBID for every other bid. */
+const StatusTag: React.FC<{ leading: boolean; ended: boolean }> = ({ leading, ended }) => (
   <span
     className={cn(
       'shrink-0 rounded border-2 border-[#1b2a38] px-1.5 py-0.5 font-heading text-[9px] leading-none',
       leading ? 'bg-[#7ed38f]' : 'bg-[#c5d5e5] text-[#33485c]',
     )}
   >
-    {leading ? copy.historyLeading : copy.historyOutbid}
+    {leading ? (ended ? copy.historyWon : copy.historyLeading) : copy.historyOutbid}
   </span>
 );
 
@@ -44,6 +45,7 @@ export const BidHistoryPanel: React.FC<{
   const citizens = useCitizens();
   const total = auctions.reduce((sum, auction) => sum + auction.bids.length, 0);
   const feed = bidFeed(auctions, FEED_LIMIT);
+  const ended = new Set(auctions.filter((auction) => now !== null && now >= auction.endsAt).map((auction) => auction.citizenId));
 
   return (
     <aside className="bas-panel flex min-w-0 flex-col gap-2.5 self-start p-3 xl:sticky xl:top-3">
@@ -71,7 +73,7 @@ export const BidHistoryPanel: React.FC<{
                   </span>
                   <span className="flex shrink-0 flex-col items-end gap-1">
                     <span className="font-heading text-[13px]">{formatSolExact(bid.amountLamports)}</span>
-                    <StatusTag leading={leading} />
+                    <StatusTag leading={leading} ended={ended.has(citizenId)} />
                   </span>
                 </button>
               </li>
@@ -87,7 +89,7 @@ export const BidHistoryPanel: React.FC<{
 };
 
 /** The bids of one auction, newest first, inside its dialog. */
-export const AuctionBids: React.FC<{ bids: readonly MarketBid[]; now: number | null }> = ({ bids, now }) => {
+export const AuctionBids: React.FC<{ bids: readonly MarketBid[]; now: number | null; ended: boolean }> = ({ bids, now, ended }) => {
   if (bids.length === 0) return null;
   return (
     <div className="flex flex-col gap-1.5">
@@ -102,7 +104,7 @@ export const AuctionBids: React.FC<{ bids: readonly MarketBid[]; now: number | n
               <BidderLine bid={bid} now={now} />
             </span>
             <span className="shrink-0 font-heading text-[13px]">{formatSolExact(bid.amountLamports)}</span>
-            <StatusTag leading={index === 0} />
+            <StatusTag leading={index === 0} ended={ended} />
           </li>
         ))}
       </ul>
