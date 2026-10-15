@@ -91,13 +91,13 @@ export const AuctionDialog: React.FC<{ citizenId: number; onClose: () => void }>
     close: formatMessage(copy.closeNote, facts),
     waiting: auction.deliverable ? copy.waitingNote : copy.stoppedWaitingNote,
   };
-  const stageAction: Record<Exclude<AuctionStage, 'live'>, string> = {
+  // Someone with no part in the auction only reads about it; the winner or the seller finishes it.
+  const stageAction: Record<Exclude<AuctionStage, 'live' | 'waiting'>, string> = {
     claim: copy.claim,
     collect: copy.collect,
     'take-back': copy.takeBack,
     refund: copy.takeBidBack,
     close: copy.endAuction,
-    waiting: copy.finish,
   };
   const needsWallet = mode === 'chain' && !wallet.connected;
 
@@ -197,6 +197,7 @@ export const AuctionDialog: React.FC<{ citizenId: number; onClose: () => void }>
 
       <div className="grid gap-2">
         {stage !== 'live' &&
+          stage !== 'waiting' &&
           (needsWallet ? (
             <button type="button" className="bas-btn bas-btn-primary min-h-12" onClick={openWallet}>
               {MESSAGES.wallet.connect}
@@ -204,7 +205,7 @@ export const AuctionDialog: React.FC<{ citizenId: number; onClose: () => void }>
           ) : (
             <button
               type="button"
-              className={cn('bas-btn min-h-12', stage !== 'waiting' && stage !== 'close' && 'bas-btn-primary')}
+              className={cn('bas-btn min-h-12', stage !== 'close' && 'bas-btn-primary')}
               disabled={busy}
               onClick={() => void settle(citizenId).then(done)}
             >

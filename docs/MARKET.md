@@ -303,7 +303,8 @@ recorded bidder, and a paused market that takes no bids but still settles.
   winner sees YOU WON and CLAIM CITIZEN, the seller COLLECT PAYMENT, a seller
   nobody bid for TAKE BACK, the highest bidder of an auction its seller stopped
   TAKE BID BACK, and that seller END AUCTION. Anyone else sees "Waiting for the
-  winner to claim" and can still finish it from the dialog. Whichever side
+  winner to claim" and no button; the program would still take a
+  `settle_auction` from them, but the screens leave it to the two sides. Whichever side
   presses first completes it for both, in one transaction. When an auction the
   wallet won or sold ends, the wallet gets an AUCTION ENDED notice, with OPEN
   MARKET on any other screen; the leading bid of an ended auction reads WON.
