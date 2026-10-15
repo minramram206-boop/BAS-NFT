@@ -8,7 +8,10 @@ import '@fontsource/silkscreen/latin-700.css';
 import { loadCitizens } from '@bas/content/server';
 import { loadDistrictTelemetry } from '@/config/telemetry';
 import { DistrictTelemetryProvider } from '@/components/layout/DistrictTelemetryProvider';
+import { WalletDialog } from '@/components/modal/WalletDialog';
+import { WalletProvider } from '@/lib/wallet/context';
 import { BasStoreProvider } from '@/stores/BasStoreProvider';
+import type { ChainOptions } from '@/stores/types';
 import { MESSAGES } from '@/messages';
 import './globals.css';
 
@@ -28,6 +31,27 @@ export const viewport: Viewport = {
   themeColor: '#0c1622',
 };
 
+/**
+ * `NEXT_PUBLIC_BAS_DATA=chain` runs the district on the cluster in `config/<cluster>.json`;
+ * anything else keeps the mock preview. The mission server is `NEXT_PUBLIC_MISSION_SERVER_URL`, the chat server `NEXT_PUBLIC_CHAT_SERVER_URL`.
+ */
+function chainOptions(telemetry: ReturnType<typeof loadDistrictTelemetry>): ChainOptions | undefined {
+  if (process.env.NEXT_PUBLIC_BAS_DATA !== 'chain') return undefined;
+  return {
+    cluster: telemetry.network === 'devnet' ? 'devnet' : 'mainnet-beta',
+    rpcUrl: telemetry.rpcUrl,
+    programId: telemetry.programId,
+    collection: telemetry.coreCollection,
+    candyMachine: telemetry.candyMachine,
+    utilityMint: telemetry.utilityTokenMint,
+    ...(telemetry.marketProgramId ? { marketProgramId: telemetry.marketProgramId } : {}),
+    ...(telemetry.auctionClock ? { auctionClock: telemetry.auctionClock } : {}),
+    maxSupply: telemetry.maxSupply,
+    missionServerUrl: process.env.NEXT_PUBLIC_MISSION_SERVER_URL ?? 'http://localhost:8787',
+    chatServerUrl: process.env.NEXT_PUBLIC_CHAT_SERVER_URL ?? 'http://localhost:8788',
+  };
+}
+
 export default function RootLayout({
   children,
 }: {
@@ -35,6 +59,7 @@ export default function RootLayout({
 }) {
   const citizens = loadCitizens();
   const telemetry = loadDistrictTelemetry();
+  const chain = chainOptions(telemetry);
 
   return (
     <html lang="en">
@@ -52,8 +77,18 @@ export default function RootLayout({
               tokenDecimals: telemetry.tokenDecimals,
               tokenSymbol: MESSAGES.app.tokenSymbol,
             }}
+            mintPriceLamports={telemetry.mintPriceLamports}
+            mintLimitPerWallet={telemetry.mintLimitPerWallet}
+            {...(chain ? { chain } : {})}
           >
-            {children}
+            {chain ? (
+              <WalletProvider cluster={chain.cluster}>
+                {children}
+                <WalletDialog cluster={chain.cluster} />
+              </WalletProvider>
+            ) : (
+              children
+            )}
           </BasStoreProvider>
         </DistrictTelemetryProvider>
       </body>

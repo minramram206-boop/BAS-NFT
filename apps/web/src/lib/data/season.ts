@@ -34,3 +34,12 @@ export function prizesLamports(fundedLamports: bigint, pool: BracketPool): bigin
   const total = bracketPoolLamports(fundedLamports, pool);
   return payoutSplitBps(actualWinners(pool)).map((bps) => (total * BigInt(bps)) / 10_000n);
 }
+
+/** Pools of a season: each bracket's share of the prize and how many ranks it can pay (PRIZE_POOL_MODEL §6). */
+export const POOL_RULES: readonly Pick<BracketPool, 'id' | 'shareBps' | 'maxWinners'>[] = [
+  { id: 'open', shareBps: 3000, maxWinners: 10 },
+  { id: 'rookie', shareBps: 1000, maxWinners: 10 },
+  { id: 'skilled', shareBps: 1500, maxWinners: 7 },
+  { id: 'elite', shareBps: 2000, maxWinners: 5 },
+  { id: 'master', shareBps: 2500, maxWinners: 3 },
+];

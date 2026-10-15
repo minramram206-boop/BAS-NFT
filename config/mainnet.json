@@ -8,6 +8,7 @@
   "solTreasury": "BASTreasuryMa1nnet1111111111111111111111111",
   "royaltyRecipient": "9J5uTtsPvFKGLEyzw9NsRkrDACFMNJxEQu3nEMXM37su",
   "missionAuthority": "AeRoEz5UbbNf6Y3n1t3V8KNtgb7oWTXZAeYVB8osEvF6",
+  "mintSigner": "2V64HhRwC34uZpBYP619fhpznSSHDoMSYEx8jYbgpK6R",
   "maxScore": 10,
   "baseTrainingCostAtoms": "100000000",
   "burnBps": 10000,
@@ -17,5 +18,6 @@
   "approvedTemplateId": 7,
   "maxSupply": 100,
   "mintPriceLamports": "10000000",
+  "mintLimitPerWallet": 1,
   "approvedTemplateUriPrefix": "https://metadata.example.invalid/templates/7/"
 }

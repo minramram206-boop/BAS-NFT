@@ -1,0 +1,43 @@
+{
+  "name": "@bas/metaplex-client",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Umi adapter for the Core Candy Machine mint of the BAS District collection",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm build && node --experimental-strip-types --disable-warning=ExperimentalWarning --test --test-reporter=spec \"test/*.test.ts\""
+  },
+  "dependencies": {
+    "@bas/chain-client": "workspace:*",
+    "@metaplex-foundation/mpl-core": "1.10.0",
+    "@metaplex-foundation/mpl-core-candy-machine": "0.3.0",
+    "@metaplex-foundation/mpl-toolbox": "0.9.4",
+    "@metaplex-foundation/umi": "1.6.0",
+    "@metaplex-foundation/umi-bundle-defaults": "1.6.0",
+    "@noble/hashes": "1.8.0",
+    "@solana/kit": "8.5.0",
+    "@solana/web3.js": "1.99.0"
+  },
+  "devDependencies": {
+    "@bas/config": "workspace:*",
+    "@types/node": "^22.13.4",
+    "litesvm": "1.5.0",
+    "typescript": "^5.7.3"
+  }
+}

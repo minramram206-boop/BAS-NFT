@@ -1,13 +1,16 @@
 {
   "cluster": "devnet",
   "districtProgramId": "82zccW1Z97ic24aCrt2c3U6qDUZMfbHufZMCjv2dm1Ym",
-  "coreCollection": "BASCo11ect1onDevnet1111111111111111111111111",
-  "candyMachine": "BASCandyMach1neDevnet1111111111111111111111",
-  "candyGuard": "Ajq1yqiok35wbd3uu9carDA9YqTt4t5V3hW3Q9YETVhD",
-  "utilityTokenMint": "6yv2K6n1pczbSdWNZGfEvkQuS5rgHhq5RwKD64PQ7TcG",
-  "solTreasury": "BASTreasuryDevnet11111111111111111111111111",
-  "royaltyRecipient": "FLagggahkgNjgzjXKKsXECvPZdLXGtfmUgPuZYKnconk",
-  "missionAuthority": "A6kLyjEaWi5pzdc46MnVd1WeKgFabjWVUREJw8f8rbhn",
+  "marketProgramId": "EVjdJiuyVfKUoQFirJDbCauvkHcVKZ38y9i2XAP1ypyP",
+  "auctionClock": "devnet-fast",
+  "coreCollection": "7Cxz7FfrZ5cAeZruPU8wN9fdti4Y97DJgw3y3kXw4jDa",
+  "candyMachine": "3zpmY11JMZX9shPizFbdb1ABQUQVFRecfGzoyHqR9a7N",
+  "candyGuard": "ATS8u21wBkf9PYggDbHwVDVUGenwvFP8cyp5TjnsA49F",
+  "utilityTokenMint": "3UWz8Pu6xaH8HGBfeBmHfvCAuJ1Q4Ua2pacFUv9KMjZx",
+  "solTreasury": "9DfhjiWco7mDjyiwwSZo9UtyAYqYhjxSw3GyfTmCGEuK",
+  "royaltyRecipient": "9DfhjiWco7mDjyiwwSZo9UtyAYqYhjxSw3GyfTmCGEuK",
+  "missionAuthority": "HmiuFubCzTFA6rYXEb51PTS3SxPNhFuzo5VAXAL4QQua",
+  "mintSigner": "23c3P2GFJDPsk2ojyJNThLAJtzye8ZZPXDTX9rFbGviZ",
   "maxScore": 10,
   "baseTrainingCostAtoms": "100000000",
   "burnBps": 10000,
@@ -17,5 +20,6 @@
   "approvedTemplateId": 7,
   "maxSupply": 100,
   "mintPriceLamports": "10000000",
-  "approvedTemplateUriPrefix": "https://metadata.example.invalid/templates/7/"
+  "mintLimitPerWallet": 1,
+  "approvedTemplateUriPrefix": "https://bas-district-devnet.vercel.app/templates/7/"
 }

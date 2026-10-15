@@ -36,6 +36,11 @@ function assertValidCitizen(citizen: CitizenRecord): void {
   assert.ok(citizen.avatar.startsWith('/avatars/'), 'avatar must be a public path');
   assert.ok(citizen.image.startsWith('/characters/'), 'image must be a public path');
   assert.ok(citizen.sprite.startsWith('/sprites/citizens/'), 'sprite must be a public path');
+  for (const [name, path] of [['front', citizen.spriteFront], ['back', citizen.spriteBack]] as const) {
+    if (path === undefined) continue;
+    assert.ok(path.startsWith('/sprites/citizens/'), `${name} sprite must be a public path`);
+    assert.notEqual(path, citizen.sprite, `${name} sprite must be its own file`);
+  }
   assert.ok(ROLE_KEYS.includes(citizen.roleKey));
   assert.ok(ROLE_LABELS.includes(citizen.role));
   for (const stat of STAT_KEYS) {
@@ -89,7 +94,7 @@ describe('@bas/content server loaders', () => {
 
   it('only references sprites that exist in apps/web/public', () => {
     for (const citizen of getCitizens()) {
-      for (const asset of [citizen.image, citizen.avatar, citizen.sprite]) {
+      for (const asset of [citizen.image, citizen.avatar, citizen.sprite, ...(citizen.spriteFront ? [citizen.spriteFront] : []), ...(citizen.spriteBack ? [citizen.spriteBack] : [])]) {
         assert.ok(existsSync(join(publicDir, asset)), `missing public asset ${asset}`);
       }
     }

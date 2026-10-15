@@ -30,6 +30,8 @@ export const PRODUCTION_CRITICAL_ADDRESS_FIELDS = [
   // Whoever holds this key can authorize Training Credits; credits are the one
   // half of training that cannot be bought (SPEC §5.3).
   'missionAuthority',
+  // Co-signs every public mint; a placeholder here means no mint can succeed.
+  'mintSigner',
 ] as const satisfies readonly ConfigField[];
 
 /**
@@ -40,7 +42,7 @@ export const PRODUCTION_CRITICAL_ADDRESS_FIELDS = [
  * by this project. The release gate rejects them by value, not by shape.
  */
 export const REPO_PLACEHOLDER_ADDRESSES = new Set<string>([
-  // programs/district/keypair.json public half, generated and never deployed
+  // Earlier placeholder program id; its keypair was generated and never deployed
   'D8HGhXUqHx7UXysCMEBDzvd3FS4XGEMNjCR6Eaj8CRbV',
   // sha256("bas:placeholder:utility-token-mint")
   '6yv2K6n1pczbSdWNZGfEvkQuS5rgHhq5RwKD64PQ7TcG',
@@ -55,6 +57,10 @@ export const REPO_PLACEHOLDER_ADDRESSES = new Set<string>([
   'A6kLyjEaWi5pzdc46MnVd1WeKgFabjWVUREJw8f8rbhn',
   // sha256("bas:placeholder:mission-authority-mainnet")
   'AeRoEz5UbbNf6Y3n1t3V8KNtgb7oWTXZAeYVB8osEvF6',
+  // sha256("bas:placeholder:mint-signer-devnet")
+  'D1ZevHcBHGmYAMVWVXbRjMBfqGLttvw1k1XHup563HT5',
+  // sha256("bas:placeholder:mint-signer-mainnet")
+  '2V64HhRwC34uZpBYP619fhpznSSHDoMSYEx8jYbgpK6R',
   // sha256("bas:placeholder:candy-guard-devnet")
   'Ajq1yqiok35wbd3uu9carDA9YqTt4t5V3hW3Q9YETVhD',
   // sha256("bas:placeholder:candy-guard-mainnet")

@@ -23,6 +23,7 @@ const ADDRESS_FIELDS = [
   'solTreasury',
   'royaltyRecipient',
   'missionAuthority',
+  'mintSigner',
 ] as const satisfies readonly ConfigField[];
 
 function invalid(field: string, reason: string): never {
@@ -122,6 +123,15 @@ function requireU64Atoms(source: NetworkConfigFile, field: ConfigField): string 
   return value;
 }
 
+/** The fast auction clock is a devnet test aid, so a mainnet manifest may not name it. */
+function requireAuctionClock(source: NetworkConfigFile, network: SupportedNetwork): 'devnet-fast' {
+  const field: ConfigField = 'auctionClock';
+  if (source[field] !== 'devnet-fast') invalid(field, 'expected "devnet-fast" or no value');
+  if (network !== 'devnet') invalid(field, 'the fast auction clock exists only on devnet');
+  if (source.marketProgramId === undefined) invalid(field, 'needs a marketProgramId');
+  return 'devnet-fast';
+}
+
 /**
  * Validate one cluster manifest and narrow it to {@link DistrictNetworkConfig}.
  *
@@ -151,6 +161,8 @@ export function parseNetworkConfig(
     cluster: expectedNetwork,
     rpcUrl: requireUrl(source, 'rpcUrl'),
     districtProgramId: requireAddress(source, 'districtProgramId'),
+    ...(source.marketProgramId === undefined ? {} : { marketProgramId: requireAddress(source, 'marketProgramId') }),
+    ...(source.auctionClock === undefined ? {} : { auctionClock: requireAuctionClock(source, expectedNetwork) }),
     coreCollection: requireAddress(source, 'coreCollection'),
     candyMachine: requireAddress(source, 'candyMachine'),
     candyGuard: requireAddress(source, 'candyGuard'),
@@ -158,6 +170,7 @@ export function parseNetworkConfig(
     solTreasury: requireAddress(source, 'solTreasury'),
     royaltyRecipient: requireAddress(source, 'royaltyRecipient'),
     missionAuthority: requireAddress(source, 'missionAuthority'),
+    mintSigner: requireAddress(source, 'mintSigner'),
     maxScore,
     baseTrainingCostAtoms: requireU64Atoms(source, 'baseTrainingCostAtoms'),
     burnBps,
@@ -167,6 +180,7 @@ export function parseNetworkConfig(
     approvedTemplateUriPrefix,
     maxSupply: requirePositiveInteger(source, 'maxSupply'),
     mintPriceLamports: requireU64Atoms(source, 'mintPriceLamports'),
+    mintLimitPerWallet: requireBoundedInteger(source, 'mintLimitPerWallet', 1, 255),
   };
 }
 

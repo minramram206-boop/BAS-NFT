@@ -85,6 +85,17 @@ export interface CitizenRecord {
   avatar: string;
   /** Public path of the 128 px map sprite, e.g. `/sprites/citizens/1.png`. */
   sprite: string;
+  /**
+   * Public path of the same sprite seen from the front, e.g. `/sprites/citizens/1-front.png`.
+   * `sprite` is a three-quarter portrait; this one faces the viewer and is shown while the citizen
+   * walks down the screen. The portrait is used when it is absent.
+   */
+  spriteFront?: string;
+  /**
+   * Public path of the same sprite seen from behind, e.g. `/sprites/citizens/1-back.png`.
+   * Shown while the citizen walks up the screen; the portrait is used when it is absent.
+   */
+  spriteBack?: string;
   intelligence: number;
   alignment: number;
   compute: number;

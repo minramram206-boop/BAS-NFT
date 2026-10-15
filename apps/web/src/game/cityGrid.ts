@@ -5,8 +5,9 @@ import layout from './cityLayout.json';
 
 /**
  * The mock city grid produced by `scripts/mock-city/generate_city.py`.
- * Cells are `[gx, gy]`; the map image is drawn so cell (0, 0) has its top
- * corner at `layout.origin`.
+ * Cells are `[gx, gy]`: gx runs east and gy runs south. The map is drawn from
+ * the front, so a cell is a square and the top-left corner of cell (0, 0) sits
+ * at `layout.origin`.
  */
 
 export type Cell = readonly [number, number];
@@ -15,12 +16,12 @@ export type Scores = Readonly<Record<StatKey, number>>;
 
 export const MAP_WIDTH = layout.image.width;
 export const MAP_HEIGHT = layout.image.height;
-const HALF_W = layout.tile.width / 2;
-const HALF_H = layout.tile.height / 2;
+const TILE_W = layout.tile.width;
+const TILE_H = layout.tile.height;
 const SIZE = layout.size;
 /** Half the size of one ground tile in world pixels. */
-export const HALF_TILE_W = HALF_W;
-export const HALF_TILE_H = HALF_H;
+export const HALF_TILE_W = TILE_W / 2;
+export const HALF_TILE_H = TILE_H / 2;
 const ORIGIN = layout.origin;
 
 const BLOCKED = new Set(layout.blocked.map(([gx, gy]) => key(gx as number, gy as number)));
@@ -37,15 +38,13 @@ export function zoneOf(cell: Cell): Zone | undefined {
 /** World position of the middle of a cell, where a citizen stands. */
 export function cellCenter(cell: Cell): { x: number; y: number } {
   const [gx, gy] = cell;
-  return { x: ORIGIN.x + (gx - gy) * HALF_W, y: ORIGIN.y + (gx + gy) * HALF_H + HALF_H };
+  return { x: ORIGIN.x + (gx + 0.5) * TILE_W, y: ORIGIN.y + (gy + 0.5) * TILE_H };
 }
 
 /** Cell under a world position, or `undefined` off the island. */
 export function cellAt(x: number, y: number): Cell | undefined {
-  const dx = (x - ORIGIN.x) / HALF_W;
-  const dy = (y - ORIGIN.y) / HALF_H;
-  const gx = Math.floor((dx + dy) / 2);
-  const gy = Math.floor((dy - dx) / 2);
+  const gx = Math.floor((x - ORIGIN.x) / TILE_W);
+  const gy = Math.floor((y - ORIGIN.y) / TILE_H);
   return gx >= 0 && gy >= 0 && gx < SIZE && gy < SIZE ? [gx, gy] : undefined;
 }
 
@@ -58,6 +57,12 @@ export function canEnter(zone: Zone | undefined, scores: Scores): boolean {
 
 export function isWalkable(cell: Cell, scores: Scores): boolean {
   return !BLOCKED.has(key(cell[0], cell[1])) && canEnter(zoneOf(cell), scores);
+}
+
+/** Whether a world point is ground that someone with these scores may stand on. */
+export function standable(x: number, y: number, scores: Scores): boolean {
+  const cell = cellAt(x, y);
+  return cell !== undefined && isWalkable(cell, scores);
 }
 
 /** Shortest 4-neighbour path from `from` to `to`, both included; `[]` when unreachable. */
@@ -122,19 +127,35 @@ export interface Prop {
 
 export const PROPS = layout.props as unknown as readonly Prop[];
 
-/** Painter's order of a prop: its front corner, `gx + gy + width + depth`. */
+/** A window, lantern or lamp that glows at night; `r` is its halo radius in world pixels. */
+export interface LightSpot {
+  readonly x: number;
+  readonly y: number;
+  readonly r: number;
+  readonly kind: 'window' | 'lantern' | 'lamp';
+  readonly zone: Zone;
+}
+
+export const LIGHTS = layout.lights as unknown as readonly LightSpot[];
+/** Where a chimney lets out smoke. */
+export const SMOKE_SPOTS = layout.smoke as unknown as readonly { readonly x: number; readonly y: number; readonly zone: Zone }[];
+/** Top of the plaza fountain's water, in world pixels. */
+export const FOUNTAIN = layout.water as { readonly x: number; readonly y: number };
+
+/** Painter's order of a prop: the row of its front edge, `gy + depth`; the column breaks ties. */
 export function propOrder(prop: Prop): number {
-  const [gx, gy, w, d] = prop.cells;
-  return gx + gy + w + d;
+  const [gx, gy, , d] = prop.cells;
+  return gy + d + gx / 1000;
 }
 
 /**
- * True when a citizen standing on `cell` is behind `prop` on screen: north or
- * west of its front faces, and not on the prop's own cells (a lamp post).
+ * True when a citizen standing on `cell` is behind `prop` on screen: in one of
+ * its columns and north of its front edge, and not on the prop's own cells (a
+ * lamp post).
  */
 export function isBehind(cell: Cell, prop: Prop): boolean {
   const [gx, gy, w, d] = prop.cells;
   const [cx, cy] = cell;
   const inside = cx >= gx && cx < gx + w && cy >= gy && cy < gy + d;
-  return !inside && cx < gx + w && cy < gy + d;
+  return !inside && cx >= gx && cx < gx + w && cy < gy + d;
 }

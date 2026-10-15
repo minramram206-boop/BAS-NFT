@@ -4,24 +4,36 @@ import Link from 'next/link';
 import React from 'react';
 import type { CitizenRecord, StatKey } from '@bas/content';
 import { MAX_STAT_SCORE } from '@bas/content';
-import { trainingCostAtoms } from '@bas/chain-client/stats';
-import { ScreenShell } from '@/components/layout/ScreenShell';
+import { ChatPanel } from '@/components/chat/ChatPanel';
+import { JourneyPanel } from '@/components/journey/JourneyPanel';
+import { CitizenSwitcher, SwitcherLabel } from '@/components/citizen/CitizenSwitcher';
+import { ScreenColumns, ScreenShell } from '@/components/layout/ScreenShell';
+import { PanelTab } from '@/components/ui/PanelTab';
 import { PixelIcon } from '@/components/ui/PixelIcon';
+import { AuctionDialog } from '@/components/market/AuctionDialog';
+import { BuyDialog } from '@/components/market/BuyDialog';
+import { SellDialog } from '@/components/market/SellDialog';
+import { Ribbon } from '@/components/ui/Ribbon';
 import { StatBar, StatSwatch } from '@/components/ui/StatBar';
 import { CheckIcon, LockIcon, StarIcon } from '@/components/ui/icons';
-import { STAT_COLORS, STAT_ORDER } from '@/config/constants';
+import { STAT_COLORS, STAT_ORDER, TIER_SCORES } from '@/config/constants';
 import { DISTRICT_ORDER, DISTRICT_RULES, bracketOf, highestStat, isDistrictOpen, unlockingStat } from '@/lib/data/districts';
-import type { HistoryEntry, StatCredits } from '@/lib/data/types';
+import type { HistoryEntry } from '@/lib/data/types';
+import { formatSolExact, timeLeftText } from '@/lib/data/market';
+import { useNow } from '@/lib/utils/useNow';
 import { districtName, formatTokens, lockedRule, statLabel, tierForScore } from '@/lib/format';
 import { cn } from '@/lib/utils/cn';
 import { MESSAGES, formatMessage } from '@/messages';
 import { useBasStoreApi } from '@/stores/BasStoreProvider';
 import {
   useCitizen,
-  useCredits,
+  useCitizenReaction,
   useFoundingIds,
   useHistory,
   useIsOwned,
+  useAuction,
+  useListing,
+  useMarket,
   useMissions,
   useSelectCitizen,
   useTrainingConfig,
@@ -29,13 +41,6 @@ import {
 } from '@/stores/selectors';
 
 const copy = MESSAGES.profile;
-
-function creditCopy(count: number, stat: StatKey): string {
-  const label = statLabel(stat);
-  if (count === 0) return formatMessage(copy.noCredits, { stat: label });
-  if (count === 1) return formatMessage(copy.credit, { stat: label });
-  return formatMessage(copy.credits, { count, stat: label });
-}
 
 /** Scores at registration: today's scores minus every training step in the history. */
 function startingScores(citizen: CitizenRecord, history: readonly HistoryEntry[]): Record<StatKey, number> {
@@ -48,7 +53,7 @@ function startingScores(citizen: CitizenRecord, history: readonly HistoryEntry[]
   return start;
 }
 
-const Panel: React.FC<{ title: string; note?: string; icon?: React.ReactNode; children: React.ReactNode; className?: string }> = ({
+const Panel: React.FC<{ title: string; note?: string; icon?: string; children: React.ReactNode; className?: string }> = ({
   title,
   note,
   icon,
@@ -57,62 +62,43 @@ const Panel: React.FC<{ title: string; note?: string; icon?: React.ReactNode; ch
 }) => (
   <section className={cn('bas-panel flex flex-col gap-2.5 p-3 md:p-4', className)}>
     <div className="flex items-center justify-between gap-2">
-      <span className="flex items-center gap-1.5">
-        {icon}
-        <span className="bas-label">{title}</span>
-      </span>
+      <PanelTab icon={icon}>{title}</PanelTab>
       {note && <span className="text-[13px] text-[#33485c]">{note}</span>}
     </div>
     {children}
   </section>
 );
 
-const StatsPanel: React.FC<{ citizen: CitizenRecord; credits: StatCredits; owned: boolean }> = ({ citizen, credits, owned }) => {
-  const { baseTrainingCostAtoms, tokenDecimals, tokenSymbol } = useTrainingConfig();
-  return (
-    <Panel title={copy.statsTitle} note={copy.statsRule}>
+const StatsPanel: React.FC<{ citizen: CitizenRecord }> = ({ citizen }) => (
+  <Panel title={copy.statsTitle} note={copy.statsRule}>
+    <div className="grid gap-2 md:grid-cols-3">
       {STAT_ORDER.map((stat) => {
         const score = citizen[stat];
         return (
-          <div key={stat} className="flex flex-col gap-1.5 rounded-md p-2" style={{ backgroundColor: STAT_COLORS[stat].soft }}>
+          <div key={stat} className="flex flex-col gap-1.5 rounded-md p-2.5" style={{ backgroundColor: STAT_COLORS[stat].soft }}>
             <div className="flex items-baseline justify-between gap-2">
               <span className="font-heading text-[14px]" style={{ color: STAT_COLORS[stat].fill }}>
                 {MESSAGES.stats[stat].shortLabel}
               </span>
-              <span className="flex items-baseline gap-2">
-                <span className="text-[13px] text-[#33485c]">{formatMessage(copy.tier, { tier: tierForScore(score) })}</span>
-                <span className="font-heading text-lg">
-                  {score}
-                  <span className="text-[13px] text-[#33485c]">/{MAX_STAT_SCORE}</span>
-                </span>
+              <span className="font-heading text-lg">
+                {score}
+                <span className="text-[13px] text-[#33485c]">/{MAX_STAT_SCORE}</span>
               </span>
             </div>
             <StatBar stat={stat} value={score} size="lg" className="mb-1.5" />
-            {owned && (
-              <div className="flex flex-wrap justify-between gap-x-3 text-[13px] text-[#2b3d4f]">
-                <span>{creditCopy(credits[stat], stat)}</span>
-                <span>
-                  {score >= MAX_STAT_SCORE
-                    ? copy.maxed
-                    : formatMessage(copy.nextCost, {
-                        cost: formatTokens(trainingCostAtoms(baseTrainingCostAtoms, score), tokenDecimals),
-                        symbol: tokenSymbol,
-                      })}
-                </span>
-              </div>
-            )}
+            <span className="text-[13px] text-[#2b3d4f]">{formatMessage(copy.tier, { tier: tierForScore(score) })}</span>
           </div>
         );
       })}
-    </Panel>
-  );
-};
+    </div>
+  </Panel>
+);
 
 const DistrictsPanel: React.FC<{ citizen: CitizenRecord }> = ({ citizen }) => (
   <Panel
     title={copy.districtsTitle}
     note={copy.districtsRule}
-    icon={<PixelIcon src="/icons/door_icon.png" className="h-5" />}
+    icon="/icons/door_icon.png"
   >
     <ul className="m-0 grid list-none gap-1.5 p-0 sm:grid-cols-2">
       {DISTRICT_ORDER.map((id) => {
@@ -176,7 +162,7 @@ const AchievementsPanel: React.FC<{ citizen: CitizenRecord; founding: boolean }>
       key: `tier-${stat}`,
       title: formatMessage(copy.achFirstTier, { stat: statLabel(stat) }),
       detail: formatMessage(copy.achFirstTierDetail, { stat: statLabel(stat) }),
-      earned: citizen[stat] >= 3,
+      earned: citizen[stat] >= TIER_SCORES[0],
       icon: <StarIcon size={24} color={STAT_COLORS[stat].light} />,
     })),
     { key: 'event', title: copy.achEvent, detail: copy.achEventDetail, earned: false, icon: <StarIcon size={24} color="#d3a8e0" /> },
@@ -231,6 +217,11 @@ const HistoryPanel: React.FC<{ citizen: CitizenRecord; history: readonly History
             stat: statLabel(entry.stat),
           }),
         };
+      case 'sale':
+        return {
+          title: MESSAGES.history.sale,
+          detail: formatMessage(MESSAGES.history.saleDetail, { price: formatSolExact(entry.priceLamports) }),
+        };
       case 'mission': {
         const mission = MESSAGES.missions.catalog[entry.missionId as keyof typeof MESSAGES.missions.catalog];
         return {
@@ -247,7 +238,7 @@ const HistoryPanel: React.FC<{ citizen: CitizenRecord; history: readonly History
 
   return (
     <Panel title={copy.historyTitle}>
-      <ol className="m-0 flex max-h-[420px] list-none flex-col gap-1.5 overflow-y-auto p-0 pr-1">
+      <ol className="m-0 grid max-h-[420px] list-none content-start gap-1.5 overflow-y-auto p-0 pr-1 md:grid-cols-2">
         {entries.map((entry, index) => {
           const line = lines(entry);
           return (
@@ -271,74 +262,205 @@ const HistoryPanel: React.FC<{ citizen: CitizenRecord; history: readonly History
 };
 
 /** Public profile of one citizen: stats, districts, achievements and history. */
+/** Longest a one-off reaction runs; after it the portrait goes back to its idle hop. */
+const REACTION_MS = 1700;
+/** How long the mood label stays up. It does not depend on motion, so it also reaches people who turned animation off. */
+const MOOD_MS = 3500;
+
+/**
+ * The citizen's portrait. It hops while idle and plays the animation the latest
+ * reply asked for once, so the answer shows on the face the owner is looking at.
+ * A short mood label goes with it, because motion alone is not seen by everyone.
+ */
+const Portrait: React.FC<{ citizen: CitizenRecord }> = ({ citizen }) => {
+  const reaction = useCitizenReaction(citizen.id);
+  const [playing, setPlaying] = React.useState<string | null>(null);
+  const [mood, setMood] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!reaction) {
+      setPlaying(null);
+      setMood(null);
+      return undefined;
+    }
+    setPlaying(reaction.animation === 'idle' ? null : reaction.animation);
+    const label = MESSAGES.chat.moods[reaction.emotion];
+    setMood(label === '' ? null : label);
+    const motionTimer = window.setTimeout(() => setPlaying(null), REACTION_MS);
+    const moodTimer = window.setTimeout(() => setMood(null), MOOD_MS);
+    return () => {
+      window.clearTimeout(motionTimer);
+      window.clearTimeout(moodTimer);
+    };
+  }, [reaction]);
+
+  return (
+    <div className="relative flex h-full w-full items-center justify-center">
+      <img
+        key={playing ? reaction?.nonce : 'idle'}
+        src={citizen.image}
+        alt={citizen.name}
+        width={240}
+        height={240}
+        className={cn('h-[78%] w-[78%] object-contain', playing ? `react-${playing}` : 'citizen-hop')}
+        data-reaction={playing ?? undefined}
+      />
+      {playing === 'thinking' && (
+        <span aria-hidden="true" className="absolute right-[12%] top-[8%] font-heading text-[18px] leading-none text-[#1a2734]">
+          ...
+        </span>
+      )}
+      <span
+        role="status"
+        data-mood={mood ?? undefined}
+        className={cn(
+          'absolute left-[6%] top-[6%] rounded-md border-2 border-[#1b2a38] bg-[#fff3c4] px-2 py-0.5 font-heading text-[12px] uppercase leading-none tracking-widest text-[#1b2a38]',
+          mood ? '' : 'hidden',
+        )}
+      >
+        {mood}
+      </span>
+    </div>
+  );
+};
+
 export const ProfileScreen: React.FC<{ id: number }> = ({ id }) => {
   const citizen = useCitizen(id);
   const owned = useIsOwned(id);
-  const credits = useCredits(id);
   const history = useHistory(id);
   const founding = useFoundingIds();
   const wallet = useWallet();
   const select = useSelectCitizen();
   const api = useBasStoreApi();
+  const listing = useListing(id);
+  const auction = useAuction(id);
+  const market = useMarket();
+  const now = useNow();
+  const [marketDialog, setMarketDialog] = React.useState<'buy' | 'sell' | 'auction' | null>(null);
+  const closeMarketDialog = React.useCallback(() => setMarketDialog(null), []);
 
   if (!citizen) {
     return (
       <ScreenShell title={copy.title}>
-        <section className="bas-panel mx-auto max-w-md p-5 text-center text-[17px]">{copy.missing}</section>
+        <section className="bas-panel mx-auto flex max-w-md flex-col items-center gap-3 p-5 text-center">
+          <p className="m-0 text-[17px] leading-snug">{copy.missing}</p>
+          <Link href="/" className="bas-btn">
+            {MESSAGES.app.back}
+          </Link>
+        </section>
       </ScreenShell>
     );
   }
 
   const bracket = bracketOf(citizen);
 
-  return (
-    <ScreenShell title={copy.title} subtitle={`${citizen.name} · ${citizen.code}`}>
-      <div className="mx-auto grid max-w-6xl gap-3 md:gap-4 lg:grid-cols-[300px_minmax(0,1fr)_minmax(0,1fr)]">
-        <section className="bas-panel flex flex-col gap-3 self-start p-3 md:p-4">
-          <div className="bas-inset bas-grid-bg mx-auto flex aspect-square w-full max-w-[200px] items-center justify-center overflow-hidden lg:max-w-none">
-            <img src={citizen.image} alt={citizen.name} width={240} height={240} className="citizen-hop h-[78%] w-[78%] object-contain" />
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-[13px] text-[#33485c]">{citizen.code}</span>
-            <span className="font-heading text-lg leading-tight">{citizen.name.toUpperCase()}</span>
-            <span className="text-[15px] text-[#2b3d4f]">
-              {formatMessage(copy.bracket, {
-                role: citizen.role,
-                bracket: MESSAGES.season.bracketNames[bracket],
-                score: highestStat(citizen),
-              })}
+  const identity = (
+    <section className="bas-panel flex flex-col gap-3 p-3 md:p-4">
+      <div className="flex flex-col gap-1.5">
+        <SwitcherLabel>{MESSAGES.city.myCitizens}</SwitcherLabel>
+        <CitizenSwitcher label={MESSAGES.city.myCitizens} activeId={citizen.id} href={(next) => `/citizen/${next}`} />
+      </div>
+      <div className="bas-inset bas-grid-bg mx-auto flex aspect-square w-full max-w-[220px] items-center justify-center overflow-hidden">
+        <Portrait citizen={citizen} />
+      </div>
+      <div className="flex flex-col items-center gap-1 text-center">
+        <Ribbon>{citizen.name}</Ribbon>
+        <span className="text-[13px] text-[#33485c]">{citizen.code}</span>
+        <span className="text-[15px] text-[#2b3d4f]">
+          {formatMessage(copy.bracket, {
+            role: citizen.role,
+            bracket: MESSAGES.season.bracketNames[bracket],
+            score: highestStat(citizen),
+          })}
+        </span>
+        <span className="text-[13px] text-[#33485c]">
+          {owned ? formatMessage(copy.ownerYou, { address: wallet.label }) : copy.ownerOther}
+        </span>
+      </div>
+      <p className="m-0 border-t-2 border-[#b9c9d8] pt-3 text-[15px] leading-snug text-[#2b3d4f]">{citizen.lore}</p>
+      <div className={cn('grid gap-2', owned ? 'grid-cols-2' : 'grid-cols-1')}>
+        <button
+          type="button"
+          className="bas-btn"
+          onClick={() => {
+            if (!owned) {
+              api.getState().openModal(copy.talkTitle, copy.talkMessage);
+              return;
+            }
+            document.getElementById('citizen-chat')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }}
+        >
+          {copy.talk}
+        </button>
+        {owned && (
+          <Link href="/training" onClick={() => select(citizen.id)} className="bas-btn bas-btn-primary">
+            {copy.train}
+          </Link>
+        )}
+      </div>
+      {market.open && (owned || listing || auction) && (
+        <div className="flex flex-col gap-2 border-t-2 border-[#b9c9d8] pt-3">
+          {listing && (
+            <span className="text-center text-[15px] font-semibold text-[#1d6b34]">
+              {formatMessage(MESSAGES.market.profileForSale, { price: formatSolExact(listing.priceLamports) })}
             </span>
-            <span className="text-[13px] text-[#33485c]">
-              {owned ? formatMessage(copy.ownerYou, { address: wallet.label }) : copy.ownerOther}
+          )}
+          {auction && (
+            <span className="text-center text-[15px] font-semibold text-[#1d6b34]">
+              {now !== null && now >= auction.endsAt
+                ? formatMessage(MESSAGES.market.profileAuctionEnded, {
+                    price: formatSolExact(auction.highestBidLamports ?? auction.startPriceLamports),
+                  })
+                : formatMessage(MESSAGES.market.profileAuction, {
+                    price: formatSolExact(auction.highestBidLamports ?? auction.startPriceLamports),
+                    time: now === null ? '—' : timeLeftText(auction.endsAt - now),
+                  })}
             </span>
-          </div>
-          <p className="m-0 text-[15px] leading-snug text-[#2b3d4f]">{citizen.lore}</p>
-          <div className={cn('grid gap-2', owned ? 'grid-cols-2' : 'grid-cols-1')}>
+          )}
+          {auction ? (
             <button
               type="button"
-              className="bas-btn"
-              onClick={() => api.getState().openModal(copy.talkTitle, copy.talkMessage)}
+              className={cn('bas-btn', !owned && !auction.leading && 'bas-btn-primary')}
+              onClick={() => setMarketDialog('auction')}
             >
-              {copy.talk}
+              {now !== null && now >= auction.endsAt
+                ? MESSAGES.market.finish
+                : owned
+                  ? MESSAGES.market.manage
+                  : auction.leading
+                    ? MESSAGES.market.youLead
+                    : formatMessage(MESSAGES.market.profileBid, { price: formatSolExact(auction.minBidLamports) })}
             </button>
-            {owned && (
-              <Link href="/training" onClick={() => select(citizen.id)} className="bas-btn bas-btn-primary">
-                {copy.train}
-              </Link>
-            )}
-          </div>
-        </section>
+          ) : owned ? (
+            <button type="button" className="bas-btn" onClick={() => setMarketDialog('sell')}>
+              {listing ? MESSAGES.market.manage : MESSAGES.market.sell}
+            </button>
+          ) : (
+            listing && (
+              <button type="button" className="bas-btn bas-btn-primary" onClick={() => setMarketDialog('buy')}>
+                {formatMessage(MESSAGES.market.profileBuy, { price: formatSolExact(listing.priceLamports) })}
+              </button>
+            )
+          )}
+        </div>
+      )}
+    </section>
+  );
 
-        <div className="flex min-w-0 flex-col gap-3 md:gap-4">
-          <StatsPanel citizen={citizen} credits={credits} owned={owned} />
+  return (
+    <ScreenShell title={copy.title} subtitle={`${citizen.name} · ${citizen.code}`}>
+      <ScreenColumns side={identity}>
+        {owned && <ChatPanel citizen={citizen} />}
+        {owned ? <JourneyPanel citizen={citizen} /> : <StatsPanel citizen={citizen} />}
+        <div className="grid gap-3 md:gap-4 xl:grid-cols-2">
           <DistrictsPanel citizen={citizen} />
-        </div>
-
-        <div className="flex min-w-0 flex-col gap-3 md:gap-4">
           <AchievementsPanel citizen={citizen} founding={founding.includes(citizen.id)} />
-          <HistoryPanel citizen={citizen} history={history} />
         </div>
-      </div>
+        <HistoryPanel citizen={citizen} history={history} />
+      </ScreenColumns>
+      {marketDialog === 'sell' && owned && <SellDialog citizenId={citizen.id} onClose={closeMarketDialog} />}
+      {marketDialog === 'buy' && !owned && <BuyDialog citizenId={citizen.id} onClose={closeMarketDialog} />}
+      {marketDialog === 'auction' && <AuctionDialog citizenId={citizen.id} onClose={closeMarketDialog} />}
     </ScreenShell>
   );
 };

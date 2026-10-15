@@ -1,0 +1,38 @@
+{
+  "name": "Milo #003",
+  "symbol": "BAS",
+  "description": "The relaxed philosopher of District 01. Loves coffee, sunny courtyard afternoons, and community gatherings.",
+  "image": "https://bas-district-devnet.vercel.app/characters/3.png",
+  "external_url": "https://bas-district-devnet.vercel.app/citizen/3",
+  "attributes": [
+    {
+      "trait_type": "Role",
+      "value": "Steward"
+    },
+    {
+      "trait_type": "Serial",
+      "value": "#003"
+    },
+    {
+      "trait_type": "Insight",
+      "value": 1
+    },
+    {
+      "trait_type": "Bond",
+      "value": 2
+    },
+    {
+      "trait_type": "Craft",
+      "value": 0
+    }
+  ],
+  "properties": {
+    "category": "image",
+    "files": [
+      {
+        "uri": "https://bas-district-devnet.vercel.app/characters/3.png",
+        "type": "image/png"
+      }
+    ]
+  }
+}

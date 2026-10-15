@@ -7,18 +7,19 @@
     "training": "Training",
     "missions": "Mission board",
     "season": "Season",
-    "citizen": "Citizen profile"
+    "citizen": "Citizen profile",
+    "mint": "Mint a citizen",
+    "market": "Market"
   },
   "app": {
     "name": "BAS DISTRICT",
     "districtName": "District 01",
-    "tokenSymbol": "$DIST",
+    "tokenSymbol": "$BAS",
     "mockData": "MOCK DATA",
     "mockShort": "MOCK",
     "mockWallet": "MOCK WALLET {address}",
     "citizensInTown": "{count} citizens in town",
     "season": "SEASON {number} · DAY {day} / {length}",
-    "seasonBoard": "Season board",
     "back": "CITY"
   },
   "nav": {
@@ -27,7 +28,9 @@
     "missions": "MISSIONS",
     "training": "TRAIN",
     "season": "SEASON",
-    "citizen": "CITIZEN"
+    "citizen": "CITIZEN",
+    "mint": "MINT",
+    "market": "MARKET"
   },
   "stats": {
     "intelligence": {
@@ -66,6 +69,7 @@
     "loading": "Loading the city…",
     "eventTag": "DISTRICT EVENT",
     "eventIn": "in {time}",
+    "eventOpen": "open now",
     "eventName": "BLACKOUT NIGHT",
     "eventBody": "Craft fixes the generator, Bond calms the crowd, Insight finds the cause.",
     "modeLabel": "Citizen mode",
@@ -90,7 +94,8 @@
     "notOwnedMessage": "Only citizens you own follow your taps. Pick one under My citizens.",
     "profile": "PROFILE",
     "missions": "MISSIONS",
-    "train": "TRAIN"
+    "train": "TRAIN",
+    "sidebar": "Citizens and missions"
   },
   "profile": {
     "title": "CITIZEN PROFILE",
@@ -100,11 +105,6 @@
     "statsTitle": "STATS",
     "statsRule": "Max 10 · tiers at 3, 6 and 10",
     "tier": "Tier {tier}",
-    "credits": "{count} {stat} credits",
-    "credit": "1 {stat} credit",
-    "noCredits": "0 {stat} credits · do a mission first",
-    "nextCost": "Next: {cost} {symbol} + 1 credit",
-    "maxed": "Maxed",
     "districtsTitle": "DISTRICTS",
     "districtsRule": "Unlocked by tier",
     "achievementsTitle": "ACHIEVEMENTS",
@@ -117,12 +117,66 @@
     "achMaster": "Master of Season 1",
     "achMasterDetail": "Master bracket",
     "historyTitle": "PUBLIC HISTORY",
-    "burned": "{amount} {symbol} burned",
     "talk": "TALK",
     "talkTitle": "TALK",
-    "talkMessage": "Chat with citizens arrives in Stage 5. In this preview they only walk and work.",
+    "talkMessage": "Only the owner can talk to a citizen.",
     "train": "TRAIN",
-    "missing": "This citizen is not in the preview roster."
+    "missing": "No citizen has this number yet. Citizens appear here once they are minted."
+  },
+  "chat": {
+    "title": "TALK TO {name}",
+    "aiNote": "{name} is an AI character, not a real person. It cannot trade, send tokens or sign anything for you.",
+    "placeholder": "Say something to {name}",
+    "send": "SEND",
+    "thinking": "{name} is thinking…",
+    "remaining": "{remaining} of {limit} messages left today",
+    "resets": "Resets in {time}",
+    "counter": "{count}/{max}",
+    "empty": "Say hello to {name}.",
+    "breakReminder": "You have been talking for over an hour. Maybe take a short break?",
+    "connect": "Connect your wallet to talk to {name}.",
+    "previewOnly": "Talking to citizens opens when the district runs on the live network.",
+    "checking": "Checking the line…",
+    "unreachable": "Chat cannot be reached right now.",
+    "retry": "TRY AGAIN",
+    "off": "Chat is switched off right now.",
+    "youLabel": "You",
+    "memoryTitle": "WHAT {name} REMEMBERS",
+    "memoryShow": "SHOW MEMORY",
+    "memoryHide": "HIDE MEMORY",
+    "memoryNickname": "Calls you {nickname}.",
+    "memoryNothing": "Nothing about you yet. Only short notes are kept, never full conversations.",
+    "memoryPublic": "Known around the district",
+    "memoryPublicNothing": "Nothing public yet.",
+    "memoryPrivate": "Only you can see these notes. They stay with you if {name} is sold.",
+    "forget": "FORGET WHAT I TOLD {name}",
+    "forgot": "{name} no longer remembers what you told it.",
+    "moods": {
+      "neutral": "",
+      "curious": "Curious",
+      "happy": "Happy",
+      "worried": "Worried",
+      "thinking": "Thinking"
+    },
+    "notices": {
+      "disabled": "Chat is switched off right now. Your message was not sent.",
+      "budget": "Chat is resting for today. Try again tomorrow. Your message was not counted.",
+      "quota": "{name} has talked enough for today. Chat opens again in {time}.",
+      "timeout": "{name} did not answer in time. Your message was not counted, so you can send it again.",
+      "invalid": "{name} could not find the words. Your message was not counted, so you can send it again.",
+      "error": "{name} could not answer just now. Your message was not counted, so you can send it again.",
+      "busy": "Your last message is still being answered. Give it a moment.",
+      "declined": "{name} would rather not talk about that.",
+      "not-owner": "Only the current owner can talk to this citizen.",
+      "citizen-not-found": "This citizen is not ready to talk yet.",
+      "unauthorized": "Sign in with your wallet again to keep talking.",
+      "rate-limited": "That was a lot of messages at once. Wait a moment.",
+      "empty": "Write something first.",
+      "too-long": "That message is too long. Keep it under {max} characters.",
+      "bad-request": "That message could not be sent.",
+      "declinedSignIn": "The wallet request was closed, so chat did not start.",
+      "unavailable": "Chat cannot be reached right now. Your message was not counted."
+    }
   },
   "history": {
     "day": "DAY {day}",
@@ -131,7 +185,70 @@
     "train": "Trained {stat} {from} → {to}",
     "trainDetail": "Burned {amount} {symbol} · used 1 {stat} credit",
     "mission": "Mission: {mission}",
-    "missionDetail": "{district} · earned 1 {stat} credit"
+    "missionDetail": "{district} · earned 1 {stat} credit",
+    "sale": "Changed hands",
+    "saleDetail": "Sold in the market for {price}"
+  },
+  "journey": {
+    "title": "YOUR PATH",
+    "subtitle": "{name} · Tier {tier} of 3",
+    "nextLabel": "NEXT STEP",
+    "statsTitle": "STATS AND MISSIONS",
+    "ladderTitle": "TIER LADDER",
+    "ladderNote": "A stat at 3, 6 and 10 reaches Tier 1, 2 and 3.",
+    "bracketNote": "The bracket follows the highest stat: {rookie} 0–3 · {skilled} 4–6 · {elite} 7–9 · {master} 10.",
+    "tierName": "Tier {tier}",
+    "anyStatAt": "Any stat at {score}",
+    "reached": "REACHED",
+    "opens": "Opens {districts}",
+    "opensMaster": "Opens {districts} and the {bracket} bracket",
+    "and": " and ",
+    "toTierOne": "1 more upgrade to Tier {tier}",
+    "toTierMany": "{count} more upgrades to Tier {tier}",
+    "maxedRow": "Maxed at 10",
+    "creditsLine": "Credits {have} of {need}",
+    "creditsMissing": "{missing} to earn from missions",
+    "creditsReady": "enough for the next tier",
+    "tokensLine": "{amount} {symbol} to reach Tier {tier}",
+    "opensLine": "Opens {districts}",
+    "missionsFor": "Missions for {stat}",
+    "missionReady": "Ready",
+    "missionTomorrow": "Tomorrow",
+    "missionEvent": "Event",
+    "missionTaken": "Taken",
+    "missionBusy": "On another mission",
+    "missionNeeds": "Needs {rule}",
+    "next": {
+      "continueMission": "Mission in progress: \"{mission}\", step {step} of {steps}.",
+      "start": "Take the mission \"{mission}\" to earn one {stat} credit.",
+      "train": "Train {stat} from {from} to {to}.",
+      "trainTier": "Train {stat} from {from} to {to} and reach Tier {tier}.",
+      "earnTokens": "{name} holds a {stat} credit, but the wallet needs {missing} {symbol} more to train it.",
+      "waitDaily": "{name} finished all {max} missions today. Missions open again tomorrow.",
+      "waitCooldown": "{name} finished every mission that gives a credit today. They open again tomorrow.",
+      "idle": "No mission is open for {name} right now. A district event may start soon.",
+      "complete": "Every stat is at 10. {name} can now compete for the Master bracket.",
+      "notOwner": "{name} belongs to another player, so there is no path to follow."
+    },
+    "cta": {
+      "continue": "CONTINUE IN CITY",
+      "mission": "OPEN MISSION",
+      "train": "GO TO TRAINING",
+      "missions": "MISSIONS",
+      "season": "SEE SEASON"
+    },
+    "tierUpTitle": "TIER {tier} REACHED",
+    "tierUpBody": "{name} reached Tier {tier} in {stat}.",
+    "tierUpOpened": " {districts} is now open to {name}.",
+    "tierUpTry": " Try the mission \"{mission}\".",
+    "tierUpMaster": " {name} now competes in the Master bracket.",
+    "showPath": "SHOW MY PATH",
+    "hidePath": "HIDE MY PATH",
+    "tierUpAchievement": " Achievement earned: {title}.",
+    "credits": "Credits to spend",
+    "paceOne": "About 1 day to Tier {tier} through {stat}: one mission a day gives one credit.",
+    "paceMany": "About {days} days to Tier {tier} through {stat}: one mission a day gives one credit.",
+    "goal": "Tier {tier} of 3"
   },
   "missions": {
     "title": "MISSION BOARD",
@@ -141,13 +258,14 @@
     "all": "ALL",
     "events": "EVENTS",
     "note": "Credits from missions are the only way to train",
+    "needCitizen": "Take this mission with a citizen of your own.",
     "statusActive": "IN PROGRESS",
     "statusOpen": "AVAILABLE",
     "statusLocked": "LOCKED",
     "statusBusy": "TAKEN",
     "statusSoon": "IN {time}",
     "reward": "+1 {stats} credit",
-    "rewardEvent": "Credit by task + event title",
+    "rewardEvent": "A credit for each task, plus the event title",
     "anyCitizen": "Any citizen",
     "takenBy": "{name} · step {step} of {steps}",
     "needs": "Needs {rule}",
@@ -164,7 +282,16 @@
     "busyHint": "{name} is already on this mission.",
     "soonHint": "This event opens in {time}.",
     "completeTitle": "MISSION COMPLETE",
-    "completeMessage": "{name} earned 1 {stat} credit and {points} season points. Spend the credit in Training.",
+    "rewardName": "{name} finished {mission}",
+    "rewardCredit": "+1 {stat} credit",
+    "rewardPoints": "+{points} season points",
+    "rewardReadyOne": "1 {stat} credit is ready to spend in Training.",
+    "rewardReadyMany": "{count} {stat} credits are ready to spend in Training.",
+    "rewardLeftOne": "{name} can do 1 more mission today.",
+    "rewardLeftMany": "{name} can do {left} more missions today.",
+    "rewardLeftNone": "{name} has used all {max} missions today. Missions open again tomorrow.",
+    "rewardTrain": "TRAIN NOW",
+    "rewardKeep": "KEEP PLAYING",
     "selectHint": "Pick a mission to see its steps.",
     "catalog": {
       "streetLamp": {
@@ -329,6 +456,38 @@
             ]
           }
         ]
+      },
+      "summitTrial": {
+        "title": "The Summit Trial",
+        "body": "Only a citizen at the top of one stat may enter Summit Hall. Show the council the district can rely on you.",
+        "steps": [
+          {
+            "title": "Climb to the Hall",
+            "hint": "Walk up the stairs into Summit Hall."
+          },
+          {
+            "title": "Reach the council table",
+            "hint": "Walk to the council table at the far end of the Hall."
+          },
+          {
+            "title": "Answer the council",
+            "prompt": "The council asks what makes a citizen worth following into the next season. What do you answer?",
+            "options": [
+              "The most tokens burned.",
+              "Steady work that others can rely on.",
+              "Whoever is the loudest."
+            ]
+          },
+          {
+            "title": "Seal the charter",
+            "prompt": "Seal the charter in the right order: read it aloud, sign it, then raise it for the whole district to see.",
+            "pieces": [
+              "Read the charter",
+              "Sign it",
+              "Raise it for all to see"
+            ]
+          }
+        ]
       }
     },
     "stepGoto": "Walk {name} to the marker on the map.",
@@ -339,9 +498,9 @@
     "continue": "CONTINUE IN CITY",
     "answer": "ANSWER",
     "solve": "SOLVE",
-    "limits": "{left} of {max} mission credits left today for {name}",
+    "limits": "{left} of {max} missions left today for {name}",
     "cooldownHint": "{name} already finished this mission today. It opens again tomorrow.",
-    "limitHint": "{name} has earned {max} mission credits today. Come back tomorrow.",
+    "limitHint": "{name} has finished {max} missions today. Come back tomorrow.",
     "citizenBusyHint": "{name} is on another mission. Finish or abandon it first.",
     "nextDay": "NEXT DAY (MOCK)",
     "nextDayHint": "Mock only: moves the season clock one day to reset the daily limits.",
@@ -354,7 +513,8 @@
     "puzzleProgress": "{placed} of {total} placed",
     "close": "CLOSE",
     "arrived": "Arrived",
-    "centerMap": "CENTER MAP",
+    "popupGo": "LET'S GO",
+    "walkThere": "WALK THERE",
     "statusDone": "DONE TODAY",
     "stepsCount": "{count} steps",
     "slotFirst": "first",
@@ -362,9 +522,12 @@
   },
   "training": {
     "title": "TRAINING",
+    "pick": "Stat to train",
     "subtitle": "Spend one credit and burn {symbol} to raise one stat by 1",
     "noCredit": "No credit yet",
-    "noCreditHint": "Do a {stat} mission first",
+    "speechNoCredit": "I need one credit in {stat} first. A mission earns one.",
+    "creditNone": "None yet",
+    "earnCta": "EARN A CREDIT IN MISSIONS",
     "cardLine": "{from} → {to} · {cost} {symbol}",
     "cardCredits": "{count} credits · Tier {tier}",
     "cardCredit": "1 credit · Tier {tier}",
@@ -380,9 +543,10 @@
     "walletAfter": "Wallet after",
     "where": "Where the tokens go",
     "burned": "100% burned",
-    "ladder": "COST PER LEVEL",
+    "ladder": "COST PER SCORE",
     "ladderNote": "Bar = cost to reach that score. 100 at 1, up to 1,000 at 10.",
     "mockNote": "Mock mode: nothing is signed or burned. With a wallet this sends one upgrade_score transaction.",
+    "chainNote": "Your wallet signs one transaction that burns the tokens and raises the score on chain. You need a little SOL for the network fee.",
     "cta": "BURN {cost} {symbol} AND TRAIN",
     "speechReady": "Ready when you are. {stat} {from} → {to}.",
     "speechTier": "One more {stat} and I reach Tier {tier}. Let's go.",
@@ -439,8 +603,26 @@
     "stepClaim": "CLAIM",
     "stepClaimText": "Winner signs",
     "disclosure": "Funded only by Pump.fun creator fees under a locked 50 / 30 / 20 split. Prize amounts are not guaranteed. Holding a citizen does not earn rewards.",
+    "vaultSoon": "The vault address appears here once the prize vault is live.",
     "explorerTitle": "MOCK VAULT",
-    "explorerMessage": "This vault is mock data. The real address appears here after the prize_vault program is deployed."
+    "explorerTitleChain": "PRIZE VAULT",
+    "explorerMessage": "This vault is mock data. The real address appears here after the prize_vault program is deployed.",
+    "explorerMessageChain": "The prize vault is not live yet, so there is no address to show. It appears here once the prize vault program is deployed."
+  },
+  "wallet": {
+    "connect": "CONNECT WALLET",
+    "title": "WALLET",
+    "choose": "Choose the wallet you want to play with. It asks you to approve the connection.",
+    "none": "No Solana wallet was found in this browser. Install one, such as Phantom, Solflare or Backpack, then reload this page.",
+    "network": "This game runs on {network}. Set your wallet to the same network before you connect.",
+    "connecting": "Waiting for {wallet}. Approve the request in its window.",
+    "connectedWith": "Connected with {wallet}",
+    "signInNote": "Missions ask you to sign one short message, so the mission server knows the wallet is yours. Signing it costs nothing.",
+    "disconnect": "DISCONNECT",
+    "declined": "The request was closed. Choose a wallet to try again.",
+    "failed": "The wallet did not connect. Check that it is unlocked and set to the right network, then try again.",
+    "networkDevnet": "Solana devnet",
+    "networkMainnet": "Solana mainnet"
   },
   "errors": {
     "not-owner": {
@@ -457,7 +639,7 @@
     },
     "insufficient-balance": {
       "title": "NOT ENOUGH TOKENS",
-      "message": "The wallet does not hold enough tokens for this training."
+      "message": "The wallet does not hold enough tokens for this training. Buy more on Pump.fun."
     },
     "district-locked": {
       "title": "DISTRICT LOCKED",
@@ -481,11 +663,115 @@
     },
     "daily-limit": {
       "title": "DAILY LIMIT",
-      "message": "A citizen earns up to 3 mission credits per day. Come back tomorrow."
+      "message": "A citizen can finish up to 3 missions per day. Come back tomorrow."
     },
     "invalid-stat": {
       "title": "WRONG CREDIT",
       "message": "This mission does not give a credit for that stat."
+    },
+    "sold-out": {
+      "title": "SOLD OUT",
+      "message": "Every citizen of this sale has been minted."
+    },
+    "wrong-answer": {
+      "title": "NOT QUITE",
+      "message": "That is not the right reply. Read the question again and pick another one."
+    },
+    "wrong-order": {
+      "title": "WRONG ORDER",
+      "message": "The pieces do not fit in that order. They were put back, try again."
+    },
+    "too-fast": {
+      "title": "TOO FAST",
+      "message": "The step was reported before the walk could be done. Walk to the marker and try again."
+    },
+    "season-closed": {
+      "title": "SEASON CLOSED",
+      "message": "Missions are only open while a season is running."
+    },
+    "not-connected": {
+      "title": "CONNECT A WALLET",
+      "message": "Connect a wallet to play with your citizens."
+    },
+    "claim-pending": {
+      "title": "CLAIM IN PROGRESS",
+      "message": "The credit for this mission is still being confirmed. Wait a minute and try again."
+    },
+    "declined": {
+      "title": "REQUEST CLOSED",
+      "message": "The wallet request was closed, so nothing was sent. Try again when you are ready."
+    },
+    "transaction-failed": {
+      "title": "NOT CONFIRMED",
+      "message": "The network did not accept the transaction. Nothing was spent; try again in a moment."
+    },
+    "unavailable": {
+      "title": "TRY AGAIN SOON",
+      "message": "The district could not be reached. Nothing was lost; try again in a moment."
+    },
+    "insufficient-sol": {
+      "title": "NOT ENOUGH SOL",
+      "message": "The wallet does not hold enough SOL to pay for this."
+    },
+    "mint-limit": {
+      "title": "WALLET LIMIT",
+      "message": "You have reached the citizen limit for this wallet."
+    },
+    "mint-not-open": {
+      "title": "MINT NOT OPEN YET",
+      "message": "The public mint has not opened yet. Come back at the announced time."
+    },
+    "market-closed": {
+      "title": "MARKET NOT OPEN",
+      "message": "The market is not open on this network right now. Nothing was listed or paid."
+    },
+    "listing-gone": {
+      "title": "NO LONGER FOR SALE",
+      "message": "This citizen was sold or taken off the market. Nothing was paid."
+    },
+    "price-changed": {
+      "title": "PRICE CHANGED",
+      "message": "The seller changed the price after you opened this listing. Nothing was paid; check the new price and try again."
+    },
+    "own-listing": {
+      "title": "YOUR OWN CITIZEN",
+      "message": "You cannot buy a citizen you already own."
+    },
+    "already-listed": {
+      "title": "ALREADY FOR SALE",
+      "message": "This citizen is already listed. Change its price from the listing instead."
+    },
+    "not-listed": {
+      "title": "NOT FOR SALE",
+      "message": "This citizen has no listing to change."
+    },
+    "invalid-price": {
+      "title": "PRICE OUT OF RANGE",
+      "message": "The price must be between 0.01 SOL and 1,000 SOL."
+    },
+    "in-auction": {
+      "title": "AT AUCTION",
+      "message": "This citizen is up for auction. It cannot be listed or sold another way until the auction is finished."
+    },
+    "bid-too-low": {
+      "title": "BID TOO LOW",
+      "message": "Someone bid in the meantime, or the bid is under the lowest the auction takes. Nothing was paid; check the new bid and try again."
+    },
+    "already-highest": {
+      "title": "YOU LEAD ALREADY",
+      "message": "You hold the highest bid on this auction."
+    },
+    "auction-ended": {
+      "title": "AUCTION ENDED",
+      "message": "This auction has ended, so it takes no more bids. Nothing was paid."
+    },
+    "auction-live": {
+      "title": "STILL RUNNING",
+      "message": "This auction has not ended yet. It can be finished once the time is up."
+    },
+    "auction-has-bids": {
+      "title": "ALREADY BID ON",
+      "message": "Someone has bid, so the auction runs to its end."
     }
   },
   "actions": {
@@ -498,6 +784,265 @@
     "sound": "Sound",
     "soundOn": "Turn sound off",
     "soundOff": "Turn sound on",
-    "selectCitizen": "Select {name}"
+    "selectCitizen": "Select {name}",
+    "mintCitizen": "Mint a new citizen",
+    "openProfile": "Open the profile of {name}"
+  },
+  "mint": {
+    "title": "Mint",
+    "subtitle": "One draw, one NFT",
+    "stageTab": "NEW CITIZEN",
+    "mystery": "MYSTERY CITIZEN",
+    "speech": "You cannot choose who you get. The mint draws one, and its role stays with the NFT for good.",
+    "speechConnect": "Connect a wallet to mint. Connecting costs nothing, and you see the price before anything is signed.",
+    "ctaConnect": "CONNECT WALLET TO MINT",
+    "notConnected": "Not connected",
+    "speechAfter": "Welcome to the district. Earn your first credit in Missions, then train.",
+    "minting": "REGISTERING A NEW CITIZEN...",
+    "cta": "MINT A CITIZEN · {price}",
+    "ctaAgain": "MINT ANOTHER · {price}",
+    "soldOut": "SOLD OUT",
+    "soldOutNote": "Every citizen of this sale has been minted.",
+    "registered": "Citizen {code} is now registered in the district.",
+    "startsAt": "{role} · starts at Tier 0",
+    "firstMission": "FIRST MISSION",
+    "city": "SEE THE CITY",
+    "howTab": "HOW MINTING WORKS",
+    "how": [
+      {
+        "title": "The mint draws for you",
+        "text": "There is no list to pick from. The draw is random."
+      },
+      {
+        "title": "It is registered at once",
+        "text": "The mint and the citizen record are one transaction, with the starting scores of its role."
+      },
+      {
+        "title": "Missions earn, {symbol} trains",
+        "text": "A mission gives a credit. Using it burns {symbol} and raises one stat."
+      }
+    ],
+    "receiptTab": "THE MINT",
+    "price": "Price",
+    "minted": "Citizens minted",
+    "mintedValue": "{minted} of {max}",
+    "balance": "Your SOL",
+    "after": "SOL after the mint",
+    "mockNote": "Mock mode: nothing is signed or paid. With a wallet, minting and registering the citizen is one transaction.",
+    "chainNote": "Your wallet signs one transaction: the Candy Machine mint and the citizen record together. If either part fails, nothing is minted and nothing is paid.",
+    "registeredTab": "YOU MINTED",
+    "getRole": "Role",
+    "getRoleValue": "One of seven, fixed",
+    "getStart": "Starts at",
+    "getStartValue": "Tier 0",
+    "getScores": "Scores",
+    "getScoresValue": "From its role",
+    "limitNote": "You have reached the citizen limit for this wallet.",
+    "limitReached": "LIMIT REACHED",
+    "yourMints": "Your mints",
+    "yourMintsValue": "{used} of {limit}"
+  },
+  "token": {
+    "tab": "GET {symbol}",
+    "text": "{symbol} is the official token, launched on Pump.fun. Buy it with your wallet, then burn it to train.",
+    "testText": "{symbol} is the official token, launched on Pump.fun. On devnet it is a test token; the real one is bought on Pump.fun.",
+    "safe": "Training burns it straight from your wallet. Never send it to anyone for training.",
+    "buy": "BUY ON PUMP.FUN"
+  },
+  "noCitizen": {
+    "cta": "MINT A CITIZEN"
+  },
+  "welcome": {
+    "title": "WELCOME TO THE DISTRICT",
+    "intro": "You play with a citizen of your own. This is the short way in.",
+    "introConnect": "Connect a wallet, then mint a citizen to start playing.",
+    "introMint": "Mint a citizen to start playing. Missions and training follow from there.",
+    "steps": [
+      {
+        "title": "Connect your wallet",
+        "text": "Any Solana wallet works. Connecting costs nothing."
+      },
+      {
+        "title": "Mint your citizen",
+        "text": "{price} draws one citizen at Tier 0. Its role stays with it for good."
+      },
+      {
+        "title": "Take a mission",
+        "text": "Missions are free. Each one earns a training credit."
+      },
+      {
+        "title": "Train with {symbol}",
+        "text": "A credit and {symbol} raise one stat, up to Tier 3."
+      }
+    ],
+    "connectCta": "CONNECT WALLET",
+    "mintCta": "MINT A CITIZEN · {price}",
+    "browse": "Just looking? See the season board"
+  },
+  "market": {
+    "title": "Market",
+    "subtitle": "Buy and sell citizens",
+    "countOne": "1 citizen for sale",
+    "countMany": "{count} citizens for sale",
+    "countNone": "Nothing for sale right now",
+    "listingsTab": "FOR SALE",
+    "filterRole": "Role",
+    "allRoles": "All roles",
+    "sortLabel": "Sort by",
+    "sorts": {
+      "newest": "Newest",
+      "priceLow": "Price: low to high",
+      "priceHigh": "Price: high to low",
+      "strongest": "Highest stat"
+    },
+    "emptyFilter": "No citizen for sale matches this role.",
+    "emptyAll": "Nothing is for sale right now. Citizens appear here when their owners list them.",
+    "seller": "Seller {seller}",
+    "listedDay": "Listed on day {day}",
+    "price": "Price",
+    "buy": "BUY",
+    "yours": "YOUR LISTING",
+    "manage": "MANAGE",
+    "viewProfile": "Profile",
+    "closedTitle": "MARKET NOT OPEN",
+    "closedText": "The market is not open on this network right now. Until it opens, citizens cannot be listed or bought here.",
+    "howTab": "HOW SALES WORK",
+    "how": [
+      {
+        "title": "A sale is one step",
+        "text": "Payment and transfer happen in one transaction. Both go through, or neither does."
+      },
+      {
+        "title": "The citizen moves with its record",
+        "text": "Scores, credits and public history go to the buyer. Private chat memory does not, so the citizen starts fresh with its new owner."
+      },
+      {
+        "title": "The royalty is part of the price",
+        "text": "{percent} of each sale goes to the creators of the collection. The seller keeps the rest."
+      },
+      {
+        "title": "Or let them bid",
+        "text": "An auction runs for one to three days and the highest bid wins. Anyone who is outbid gets their SOL back at once."
+      }
+    ],
+    "yourTab": "YOUR CITIZENS",
+    "yourNone": "You do not own a citizen to sell yet.",
+    "yourSol": "Your SOL",
+    "notListed": "Not for sale",
+    "listedFor": "For sale · {price}",
+    "sell": "SELL",
+    "buyTitle": "BUY {name}",
+    "sellTitle": "SELL {name}",
+    "manageTitle": "YOUR LISTING · {name}",
+    "rowPrice": "Price",
+    "rowYourSol": "Your SOL",
+    "rowAfter": "SOL after buying",
+    "rowRoyalty": "Creator royalty ({percent})",
+    "rowReceive": "You receive",
+    "priceLabel": "Asking price in SOL",
+    "pricePlaceholder": "0.50",
+    "priceInvalid": "Enter a price in SOL, for example 0.5.",
+    "priceLow": "The lowest price is {min}.",
+    "priceHigh": "The highest price is {max}.",
+    "notEnough": "Your wallet does not hold enough SOL for this price.",
+    "confirmBuy": "CONFIRM PURCHASE",
+    "confirmSell": "LIST FOR SALE",
+    "updatePrice": "UPDATE PRICE",
+    "cancelListing": "CANCEL LISTING",
+    "back": "CLOSE",
+    "working": "WORKING...",
+    "mockNote": "Mock mode: nothing is signed or paid.",
+    "buyNoteOne": "Payment and transfer happen in one transaction: both go through, or neither does.",
+    "buyNoteRecord": "Scores, credits and public history come with the citizen. Private chat memory does not.",
+    "sellNoteStay": "The citizen stays in your wallet while it is listed. You can still chat, train and take missions with it.",
+    "sellNoteSale": "When someone buys it, the citizen moves to them with its scores, credits and public history. Your private chat memory stays with you.",
+    "boughtTitle": "CITIZEN BOUGHT",
+    "boughtMessage": "{name} is now yours. Its scores and public history came with it.",
+    "listedTitle": "LISTED",
+    "listedMessage": "{name} is for sale at {price}. It stays with you until someone buys it.",
+    "updatedTitle": "PRICE UPDATED",
+    "updatedMessage": "{name} is now listed at {price}.",
+    "cancelledTitle": "LISTING CANCELLED",
+    "cancelledMessage": "{name} is no longer for sale.",
+    "soldTitle": "SOLD",
+    "soldMessage": "{name} was bought for {price}. {amount} reached your wallet after the royalty.",
+    "previewSale": "PREVIEW: LET A BUYER TAKE IT",
+    "previewSaleHint": "Preview only. It shows what a sale leaves behind.",
+    "profileForSale": "For sale · {price}",
+    "profileBuy": "BUY FOR {price}",
+    "subtitleBoth": "{sale} for sale · {auction} at auction",
+    "auctionsTab": "AUCTIONS",
+    "emptyAuctions": "No citizen is up for auction right now. Owners start auctions from their own citizens.",
+    "currentBid": "Current bid",
+    "startingBid": "Starting bid",
+    "bidsNone": "No bids yet",
+    "bidsOne": "1 bid",
+    "bidsMany": "{count} bids",
+    "endsIn": "Ends in {time}",
+    "ended": "Ended",
+    "youLead": "YOU LEAD",
+    "yourAuction": "YOUR AUCTION",
+    "stopped": "Stopped by the seller",
+    "bid": "BID",
+    "finish": "FINISH AUCTION",
+    "inAuction": "At auction · {price}",
+    "inAuctionFrom": "At auction from {price}",
+    "profileAuction": "At auction · {price} · {time}",
+    "profileAuctionEnded": "Auction ended · {price}",
+    "profileBid": "BID FROM {price}",
+    "modeFixed": "FIXED PRICE",
+    "modeAuction": "AUCTION",
+    "startPriceLabel": "Starting bid in SOL",
+    "durationLabel": "Runs for",
+    "rowAtStart": "If it sells at the starting bid",
+    "auctionNoteFrozen": "The citizen stays in your wallet but is frozen until the auction is finished: it cannot be listed, sent or sold anywhere else. You can still chat, train and take missions with it.",
+    "auctionNoteCancel": "You can cancel only until the first bid. After that the auction runs to its end and the highest bid wins.",
+    "auctionNoteLate": "A bid in the last {window} adds {window}, so others get the chance to answer it.",
+    "testClockNote": "Test clock: on this network one auction hour lasts {hour}, so auctions end in minutes.",
+    "confirmAuction": "START AUCTION",
+    "auctionTitle": "AUCTION · {name}",
+    "rowBids": "Bids",
+    "rowEnds": "Ends",
+    "rowMinBid": "Lowest bid now",
+    "rowAfterBid": "SOL after bidding",
+    "bidLabel": "Your bid in SOL",
+    "bidLow": "The lowest bid now is {min}.",
+    "bidNoteHeld": "Your bid is held by the market. If someone bids more, it comes back to your wallet in the same moment.",
+    "bidNoteWin": "When the auction ends, anyone can finish it: the citizen moves to the highest bidder and the seller is paid, less the {percent} royalty.",
+    "confirmBid": "PLACE BID",
+    "cancelAuction": "CANCEL AUCTION",
+    "leadNote": "You hold the highest bid.",
+    "mineNoBids": "Nobody has bid yet. You can still cancel the auction.",
+    "mineBids": "Someone has bid, so the auction runs to its end.",
+    "finishNote": "This auction has ended. Finishing it moves the citizen to the highest bidder and pays the seller. Anyone can do it.",
+    "stoppedNote": "The seller took back the market's right to move this citizen, so it cannot be delivered. Finishing the auction pays the highest bid back in full.",
+    "previewBid": "PREVIEW: ANOTHER PLAYER BIDS",
+    "previewEnd": "PREVIEW: SKIP TO THE END",
+    "auctionStartedTitle": "AUCTION OPEN",
+    "auctionStartedMessage": "{name} is up for auction from {price} for {time}. It stays with you, frozen, until the auction is finished.",
+    "bidPlacedTitle": "BID PLACED",
+    "bidPlacedMessage": "You lead the auction for {name} at {price}. If someone bids more, your SOL comes back at once.",
+    "historyTab": "BID HISTORY",
+    "historyNone": "No bids yet. Every bid on an auction shows up here, with who placed it and when.",
+    "historyNoneFilter": "No bids on the auctions of this role yet.",
+    "historyYou": "You",
+    "historyLeading": "LEADING",
+    "historyOutbid": "OUTBID",
+    "historyOlder": "{count} older bids are not shown.",
+    "auctionCancelledTitle": "AUCTION CANCELLED",
+    "auctionCancelledMessage": "{name} is no longer up for auction and can move freely again.",
+    "wonTitle": "AUCTION WON",
+    "wonMessage": "{name} is now yours for {price}. Its scores and public history came with it.",
+    "noBidTitle": "AUCTION ENDED",
+    "noBidMessage": "Nobody bid on {name}, so it stays with its owner and can move freely again.",
+    "finishedTitle": "AUCTION FINISHED",
+    "finishedMessage": "{name} went to the highest bidder for {price}.",
+    "refundedTitle": "AUCTION STOPPED",
+    "refundedMessage": "{name} could not be delivered, so the highest bid went back to its bidder in full.",
+    "noticeTitle": "WHILE YOU WERE AWAY",
+    "noticeSold": "{name} was sold for {price}. {amount} reached your wallet after the royalty.",
+    "noticeWon": "You won {name} at auction for {price}.",
+    "noticeOutbid": "Someone outbid you on {name}. Your {amount} is back in your wallet.",
+    "noticeMore": "And {count} more."
   }
 }

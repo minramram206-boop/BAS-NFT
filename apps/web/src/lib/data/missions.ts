@@ -17,6 +17,11 @@ export const DAILY_MISSION_CREDITS = 3;
 export const MISSION_POINTS = 100;
 export const EVENT_TASK_POINTS = 150;
 
+/** Season points a finished mission pays. */
+export function missionPoints(mission: Pick<MissionDefinition, 'event'>): number {
+  return mission.event ? EVENT_TASK_POINTS : MISSION_POINTS;
+}
+
 function missionsOn(history: readonly HistoryEntry[] | undefined, day: number) {
   return (history ?? []).filter(
     (entry): entry is Extract<HistoryEntry, { kind: 'mission' }> => entry.kind === 'mission' && entry.day === day,

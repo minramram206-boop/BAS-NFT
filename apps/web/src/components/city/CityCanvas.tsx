@@ -79,7 +79,8 @@ export const CityCanvas: React.FC<CityCanvasProps> = ({ onActivity }) => {
         const current = api.getState();
         const playing = currentStepOf(current, current.selectedCitizenId);
         if (playing && missionTarget(current.selectedCitizenId, playing)?.key === key) {
-          void current.advanceMission(playing.mission);
+          current.markMissionArrival(`${playing.mission.id}:${playing.index + 1}`);
+          void current.advanceMission(playing.mission, { kind: 'goto' });
         }
       },
     });
@@ -108,6 +109,7 @@ export const CityCanvas: React.FC<CityCanvasProps> = ({ onActivity }) => {
       }
       if (state.zoomRequest.id !== previous.zoomRequest.id) game.zoomBy(state.zoomRequest.step);
       if (state.focusRequest !== previous.focusRequest) game.focusSelected();
+      if (state.walkRequest !== previous.walkRequest) game.walkToTarget();
     });
 
     return () => {

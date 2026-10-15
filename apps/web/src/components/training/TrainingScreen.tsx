@@ -4,9 +4,14 @@ import Link from 'next/link';
 import React, { useEffect, useRef, useState } from 'react';
 import type { CitizenRecord, StatKey } from '@bas/content';
 import { trainingCostAtoms } from '@bas/chain-client/stats';
-import { CitizenSwitcher } from '@/components/citizen/CitizenSwitcher';
+import { PlayerStrip } from '@/components/citizen/PlayerStrip';
+import { NoCitizenPanel } from '@/components/mint/NoCitizenPanel';
+import { GetTokenPanel } from '@/components/token/GetTokenPanel';
 import { ScreenShell } from '@/components/layout/ScreenShell';
+import { PanelTab } from '@/components/ui/PanelTab';
+import { ReceiptRow } from '@/components/ui/ReceiptRow';
 import { PixelIcon } from '@/components/ui/PixelIcon';
+import { Ribbon } from '@/components/ui/Ribbon';
 import { StatBar } from '@/components/ui/StatBar';
 import { MAX_STAT_SCORE, STAT_COLORS, STAT_ORDER, TIER_SCORES } from '@/config/constants';
 import type { StatCredits } from '@/lib/data/types';
@@ -16,8 +21,13 @@ import { MESSAGES, formatMessage } from '@/messages';
 import {
   useBusy,
   useCredits,
+  useDataMode,
+  useFocus,
+  useFoundingIds,
   useIsOwned,
+  useOwnedIds,
   useSelectedCitizen,
+  useSetFocus,
   useTrainStat,
   useTrainingConfig,
   useWallet,
@@ -43,44 +53,53 @@ function creditLine(count: number, tier: number): string {
   return formatMessage(count === 1 ? copy.cardCredit : copy.cardCredits, { count, tier });
 }
 
-const ReceiptRow: React.FC<{ label: string; value: string; strong?: boolean }> = ({ label, value, strong }) => (
-  <div className="flex items-baseline justify-between gap-3 border-b border-dashed border-[#9fb3c6] py-1.5 last:border-0">
-    <span className="text-[15px] text-[#33485c]">{label}</span>
-    <span className={cn('text-right text-[15px]', strong ? 'font-heading text-[15px]' : 'font-semibold')}>{value}</span>
-  </div>
-);
-
 /** `upgrade_score` as a screen: one credit plus a token burn raises one stat by 1. */
 export const TrainingScreen: React.FC = () => {
   const citizen = useSelectedCitizen();
   const id = citizen?.id ?? -1;
   const owned = useIsOwned(id);
+  const ownedIds = useOwnedIds();
   const credits = useCredits(id);
   const wallet = useWallet();
   const { baseTrainingCostAtoms, tokenDecimals, tokenSymbol } = useTrainingConfig();
   const train = useTrainStat();
   const busy = useBusy();
+  const mode = useDataMode();
   const ctaRef = useRef<HTMLButtonElement | null>(null);
+  const founding = useFoundingIds();
+  const focus = useFocus();
+  const setFocus = useSetFocus();
   const [stat, setStat] = useState<StatKey>('intelligence');
 
   useEffect(() => {
-    if (citizen) setStat(firstTrainable(citizen, credits));
+    if (!citizen) return;
+    // A next-step button may have picked the stat to train; read it once.
+    setStat(focus.training ?? firstTrainable(citizen, credits));
+    if (focus.training) setFocus({ training: null });
     // Only a new citizen resets the choice; training keeps the stat picked.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const tokens = (atoms: bigint) => `${formatTokens(atoms, tokenDecimals)} ${tokenSymbol}`;
 
-  if (!citizen) return null;
-
   const subtitle = formatMessage(copy.subtitle, { symbol: tokenSymbol });
+
+  if (ownedIds.length === 0) {
+    return (
+      <ScreenShell title={copy.title} subtitle={subtitle}>
+        <NoCitizenPanel className="mx-auto my-auto max-w-[560px]" />
+      </ScreenShell>
+    );
+  }
+
+  if (!citizen) return null;
 
   if (!owned) {
     return (
       <ScreenShell title={copy.title} subtitle={subtitle}>
-        <div className="mx-auto flex max-w-xl flex-col gap-4">
-          <CitizenSwitcher label={MESSAGES.missions.playingAs} />
-          <section className="bas-panel flex flex-col items-center gap-3 p-5 text-center">
+        <div className="flex flex-1 flex-col gap-3 md:gap-4">
+          <PlayerStrip />
+          <section className="bas-panel flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
             <img src={citizen.sprite} alt="" width={96} height={96} className="h-24 w-24" />
             <p className="m-0 text-[17px] leading-snug">{formatMessage(copy.notYours, { name: citizen.name })}</p>
             <Link href={`/citizen/${citizen.id}`} className="bas-btn">
@@ -100,11 +119,15 @@ export const TrainingScreen: React.FC = () => {
   const toTier = tierForScore(score + 1);
   const label = statLabel(stat);
 
+  const needsCredit = credit < 1 && !maxed;
+
   const speech = maxed
     ? formatMessage(copy.speechMaxed, { stat: label })
-    : toTier > fromTier
-      ? formatMessage(copy.speechTier, { stat: label, tier: toTier })
-      : formatMessage(copy.speechReady, { stat: label, from: score, to: score + 1 });
+    : needsCredit
+      ? formatMessage(copy.speechNoCredit, { stat: label })
+      : toTier > fromTier
+        ? formatMessage(copy.speechTier, { stat: label, tier: toTier })
+        : formatMessage(copy.speechReady, { stat: label, from: score, to: score + 1 });
 
   const tierLine = maxed
     ? copy.maxed
@@ -116,145 +139,174 @@ export const TrainingScreen: React.FC = () => {
 
   return (
     <ScreenShell title={copy.title} subtitle={subtitle}>
-      <div className="mx-auto flex max-w-6xl flex-col gap-3 md:gap-4">
-        <CitizenSwitcher label={MESSAGES.missions.playingAs} />
-
-        <div className="grid gap-3 md:gap-4 lg:grid-cols-[minmax(0,1fr)_400px]">
-          <div className="flex min-w-0 flex-col gap-3 md:gap-4">
-            <section
-              className="bas-panel relative flex h-[220px] items-end justify-center overflow-hidden md:h-[300px]"
-              style={{
-                backgroundImage: "url('/images/district/courtyard_stage_bg.png')",
-                backgroundSize: 'cover',
-                backgroundPosition: 'center bottom',
-                imageRendering: 'pixelated',
-              }}
-            >
-              <div className="absolute left-3 right-3 top-3 md:left-auto md:right-6 md:top-6 md:max-w-[260px]">
-                <div className="bas-panel px-3 py-2 text-[15px] leading-snug">{speech}</div>
+      <div className="grid grid-cols-1 content-start gap-3 md:gap-4 lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_400px]">
+        <section aria-label={copy.title} className="bas-panel flex min-w-0 flex-col gap-3 p-3 md:gap-4 md:p-4">
+          <div className="grid gap-3 md:grid-cols-[304px_minmax(0,1fr)] md:gap-4">
+            {/* The portrait: the courtyard art at its own size, so the pixels stay sharp. */}
+            <div className="bas-panel flex flex-col items-center justify-center gap-3 p-3">
+              <div
+                className="relative aspect-[276/224] w-[276px] max-w-full overflow-hidden rounded-md border-2 border-[#1b2a38]"
+                style={{
+                  backgroundImage: "url('/images/district/courtyard_stage_bg.png')",
+                  backgroundSize: '100% 100%',
+                  imageRendering: 'pixelated',
+                }}
+              >
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_62%,transparent_50%,rgba(11,20,28,0.45)_100%)]"
+                />
+                <div className="absolute inset-x-0 bottom-[9%] flex justify-center">
+                  <div className="relative">
+                    <span
+                      aria-hidden
+                      className="absolute bottom-0 left-1/2 h-3 w-20 -translate-x-1/2 rounded-[50%] bg-[#0b141c]/40"
+                    />
+                    <img
+                      src={citizen.image}
+                      alt={citizen.name}
+                      width={130}
+                      height={130}
+                      className="citizen-hop relative h-[130px] w-[130px]"
+                    />
+                  </div>
+                </div>
               </div>
-              <img
-                src={citizen.image}
-                alt={citizen.name}
-                width={180}
-                height={180}
-                className="citizen-hop relative mb-3 h-[140px] w-[140px] md:mb-5 md:h-[180px] md:w-[180px]"
-              />
-              <div className="bas-plate absolute bottom-3 left-3 px-2 py-1">
-                {citizen.name.toUpperCase()} · {citizen.code}
-              </div>
-            </section>
+              <Ribbon>{citizen.name}</Ribbon>
+              <p className="m-0 text-center text-[14px] leading-tight text-[#22354a]">
+                {citizen.code}
+                {founding.includes(citizen.id) ? ` · ${MESSAGES.city.foundingCitizen}` : ''} · {citizen.role}
+              </p>
+            </div>
 
-            <div className="grid grid-cols-3 gap-2 md:gap-3">
-              {STAT_ORDER.map((key) => {
-                const value = citizen[key];
-                const active = key === stat;
-                const count = credits[key];
-                const atMax = value >= MAX_STAT_SCORE;
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => setStat(key)}
-                    className={cn(
-                      'bas-chip flex min-w-0 flex-col gap-2 rounded-lg p-2 text-left font-pixel sm:p-3',
-                      active ? 'border-[3px] border-[#f7d23d] bg-white outline outline-2 outline-[#1a2734]' : 'border-2 border-[#1b2a38] bg-[#e3ecf4]',
-                    )}
-                    style={active ? { backgroundColor: STAT_COLORS[key].soft } : undefined}
-                  >
-                    <span className="flex items-center justify-between">
-                      <span className="font-heading text-[13px]" style={{ color: STAT_COLORS[key].fill }}>
-                        {MESSAGES.stats[key].shortLabel}
+            <div role="group" aria-label={copy.pick} className="bas-panel flex min-w-0 flex-col gap-3 p-3">
+              <PanelTab>{copy.pick}</PanelTab>
+              <div className="flex flex-1 flex-col gap-2">
+                {STAT_ORDER.map((key) => {
+                  const value = citizen[key];
+                  const active = key === stat;
+                  const count = credits[key];
+                  const atMax = value >= MAX_STAT_SCORE;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => setStat(key)}
+                      className={cn(
+                        'bas-chip grid flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 rounded-lg px-3 py-2.5 text-left font-pixel xl:py-4 sm:grid-cols-[112px_minmax(0,1fr)_auto]',
+                        active ? 'border-[3px] border-[#f7d23d] bg-white outline outline-2 outline-[#1a2734]' : 'border-2 border-[#1b2a38] bg-[#e3ecf4]',
+                      )}
+                      style={active ? { backgroundColor: STAT_COLORS[key].soft } : undefined}
+                    >
+                      <span className="flex min-w-0 flex-col gap-0.5">
+                        <span className="font-heading text-[13px]" style={{ color: STAT_COLORS[key].fill }}>
+                          {MESSAGES.stats[key].shortLabel}
+                        </span>
+                        <span className={cn('text-[13px] leading-tight', count === 0 ? 'text-[#a3432f]' : 'text-[#33485c]')}>
+                          {creditLine(count, tierForScore(value))}
+                        </span>
                       </span>
-                      <span className="font-heading text-xl">{value}</span>
-                    </span>
-                    <StatBar stat={key} value={value} size="lg" className="mb-1.5" />
-                    <span className="hidden text-[15px] font-semibold sm:block">
-                      {atMax
-                        ? copy.maxed
-                        : formatMessage(copy.cardLine, {
-                            from: value,
-                            to: value + 1,
-                            cost: formatTokens(trainingCostAtoms(baseTrainingCostAtoms, value), tokenDecimals),
-                            symbol: tokenSymbol,
-                          })}
-                    </span>
-                    <span className={cn('text-[13px] leading-tight sm:text-[13px]', count === 0 ? 'text-[#a3432f]' : 'text-[#33485c]')}>
-                      {creditLine(count, tierForScore(value))}
-                    </span>
-                  </button>
-                );
-              })}
+                      <StatBar stat={key} value={value} size="lg" className="order-3 col-span-2 sm:order-none sm:col-span-1" />
+                      <span className="flex flex-col items-end gap-0.5">
+                        <span className="font-heading text-3xl leading-none">{value}</span>
+                        <span className="whitespace-nowrap text-[13px] font-semibold text-[#33485c]">
+                          {atMax
+                            ? copy.maxed
+                            : `${value + 1} · ${formatTokens(trainingCostAtoms(baseTrainingCostAtoms, value), tokenDecimals)} ${tokenSymbol}`}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-3 rounded-md border-2 border-dashed border-[#5b6b7a] bg-[#d3dde6] px-3 py-2">
+                <PixelIcon src="/icons/icon_upgrade_arrow.png" className="h-7 shrink-0" />
+                <p className="m-0 text-[15px] leading-snug text-[#22354a]">{tierLine}</p>
+              </div>
             </div>
           </div>
 
-          <div className="flex flex-col gap-3 md:gap-4">
-            <section className="bas-panel flex flex-col gap-2 p-3 md:p-4">
-              <div className="flex items-center gap-2">
-                <PixelIcon src="/icons/icon_upgrade_arrow.png" className="h-7" />
-                <span className="font-heading text-[17px]">
-                  {maxed ? copy.maxed : formatMessage(copy.head, { stat: label.toUpperCase(), from: score, to: score + 1 })}
-                </span>
-              </div>
-              <p className="m-0 text-[15px] text-[#2b3d4f]">{tierLine}</p>
-              <div className="bas-inset mt-1 px-3 py-1">
-                <ReceiptRow label={copy.cost} value={maxed ? '—' : tokens(cost)} strong />
-                <ReceiptRow label={copy.rule} value={copy.ruleValue} />
-                <ReceiptRow
-                  label={copy.creditUsed}
-                  value={formatMessage(copy.creditValue, { stat: label, before: credit, after: Math.max(credit - 1, 0) })}
-                />
-                <ReceiptRow label={copy.walletAfter} value={maxed ? '—' : tokens(wallet.tokenAtoms - cost)} />
-                <ReceiptRow label={copy.where} value={copy.burned} />
-              </div>
-              {credit < 1 && !maxed && (
-                <p className="m-0 text-[15px] text-[#a3432f]">
-                  {formatMessage(copy.noCreditHint, { stat: label })} ·{' '}
-                  <Link href="/missions" className="font-semibold text-[#1a2734]">
-                    {MESSAGES.nav.missions}
-                  </Link>
-                </p>
-              )}
+          <div className="bas-inset relative px-4 py-3 text-[16px] leading-snug">
+            <span
+              aria-hidden
+              className="absolute -top-[7px] left-24 hidden h-3 w-3 rotate-45 border-l-2 border-t-2 border-[#1b2a38] bg-[#f2f6fa] md:block"
+            />
+            {speech}
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+            {needsCredit ? (
+              <Link href="/missions" className="bas-btn bas-btn-primary min-h-12 text-[14px]">
+                {copy.earnCta}
+              </Link>
+            ) : (
               <button
                 ref={ctaRef}
                 type="button"
                 disabled={disabled}
                 onClick={() => void train(stat, ctaRef.current)}
-                className="bas-btn bas-btn-primary mt-1 min-h-12 text-[14px]"
+                className="bas-btn bas-btn-primary min-h-12 text-[14px]"
               >
                 {formatMessage(copy.cta, { cost: formatTokens(cost, tokenDecimals), symbol: tokenSymbol })}
               </button>
-              <p className="m-0 text-[13px] leading-snug text-[#33485c]">{copy.mockNote}</p>
-            </section>
-
-            <section className="bas-panel flex flex-col gap-2 p-3 md:p-4">
-              <span className="bas-label">{copy.ladder}</span>
-              <div className="flex h-28 items-end gap-1" aria-hidden>
-                {Array.from({ length: MAX_STAT_SCORE }, (_, index) => {
-                  const level = index + 1;
-                  const reached = level <= score;
-                  const next = level === score + 1;
-                  return (
-                    <div key={level} className="flex h-full flex-1 flex-col items-center gap-1">
-                      <div className="flex w-full flex-1 items-end">
-                        <div
-                          className={cn('w-full border border-[#1b2a38]', next && 'outline outline-2 outline-[#f7d23d]')}
-                          style={{
-                            height: `${level * 10}%`,
-                            backgroundColor: reached ? STAT_COLORS[stat].fill : next ? STAT_COLORS[stat].light : '#c3d0dc',
-                          }}
-                        />
-                      </div>
-                      <span className="font-heading text-[11px]">{level}</span>
-                    </div>
-                  );
-                })}
-              </div>
-              <p className="m-0 text-[13px] text-[#33485c]">{copy.ladderNote}</p>
-            </section>
+            )}
+            <Link href="/" className="bas-btn min-h-12 text-[14px] sm:px-6">
+              {MESSAGES.app.back}
+            </Link>
           </div>
-        </div>
+
+          <PlayerStrip flat />
+        </section>
+
+        <aside className="flex min-w-0 flex-col gap-3 md:gap-4">
+          <section className="bas-panel flex flex-col gap-3 p-3 md:p-4 lg:flex-1">
+            <PanelTab icon="/icons/icon_upgrade_arrow.png">
+              {maxed ? copy.maxed : formatMessage(copy.head, { stat: label, from: score, to: score + 1 })}
+            </PanelTab>
+            <div className="bas-inset flex flex-col px-3 py-1 lg:flex-1">
+              <ReceiptRow label={copy.cost} value={maxed ? '—' : tokens(cost)} strong />
+              <ReceiptRow label={copy.rule} value={copy.ruleValue} />
+              <ReceiptRow
+                label={copy.creditUsed}
+                value={
+                  credit < 1 ? copy.creditNone : formatMessage(copy.creditValue, { stat: label, before: credit, after: credit - 1 })
+                }
+              />
+              <ReceiptRow label={copy.walletAfter} value={maxed ? '—' : tokens(wallet.tokenAtoms - cost)} />
+              <ReceiptRow label={copy.where} value={copy.burned} />
+            </div>
+            <p className="m-0 text-[13px] leading-snug text-[#33485c]">{mode === 'chain' ? copy.chainNote : copy.mockNote}</p>
+          </section>
+
+          <section className="bas-panel flex flex-col gap-3 p-3 md:p-4">
+            <PanelTab>{copy.ladder}</PanelTab>
+            <p className="m-0 text-[13px] leading-snug text-[#33485c]">{copy.ladderNote}</p>
+            <div className="flex h-24 items-end gap-1.5 md:h-28" aria-hidden>
+              {Array.from({ length: MAX_STAT_SCORE }, (_, index) => {
+                const level = index + 1;
+                const reached = level <= score;
+                const next = level === score + 1;
+                return (
+                  <div key={level} className="flex h-full flex-1 flex-col items-center gap-1">
+                    <div className="flex w-full flex-1 items-end">
+                      <div
+                        className={cn('w-full border border-[#1b2a38]', next && 'outline outline-2 outline-[#f7d23d]')}
+                        style={{
+                          height: `${level * 10}%`,
+                          backgroundColor: reached ? STAT_COLORS[stat].fill : next ? STAT_COLORS[stat].light : '#c3d0dc',
+                        }}
+                      />
+                    </div>
+                    <span className="font-heading text-[11px]">{level}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          <GetTokenPanel />
+        </aside>
       </div>
     </ScreenShell>
   );

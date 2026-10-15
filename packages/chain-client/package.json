@@ -14,6 +14,10 @@
     "./stats": {
       "types": "./dist/stats.d.ts",
       "default": "./dist/stats.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "default": "./dist/browser.js"
     }
   },
   "files": [
@@ -28,7 +32,8 @@
     "test": "pnpm build && node --experimental-strip-types --conditions=react-server --test --test-reporter=spec \"test/*.test.ts\""
   },
   "dependencies": {
-    "@bas/config": "workspace:*"
+    "@bas/config": "workspace:*",
+    "@solana/kit": "8.5.0"
   },
   "devDependencies": {
     "@bas/content": "workspace:*",

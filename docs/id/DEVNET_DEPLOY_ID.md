@@ -100,9 +100,44 @@ Script ini mengerjakan semua langkah berikut sekaligus, dan menulis alamat-alama
 
 Kalau ada langkah yang gagal, perbaiki penyebabnya lalu jalankan `pnpm devnet:setup` lagi. Langkah yang sudah selesai akan dilewati.
 
+## 6. Penjualan publik: Candy Machine (PowerShell Windows)
+
+Dijalankan setelah langkah 5 selesai, dari folder proyek yang sama. Jalankan `pnpm install` dulu bila paket baru `@bas/metaplex-client` belum terpasang.
+
+```powershell
+pnpm metadata            # hanya bila folder apps/web/public/templates/7 belum ada
+pnpm devnet:mint-setup
+pnpm devnet:mint-simulate
+```
+
+`pnpm devnet:mint-setup` mengerjakan, dan melewati yang sudah selesai:
+
+1. Membuat kunci **mint signer** di `.keys/devnet-mint-signer.json` (kunci `thirdPartySigner` Candy Guard) dan mengisi `royaltyRecipient` dengan wallet deployer.
+2. Menambahkan plugin **Royalties** 5% (500 bps) ke koleksi.
+3. Membuat **Core Candy Machine** dan Candy Guard: 0,01 SOL ke treasury, satu mint per wallet, tanda tangan mint signer.
+4. Mengisi item dari roster (`content/en/citizens.json`), 10 baris per transaksi.
+
+Alamat mesin dan guard ditulis ke `config/devnet.json`. Penjualan devnet hanya berisi citizen roster (10 citizen), bukan 100, karena art untuk 100 citizen belum ada; halaman Mint membaca jumlah sebenarnya dari mesin.
+
+`pnpm devnet:mint-simulate` meminta devnet mensimulasikan satu mint tanpa menandatangani dan tanpa biaya. Ia mencetak log program, ukuran transaksi, dan compute unit yang terpakai. **Jalankan ini sebelum mint pertama dan kirim hasilnya ke Claude**: kode mint belum pernah berjalan terhadap program Candy Machine di cluster, jadi inilah ujian pertamanya. Wallet yang dipakai (secara bawaan deployer) perlu sedikit lebih dari 0,01 SOL.
+
+Untuk mencoba mint dari web, jalankan mission server dengan kunci mint signer, lalu web dalam mode chain:
+
+```powershell
+$env:BAS_NETWORK = "devnet"
+$env:MISSION_AUTHORITY_KEYPAIR_FILE = ".keys\devnet-mission-authority.json"
+$env:MINT_SIGNER_KEYPAIR_FILE = ".keys\devnet-mint-signer.json"
+$env:MISSION_TOKEN_SECRET = (node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
+$env:SEASON_STARTS_AT = "1791000000"
+pnpm --filter @bas/mission-server start
+# terminal lain
+$env:NEXT_PUBLIC_BAS_DATA = "chain"
+pnpm dev
+```
+
 ## Setelah selesai
 
 - Kirim isi `config/devnet.json` ke Claude, atau cukup bilang "setup devnet selesai". File ini hanya berisi alamat publik, tidak ada kunci rahasia.
 - Jangan kirim isi folder `.keys/` ke siapa pun.
-- Yang masih placeholder sampai langkah mint NFT: `candyMachine`, `candyGuard` dan `royaltyRecipient`.
+- Yang masih placeholder sampai langkah 6: `candyMachine`, `candyGuard`, `royaltyRecipient` dan `mintSigner`.
 - Metadata NFT devnet akan disajikan dari `https://bas-district-devnet.vercel.app/templates/7/`. Prefix ini dikunci di program saat `initialize_config`, jadi web app devnet nanti harus di-deploy dengan nama proyek Vercel itu. Kalau nama itu ternyata tidak bisa dipakai, program devnet cukup di-deploy ulang dengan program id baru, karena di devnet biayanya hanya SOL gratis.

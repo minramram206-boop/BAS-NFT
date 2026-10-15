@@ -1,6 +1,6 @@
 import { loadRepoJson } from './repo-json.js';
 import { NETWORK_CONFIG_FILES, parseNetworkConfig } from './network.js';
-import { resolveNetwork } from './env.js';
+import { readRpcOverride, resolveNetwork } from './env.js';
 import type { DistrictNetworkConfig, NetworkConfigFile, SupportedNetwork } from './types.js';
 
 export type { DistrictNetworkConfig, SupportedNetwork };
@@ -14,7 +14,7 @@ export {
 } from './readiness.js';
 export { isWellFormedPublicKey } from './pubkey.js';
 export { MAX_TEMPLATE_URI_PREFIX_LENGTH, isValidTemplateUriPrefix } from './template-uri.js';
-export { DEFAULT_NETWORK, NETWORK_ENV_VAR, resolveNetwork } from './env.js';
+export { DEFAULT_NETWORK, NETWORK_ENV_VAR, RPC_ENV_VAR, readRpcOverride, resolveNetwork } from './env.js';
 export { findRepoRoot, loadRepoJson } from './repo-json.js';
 
 function loadConfig(network: SupportedNetwork): DistrictNetworkConfig {
@@ -30,10 +30,14 @@ export const MAINNET_CONFIG: DistrictNetworkConfig = loadConfig('mainnet-beta');
 
 /**
  * Return the configuration of one cluster, defaulting to the cluster selected
- * by `NEXT_PUBLIC_SOLANA_NETWORK` and falling back to devnet.
+ * by `NEXT_PUBLIC_SOLANA_NETWORK` and falling back to devnet. Only the RPC
+ * endpoint can be replaced from the environment (`NEXT_PUBLIC_SOLANA_RPC_URL`).
  */
 export function getNetworkConfig(
   network: string | null | undefined = undefined,
 ): DistrictNetworkConfig {
-  return resolveNetwork(network) === 'mainnet-beta' ? MAINNET_CONFIG : DEVNET_CONFIG;
+  const cluster = resolveNetwork(network);
+  const config = cluster === 'mainnet-beta' ? MAINNET_CONFIG : DEVNET_CONFIG;
+  const rpcUrl = readRpcOverride(cluster);
+  return rpcUrl ? { ...config, rpcUrl } : config;
 }

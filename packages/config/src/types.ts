@@ -22,6 +22,18 @@ export interface DistrictNetworkConfig {
   rpcUrl: string;
   /** Anchor district program id (`districtProgramId` in SPEC §4.3). */
   districtProgramId: string;
+  /**
+   * Fixed-price market program (`programs/market`, docs/MARKET.md). Only on
+   * devnet until an external audit; a cluster without it has no market.
+   */
+  marketProgramId?: string;
+  /**
+   * `devnet-fast` when the deployed market was built with its `devnet-clock`
+   * feature: auctions run in minutes instead of days, so they can be tested to
+   * the end. Absent means the real clock. Never allowed on mainnet, and
+   * `scripts/devnet/deploy.sh` refuses a binary that disagrees with it.
+   */
+  auctionClock?: 'devnet-fast';
   /** Official Metaplex Core collection (`coreCollection` in SPEC §4.3). */
   coreCollection: string;
   /** Metaplex Core Candy Machine address. */
@@ -36,6 +48,13 @@ export interface DistrictNetworkConfig {
   royaltyRecipient: string;
   /** Authority key allowed to approve mission claims. */
   missionAuthority: string;
+  /**
+   * Backend key named by the Candy Guard `thirdPartySigner` guard. The mission
+   * server co-signs a mint only after it checked the sale state, so the public
+   * mint cannot be sent straight to the Candy Machine around the app.
+   * It signs mints and nothing else: it holds no authority over the program.
+   */
+  mintSigner: string;
   /** Maximum citizen score (SPEC §7: 10). */
   maxScore: number;
   /** Base training cost, in token atoms. See formula in SPEC §5.3. */
@@ -57,6 +76,12 @@ export interface DistrictNetworkConfig {
    * guard and paid to `solTreasury` (D-0024). `10000000` is 0.01 SOL.
    */
   mintPriceLamports: string;
+  /**
+   * How many citizens one wallet can mint in the public sale, enforced by the
+   * Candy Guard `mintLimit` guard (D-0055). The collection is small and its
+   * roles are scarce, so a wallet cannot hold a whole role from the sale.
+   */
+  mintLimitPerWallet: number;
 }
 
 export type SupportedNetwork = 'devnet' | 'mainnet-beta';

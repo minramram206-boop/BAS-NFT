@@ -203,7 +203,7 @@ async fn rejects_an_unapproved_metadata_uri() {
     );
     expect_error(
         try_register(&mut context, &harness, asset, &harness.holder).await,
-        DistrictError::InvalidAssetState,
+        DistrictError::InvalidMetadataUri,
     );
     assert!(!account_exists(&mut context, harness.citizen_pda(&asset)).await);
 }

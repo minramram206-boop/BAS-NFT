@@ -91,16 +91,18 @@ copyright notices and OFL license texts are served from
 
 ```text
 apps/web            Next.js 15 App Router application
+apps/mission-server mission rules and claim signing (docs/MISSION_SERVER.md)
 packages/config     typed cluster configuration, read from config/*.json
 packages/content    content schema, validation, and server-only loaders
 packages/chain-client  typed client for the District program
+packages/metaplex-client  Node-only builders for the Candy Machine sale and the mint transaction
 programs/district   Anchor program (registration, mission credits, token-burn training)
                     src/instructions/ one module per instruction
                     src/mpl_core.rs   pinned Metaplex Core membership check
                     tests/integration/ instruction tests, harness + one file per area
 config/             devnet.json, mainnet.json — the canonical addresses
 content/en/         citizens.json — the authored English roster
-scripts/            check-assets.mjs — the asset guard
+scripts/            check-assets.mjs — the asset guard; gen-metadata.mjs and check-metadata.mjs — NFT metadata
 docs/               product spec, tech stack, prize model, decisions, architecture
 .github/workflows/  verify.yml — CI
 ```
@@ -198,15 +200,14 @@ The program enforces that order on chain (D-0016):
 
 ## Known gaps
 
-- No wallet integration: the web app runs on the mock data source (D-0020) with
-  a mock wallet. `@solana/kit` plus Wallet Standard is the mandated integration.
+- By default the web app runs on the mock data source (D-0020) with a mock
+  wallet. The Wallet Standard integration is only active in chain mode (D-0060); `@solana/kit` plus Wallet Standard is the mandated integration.
 - Scores in the browser are presentation state. Only `programs/district` and
   trusted server logic may write canonical progression.
 - Every instruction that acts on a citizen verifies Metaplex Core collection
   membership on chain against the pinned Core program id (D-0011, D-0016) and
-  rejects compressed assets. `packages/metaplex-client`, the off-chain adapter
-  from `TECH_STACK_ID.md` §11, still does not exist; a wallet integration will
-  need it.
+  rejects compressed assets. The off-chain adapter from `TECH_STACK_ID.md` §11
+  is `packages/metaplex-client` (D-0061).
 - `programs/district` is built and tested as SBF and runs on a local validator
   (see Building the program), but it has not been deployed to devnet and has
   not been audited (SPEC §16). Event payloads from `emit!` are still not
@@ -215,9 +216,16 @@ The program enforces that order on chain (D-0016):
   under the approved template prefix (D-0022), so every metadata file must be
   named that way before mint. A file without a known role cannot register.
 - The isometric city (Phaser 3, D-0021) and the mission, training, season and
-  profile screens run on mock data. Mission steps are checked in the browser
-  only until the mission server exists (D-0025). `apps/worker` and the
-  remaining packages listed in `TECH_STACK_ID.md` §11 do not exist yet.
+  profile screens run on mock data. Mission steps are still checked in the browser
+  there; `apps/mission-server` implements the real checks and signs claims
+  (D-0059). The web app can use it: set `NEXT_PUBLIC_BAS_DATA=chain` (D-0060),
+  see `docs/ARCHITECTURE.md` section 3a. Minting goes through a Core Candy Machine
+  in one transaction with `register_citizen` (D-0061); it is unit-tested and checked
+  against the Candy Machine sources but has not yet run on a cluster: run
+  `pnpm devnet:mint-simulate` first. The conversational citizens ("agents", SPEC §3.3)
+  are not started: they come after the devnet end-to-end test and before the
+  mainnet mint opens. `apps/worker` and the remaining packages listed in
+  `TECH_STACK_ID.md` §11 do not exist yet.
 
 Details and the reasoning behind each omission are recorded in
 [`docs/DECISIONS.md`](docs/DECISIONS.md).

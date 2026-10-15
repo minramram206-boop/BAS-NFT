@@ -110,9 +110,132 @@
   transform-origin: 50% 100%;
 }
 
+/* One-off reactions a reply can ask for (SPEC section 10.4). Each runs once, then the portrait goes back to hopping. */
+@keyframes react-blink {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  40%,
+  60% {
+    transform: scaleY(0.82);
+  }
+}
+
+@keyframes react-look-left {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0);
+  }
+  30%,
+  70% {
+    transform: translateX(-9px) rotate(-5deg);
+  }
+}
+
+@keyframes react-look-right {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0);
+  }
+  30%,
+  70% {
+    transform: translateX(9px) rotate(5deg);
+  }
+}
+
+@keyframes react-happy {
+  0%,
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+  25%,
+  75% {
+    transform: translateY(-16px) scale(0.95, 1.06);
+  }
+  50% {
+    transform: translateY(0) scale(1.06, 0.94);
+  }
+}
+
+@keyframes react-worried {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  15%,
+  45%,
+  75% {
+    transform: translateX(-5px);
+  }
+  30%,
+  60%,
+  90% {
+    transform: translateX(5px);
+  }
+}
+
+@keyframes react-thinking {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  35%,
+  75% {
+    transform: rotate(7deg) translateY(-3px);
+  }
+}
+
+.react-blink {
+  animation: react-blink 0.5s ease-in-out 1;
+}
+.react-look_left {
+  animation: react-look-left 1.4s ease-in-out 1;
+}
+.react-look_right {
+  animation: react-look-right 1.4s ease-in-out 1;
+}
+.react-happy {
+  animation: react-happy 1.2s ease-in-out 1;
+}
+.react-worried {
+  animation: react-worried 0.9s ease-in-out 1;
+}
+.react-thinking {
+  animation: react-thinking 1.6s ease-in-out 1;
+}
+.react-blink,
+.react-look_left,
+.react-look_right,
+.react-happy,
+.react-worried,
+.react-thinking {
+  transform-origin: 50% 100%;
+}
+
+/* With reduced motion the portrait stays still, but a reply still shows on it: a soft glow instead of movement. */
+@keyframes react-glow {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  30%,
+  70% {
+    filter: drop-shadow(0 0 7px #e0a82e) drop-shadow(0 0 2px #e0a82e);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .citizen-hop {
     animation: none;
+  }
+  .react-blink,
+  .react-look_left,
+  .react-look_right,
+  .react-happy,
+  .react-worried,
+  .react-thinking {
+    animation: react-glow 1.4s ease-in-out 1;
   }
 }
 

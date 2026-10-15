@@ -3,16 +3,18 @@
 import Link from 'next/link';
 import React from 'react';
 import type { CitizenRecord } from '@bas/content';
-import { StatBar } from '@/components/ui/StatBar';
-import { MinusIcon, PlusIcon, TargetIcon } from '@/components/ui/icons';
-import { EVENT_OPENS_IN_HOURS, STAT_COLORS, STAT_ORDER } from '@/config/constants';
+import { CitizenStats } from '@/components/citizen/CitizenStats';
+import { CitizenRail } from '@/components/citizen/CitizenRail';
+import { NextStepLine } from '@/components/journey/JourneyPanel';
+import { ChevronIcon, MinusIcon, PlusIcon, TargetIcon } from '@/components/ui/icons';
+import { STAT_COLORS, STAT_ORDER } from '@/config/constants';
 import type { CityActivity } from '@/game/CityScene';
-import { topTier } from '@/lib/data/districts';
-import { districtName, formatHours, statLabel, tierForScore } from '@/lib/format';
+import { districtName, formatHours, statLabel } from '@/lib/format';
 import { cn } from '@/lib/utils/cn';
+import { usePersistedFlag } from '@/lib/utils/usePersistedFlag';
 import { MESSAGES, formatMessage } from '@/messages';
+import { WelcomePanel } from './WelcomePanel';
 import {
-  useCitizens,
   useCityMode,
   useFoundingIds,
   useIsOwned,
@@ -26,29 +28,50 @@ import {
   useSetCityMode,
 } from '@/stores/selectors';
 
-export const EventCard: React.FC = () => (
-  <section className="bas-panel pointer-events-auto flex w-72 flex-col gap-2.5 p-4">
-    <div className="flex items-center justify-between">
-      <span className="font-heading text-[12px] tracking-wide text-[#7a4689]">{MESSAGES.city.eventTag}</span>
-      <span className="rounded bg-[#1a2734] px-1.5 py-0.5 font-heading text-[11px] text-[#f7d23d]">
-        {formatMessage(MESSAGES.city.eventIn, { time: formatHours(EVENT_OPENS_IN_HOURS) })}
-      </span>
-    </div>
-    <div className="font-heading text-[18px] tracking-wide">{MESSAGES.city.eventName}</div>
-    <p className="m-0 text-[15px] leading-relaxed text-[#22354a]">{MESSAGES.city.eventBody}</p>
-    <div className="flex gap-1.5">
-      {STAT_ORDER.map((stat) => (
-        <span
-          key={stat}
-          className="rounded px-2 py-1 text-[13px] font-semibold text-white"
-          style={{ backgroundColor: STAT_COLORS[stat].fill }}
-        >
-          {statLabel(stat)}
+/** One line while it is closed; the body drops down over the map instead of pushing anything. */
+export const EventCard: React.FC = () => {
+  const [open, toggle] = usePersistedFlag('bas.city.event', false);
+  const event = useMissions().find((mission) => mission.event);
+  // No event scheduled (or it is over): nothing to announce.
+  if (!event) return null;
+  return (
+    <section aria-label={MESSAGES.city.eventTag} className="relative w-72">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={toggle}
+        className="bas-panel bas-chip pointer-events-auto flex w-full items-center gap-2 p-3 text-left font-pixel"
+      >
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="font-heading text-[11px] tracking-wide text-[#7a4689]">{MESSAGES.city.eventTag}</span>
+          <span className="truncate font-heading text-[15px] tracking-wide">{MESSAGES.city.eventName}</span>
         </span>
-      ))}
-    </div>
-  </section>
-);
+        <span className="rounded bg-[#1a2734] px-1.5 py-0.5 font-heading text-[11px] text-[#f7d23d]">
+          {event.opensInHours === undefined
+            ? MESSAGES.city.eventOpen
+            : formatMessage(MESSAGES.city.eventIn, { time: formatHours(event.opensInHours) })}
+        </span>
+        <ChevronIcon className={cn('shrink-0 transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div className="bas-panel pointer-events-auto absolute inset-x-0 top-full z-10 mt-2 flex flex-col gap-2.5 p-3">
+          <p className="m-0 text-[15px] leading-relaxed text-[#22354a]">{MESSAGES.city.eventBody}</p>
+          <div className="flex gap-1.5">
+            {STAT_ORDER.map((stat) => (
+              <span
+                key={stat}
+                className="rounded px-2 py-1 text-[13px] font-semibold text-white"
+                style={{ backgroundColor: STAT_COLORS[stat].fill }}
+              >
+                {statLabel(stat)}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+};
 
 export const ModeToggle: React.FC = () => {
   const mode = useCityMode();
@@ -98,53 +121,6 @@ export const ZoomControls: React.FC = () => {
   );
 };
 
-function tierLine(citizen: CitizenRecord): string {
-  const best = topTier(citizen);
-  return `${citizen.role} · ${statLabel(best.stat)} T${best.tier}`;
-}
-
-export const MyCitizens: React.FC = () => {
-  const owned = useOwnedIds();
-  const citizens = useCitizens();
-  const selected = useSelectedCitizen();
-  const select = useSelectCitizen();
-  const focus = useRequestFocus();
-  const mine = owned.map((id) => citizens.find((citizen) => citizen.id === id)).filter(Boolean) as CitizenRecord[];
-
-  return (
-    <section aria-label={MESSAGES.city.myCitizens} className="bas-panel pointer-events-auto flex w-[480px] flex-col gap-2.5 p-3">
-      <div className="flex items-center justify-between">
-        <span className="bas-label">{MESSAGES.city.myCitizens}</span>
-        <span className="text-[14px] font-medium text-[#33485c]">{formatMessage(MESSAGES.city.owned, { count: mine.length })}</span>
-      </div>
-      <div className="grid grid-cols-3 gap-2">
-        {mine.map((citizen) => {
-          const active = citizen.id === selected?.id;
-          return (
-            <button
-              key={citizen.id}
-              type="button"
-              aria-pressed={active}
-              onClick={() => {
-                select(citizen.id);
-                focus();
-              }}
-              className={cn(
-                'bas-chip flex flex-col items-start gap-1 rounded-md p-2 text-left font-pixel',
-                active ? 'border-[3px] border-[#f7d23d] bg-white outline outline-2 outline-[#1a2734]' : 'border-2 border-[#1b2a38] bg-[#f2f6fa]',
-              )}
-            >
-              <img src={citizen.sprite} alt="" width={52} height={52} className="h-[52px] w-[52px]" />
-              <span className="font-heading text-[12px] tracking-wide">{citizen.name.toUpperCase()}</span>
-              <span className="text-[13px] font-medium text-[#33485c]">{tierLine(citizen)}</span>
-            </button>
-          );
-        })}
-      </div>
-    </section>
-  );
-};
-
 function activityLine(citizen: CitizenRecord, activity: CityActivity | null, missionLine: string | null): string {
   if (missionLine) return missionLine;
   if (!activity) return citizen.lore;
@@ -160,8 +136,14 @@ export const SelectedCitizenPanel: React.FC<{ activity: CityActivity | null; com
   const citizen = useSelectedCitizen();
   const owned = useIsOwned(citizen?.id ?? -1);
   const founding = useFoundingIds();
+  const ownedIds = useOwnedIds();
+  const select = useSelectCitizen();
+  const focus = useRequestFocus();
   const missions = useMissions();
   const progress = useMissionProgress();
+  // A wallet without a citizen has nothing to select yet; tell it where to start instead of leaving the sidebar empty.
+  // A newcomer sees the way in and nothing else: no roster to browse and no citizen to play as.
+  if (ownedIds.length === 0) return <WelcomePanel compact={compact} />;
   if (!citizen) return null;
 
   const missionEntry = Object.entries(progress).find(([, value]) => value.citizenId === citizen.id);
@@ -175,11 +157,42 @@ export const SelectedCitizenPanel: React.FC<{ activity: CityActivity | null; com
         })
       : null;
 
+  const actions = (
+    <div className={cn('grid gap-2 md:[&_.bas-btn]:min-h-10', owned ? 'grid-cols-3' : 'grid-cols-2')}>
+      <Link href={`/citizen/${citizen.id}`} className="bas-btn">
+        {MESSAGES.city.profile}
+      </Link>
+      <Link href="/missions" className="bas-btn">
+        {MESSAGES.city.missions}
+      </Link>
+      {owned && (
+        <Link href="/training" className="bas-btn bas-btn-primary">
+          {MESSAGES.city.train}
+        </Link>
+      )}
+    </div>
+  );
+
+  // The sidebar uses the same framed sections as Missions; the phone sheet stays one compact card.
+  if (!compact) {
+    return (
+      <div aria-label={MESSAGES.city.selected} className="pointer-events-auto flex w-full flex-col gap-3">
+        <CitizenRail
+          column
+          onPick={(id) => {
+            select(id);
+            focus();
+          }}
+          activity={owned ? activityLine(citizen, activity, missionLine) : null}
+          actions={actions}
+          skipContinue={missionEntry !== undefined}
+        />
+      </div>
+    );
+  }
+
   return (
-    <section
-      aria-label={MESSAGES.city.selected}
-      className={cn('bas-panel pointer-events-auto flex flex-col gap-3 p-3 md:p-4', compact ? 'w-full' : 'w-[460px]')}
-    >
+    <section aria-label={MESSAGES.city.selected} className="bas-panel pointer-events-auto flex w-full flex-col gap-3 p-3 md:p-4">
       <div className="flex gap-3">
         <div className="bas-inset bas-grid-bg flex h-[72px] w-[72px] shrink-0 items-center justify-center md:h-[84px] md:w-[84px]">
           <img src={citizen.sprite} alt={citizen.name} width={76} height={76} className="h-[64px] w-[64px] md:h-[76px] md:w-[76px]" />
@@ -199,34 +212,11 @@ export const SelectedCitizenPanel: React.FC<{ activity: CityActivity | null; com
         </div>
       </div>
 
-      <div className={cn('flex flex-col gap-2', compact && 'hidden min-[420px]:flex')}>
-        {STAT_ORDER.map((stat) => (
-          <div key={stat} className="flex items-center gap-2">
-            <span className="w-[76px] font-heading text-[12px] tracking-wide" style={{ color: STAT_COLORS[stat].fill }}>
-              {MESSAGES.stats[stat].shortLabel}
-            </span>
-            <StatBar stat={stat} value={citizen[stat]} />
-            <span className="w-6 text-right font-heading text-[15px]">{citizen[stat]}</span>
-            <span className="rounded bg-[#d3dde6] px-1 font-heading text-[11px] text-[#22354a]">
-              T{tierForScore(citizen[stat])}
-            </span>
-          </div>
-        ))}
-      </div>
+      <CitizenStats citizen={citizen} compact className="hidden min-[420px]:flex" />
 
-      <div className={cn('grid gap-2', owned ? 'grid-cols-3' : 'grid-cols-2')}>
-        <Link href={`/citizen/${citizen.id}`} className="bas-btn">
-          {MESSAGES.city.profile}
-        </Link>
-        <Link href="/missions" className="bas-btn">
-          {MESSAGES.city.missions}
-        </Link>
-        {owned && (
-          <Link href="/training" className="bas-btn bas-btn-primary">
-            {MESSAGES.city.train}
-          </Link>
-        )}
-      </div>
+      {owned && <NextStepLine citizen={citizen} />}
+
+      {actions}
     </section>
   );
 };

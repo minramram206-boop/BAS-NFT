@@ -9,6 +9,7 @@ import {
   MAINNET_CONFIG,
   NETWORK_CONFIG_FILES,
   REPO_PLACEHOLDER_ADDRESSES,
+  RPC_ENV_VAR,
   PRODUCTION_CRITICAL_ADDRESS_FIELDS,
   findPlaceholderAddresses,
   findPlaceholderConfiguration,
@@ -50,13 +51,11 @@ const REAL_LOOKING_KEY = base58Encode([
 ]);
 
 /** `district = "<id>"` under `[programs.<network>]` in programs/Anchor.toml. */
-function anchorTomlProgramId(network: 'devnet' | 'mainnet'): string {
+function anchorTomlProgramId(network: 'devnet' | 'mainnet', program = 'district'): string | undefined {
   const toml = readFileSync(join(repoRoot, 'programs/Anchor.toml'), 'utf8');
   const section = new RegExp(`\\[programs\\.${network}\\]([\\s\\S]*?)(?=\\n\\[|$)`).exec(toml);
   assert.ok(section, `Anchor.toml must declare [programs.${network}]`);
-  const match = /district\s*=\s*"([^"]+)"/.exec(section[1] as string);
-  assert.ok(match, `Anchor.toml [programs.${network}] must declare district`);
-  return match[1] as string;
+  return new RegExp(`^${program}\\s*=\\s*"([^"]+)"`, 'm').exec(section[1] as string)?.[1];
 }
 
 function readConfigFile<T = NetworkConfigFile>(relativePath: string): T {
@@ -78,6 +77,7 @@ describe('@bas/config', () => {
     assert.equal(DEVNET_CONFIG.solTreasury, file.solTreasury);
     assert.equal(DEVNET_CONFIG.royaltyRecipient, file.royaltyRecipient);
     assert.equal(DEVNET_CONFIG.missionAuthority, file.missionAuthority);
+    assert.equal(DEVNET_CONFIG.mintSigner, file.mintSigner);
     assert.equal(DEVNET_CONFIG.maxScore, file.maxScore);
     assert.equal(DEVNET_CONFIG.baseTrainingCostAtoms, file.baseTrainingCostAtoms);
     assert.equal(DEVNET_CONFIG.burnBps, file.burnBps);
@@ -86,6 +86,7 @@ describe('@bas/config', () => {
     assert.equal(DEVNET_CONFIG.approvedTemplateUriPrefix, file.approvedTemplateUriPrefix);
     assert.equal(DEVNET_CONFIG.maxSupply, file.maxSupply);
     assert.equal(DEVNET_CONFIG.mintPriceLamports, file.mintPriceLamports);
+    assert.equal(DEVNET_CONFIG.mintLimitPerWallet, file.mintLimitPerWallet);
   });
 
   it('loads the mainnet config from config/mainnet.json', () => {
@@ -113,6 +114,9 @@ describe('@bas/config', () => {
     // D-0024: minting costs 0.01 SOL on both clusters.
     assert.equal(DEVNET_CONFIG.mintPriceLamports, '10000000');
     assert.equal(MAINNET_CONFIG.mintPriceLamports, DEVNET_CONFIG.mintPriceLamports);
+    // D-0055: one citizen per wallet in the public sale keeps the roles scarce.
+    assert.equal(DEVNET_CONFIG.mintLimitPerWallet, 1);
+    assert.equal(MAINNET_CONFIG.mintLimitPerWallet, DEVNET_CONFIG.mintLimitPerWallet);
     assert.notEqual(DEVNET_CONFIG.rpcUrl, MAINNET_CONFIG.rpcUrl, 'only endpoints may differ');
   });
 
@@ -150,6 +154,8 @@ describe('@bas/config', () => {
     assert.throws(() => parseNetworkConfig({ ...valid, baseTrainingCostAtoms: '18446744073709551616' }, 'devnet'));
     assert.throws(() => parseNetworkConfig({ ...valid, mintPriceLamports: '0' }, 'devnet'));
     assert.throws(() => parseNetworkConfig({ ...valid, mintPriceLamports: 0.01 }, 'devnet'));
+    assert.throws(() => parseNetworkConfig({ ...valid, mintLimitPerWallet: 0 }, 'devnet'));
+    assert.throws(() => parseNetworkConfig({ ...valid, mintLimitPerWallet: '1' }, 'devnet'));
     assert.throws(() => parseNetworkConfig({ ...valid, maxScore: 20 }, 'devnet'));
     assert.throws(() => parseNetworkConfig({ ...valid, burnBps: 8000 }, 'devnet'));
     assert.throws(() => parseNetworkConfig({ ...valid, dailyMessageLimit: 0 }, 'devnet'));
@@ -163,12 +169,17 @@ describe('@bas/config', () => {
     assert.throws(() => parseNetworkConfig({ ...valid, approvedTemplateUriPrefix: 'https://metadata.example.invalid/templates/7/../templates/7/' }, 'devnet'));
     assert.throws(() => parseNetworkConfig({ ...valid, approvedTemplateUriPrefix: 'https://metadata.example.invalid/templates/7\\\\preview/templates/7/' }, 'devnet'));
     assert.throws(() => parseNetworkConfig({ ...valid, missionAuthority: 'not an address' }, 'devnet'));
+    assert.throws(() => parseNetworkConfig({ ...valid, mintSigner: 'not an address' }, 'devnet'));
+    assert.throws(() => parseNetworkConfig({ ...valid, mintSigner: undefined }, 'devnet'));
   });
 
   it('reports placeholder addresses and blocks the launch gate', () => {
-    const placeholders = findPlaceholderAddresses(DEVNET_CONFIG);
-    assert.ok(placeholders.length > 0, 'the shipped config still uses placeholder addresses');
-    assert.throws(() => validateProductionReadiness(DEVNET_CONFIG), /launch ready/);
+    // Devnet runs on the deployed program, collection and mint, so only
+    // mainnet still carries placeholders and stays behind the gate.
+    assert.deepEqual(findPlaceholderAddresses(DEVNET_CONFIG), []);
+    assert.doesNotThrow(() => validateProductionReadiness(DEVNET_CONFIG));
+    const placeholders = findPlaceholderAddresses(MAINNET_CONFIG);
+    assert.ok(placeholders.length > 0, 'the shipped mainnet config still uses placeholder addresses');
     assert.throws(() => validateProductionReadiness(MAINNET_CONFIG), /launch ready/);
   });
 
@@ -181,6 +192,7 @@ describe('@bas/config', () => {
       candyMachine: REAL_LOOKING_KEY,
       utilityTokenMint: REAL_LOOKING_KEY,
       missionAuthority: REAL_LOOKING_KEY,
+      mintSigner: REAL_LOOKING_KEY,
       solTreasury: REAL_LOOKING_KEY,
       candyGuard: REAL_LOOKING_KEY,
       royaltyRecipient: REAL_LOOKING_KEY,
@@ -199,6 +211,7 @@ describe('@bas/config', () => {
       candyMachine: REAL_LOOKING_KEY,
       utilityTokenMint: REAL_LOOKING_KEY,
       missionAuthority: REAL_LOOKING_KEY,
+      mintSigner: REAL_LOOKING_KEY,
       solTreasury: REAL_LOOKING_KEY,
       candyGuard: REAL_LOOKING_KEY,
       royaltyRecipient: REAL_LOOKING_KEY,
@@ -243,5 +256,76 @@ describe('@bas/config', () => {
     assert.equal(declared[1], DEVNET_CONFIG.districtProgramId, 'lib.rs must match config/devnet.json');
     assert.equal(anchorTomlProgramId('devnet'), DEVNET_CONFIG.districtProgramId, 'Anchor.toml devnet drifted');
     assert.equal(anchorTomlProgramId('mainnet'), DEVNET_CONFIG.districtProgramId, 'Anchor.toml mainnet drifted');
+  });
+
+  it('keeps the market program id identical in every place, and off mainnet', () => {
+    const rust = readFileSync(join(repoRoot, 'programs/market/src/lib.rs'), 'utf8');
+    const declared = /declare_id!\("([^"]+)"\)/.exec(rust);
+    assert.ok(declared, 'market lib.rs must declare the program id');
+    assert.equal(DEVNET_CONFIG.marketProgramId, declared[1], 'config/devnet.json must match market lib.rs');
+    assert.equal(anchorTomlProgramId('devnet', 'market'), declared[1], 'Anchor.toml devnet market drifted');
+    // The market stays on devnet until an external audit (docs/MARKET.md).
+    assert.equal(MAINNET_CONFIG.marketProgramId, undefined);
+    assert.equal(anchorTomlProgramId('mainnet', 'market'), undefined);
+  });
+
+  it('accepts a manifest without a market and refuses a malformed one', () => {
+    const { marketProgramId: _unused, auctionClock: _clock, ...withoutMarket } = readConfigFile<Record<string, unknown>>('config/devnet.json');
+    assert.equal(parseNetworkConfig(withoutMarket as NetworkConfigFile, 'devnet').marketProgramId, undefined);
+    assert.throws(() => parseNetworkConfig({ ...withoutMarket, marketProgramId: 'not a key' } as NetworkConfigFile, 'devnet'));
+  });
+
+  it('allows the fast auction clock only on devnet, with a market, by its one name', () => {
+    const devnet = readConfigFile<Record<string, unknown>>('config/devnet.json');
+    assert.equal(parseNetworkConfig({ ...devnet, auctionClock: 'devnet-fast' } as NetworkConfigFile, 'devnet').auctionClock, 'devnet-fast');
+    const { auctionClock: _clock, ...realClock } = devnet;
+    assert.equal(parseNetworkConfig(realClock as NetworkConfigFile, 'devnet').auctionClock, undefined);
+    assert.throws(() => parseNetworkConfig({ ...devnet, auctionClock: 'fast' } as NetworkConfigFile, 'devnet'), /auctionClock/);
+    const { marketProgramId: _market, ...noMarket } = devnet;
+    assert.throws(() => parseNetworkConfig({ ...noMarket, auctionClock: 'devnet-fast' } as NetworkConfigFile, 'devnet'), /auctionClock/);
+    const mainnet = readConfigFile<Record<string, unknown>>('config/mainnet.json');
+    assert.throws(
+      () => parseNetworkConfig({ ...mainnet, marketProgramId: devnet.marketProgramId, auctionClock: 'devnet-fast' } as NetworkConfigFile, 'mainnet-beta'),
+      /auctionClock/,
+    );
+    assert.equal(MAINNET_CONFIG.auctionClock, undefined);
+  });
+});
+
+describe('RPC endpoint override', () => {
+  function withRpc<T>(value: string | undefined, action: () => T): T {
+    const before = process.env[RPC_ENV_VAR];
+    if (value === undefined) delete process.env[RPC_ENV_VAR];
+    else process.env[RPC_ENV_VAR] = value;
+    try {
+      return action();
+    } finally {
+      if (before === undefined) delete process.env[RPC_ENV_VAR];
+      else process.env[RPC_ENV_VAR] = before;
+    }
+  }
+
+  it('keeps the manifest endpoint when nothing is set', () => {
+    assert.equal(withRpc(undefined, () => getNetworkConfig('devnet').rpcUrl), DEVNET_CONFIG.rpcUrl);
+    assert.equal(withRpc('  ', () => getNetworkConfig('devnet').rpcUrl), DEVNET_CONFIG.rpcUrl);
+  });
+
+  it('replaces only the endpoint', () => {
+    const url = 'https://rpc.example.test/?api-key=secret';
+    const config = withRpc(url, () => getNetworkConfig('devnet'));
+    assert.equal(config.rpcUrl, url);
+    assert.deepEqual({ ...config, rpcUrl: '' }, { ...DEVNET_CONFIG, rpcUrl: '' });
+    assert.equal(DEVNET_CONFIG.rpcUrl, readConfigFile(NETWORK_CONFIG_FILES.devnet).rpcUrl, 'the shared config is not changed');
+  });
+
+  it('accepts plain http only for a local node on devnet', () => {
+    assert.equal(withRpc('http://127.0.0.1:8899', () => getNetworkConfig('devnet').rpcUrl), 'http://127.0.0.1:8899');
+    assert.equal(withRpc('http://localhost:8899', () => getNetworkConfig('devnet').rpcUrl), 'http://localhost:8899');
+    assert.throws(() => withRpc('http://127.0.0.1:8899', () => getNetworkConfig('mainnet-beta')), /https/);
+    assert.throws(() => withRpc('http://rpc.example.test', () => getNetworkConfig('devnet')), /https/);
+  });
+
+  it('refuses a value that is not a URL', () => {
+    assert.throws(() => withRpc('not a url', () => getNetworkConfig('devnet')), /not a valid URL/);
   });
 });

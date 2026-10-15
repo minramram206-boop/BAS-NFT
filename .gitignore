@@ -35,3 +35,9 @@ keypair.json
 programs/*/keypair.json
 # Devnet keys written by scripts/devnet (deployer, mission authority)
 .keys/
+
+# Mission server state (sessions and confirmed claims)
+apps/mission-server/data/
+
+# Metaplex Core binary dumped from devnet for the market tests (docs/MARKET.md)
+programs/market/integration/tests/fixtures/*.so

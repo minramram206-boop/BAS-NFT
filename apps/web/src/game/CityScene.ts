@@ -3,6 +3,7 @@ import type { CitizenRecord } from '@bas/content';
 import { LOCKABLE_DISTRICTS } from '@/lib/data/districts';
 import type { DistrictId } from '@/lib/data/types';
 import type { CityMode } from '@/stores/types';
+import { CityAmbience } from './cityAmbience';
 import {
   HALF_TILE_H,
   HALF_TILE_W,
@@ -18,12 +19,14 @@ import {
   labelPosition,
   propOrder,
   spotsOf,
+  standable,
   zoneOf,
   type Cell,
   type Prop,
   type Scores,
   type Zone,
 } from './cityGrid';
+import { liftShoves, separate, type CrowdMember } from './cityCrowd';
 
 /** What the scene needs to know about one citizen. */
 export interface CityCitizen {
@@ -93,6 +96,9 @@ const ZOOM_MIN = 0.45;
 const ZOOM_MAX = 2.5;
 const GOLD = 0xf7d23d;
 
+const sideKey = (id: number) => `citizen-${id}`;
+
+
 interface Walker {
   data: CityCitizen;
   root: Phaser.GameObjects.Container;
@@ -111,11 +117,21 @@ interface Walker {
   routineIndex: number;
   restUntil: number;
   heading: Zone | undefined;
+  /** Moving under keyboard control this frame. */
+  keyMoving: boolean;
+  /** Screen direction the citizen faces; picks the sprite and points the facing arrow. */
+  face: { x: number; y: number };
+  /** Whether `body` is mirrored to face left. */
+  flipped: boolean;
+  /** How this walker takes part in keeping people from overlapping. */
+  member: CrowdMember;
 }
 
 export class CityScene extends Phaser.Scene {
   private options: CitySceneOptions;
   private readonly walkers = new Map<number, Walker>();
+  /** Everyone who must not overlap: the citizens and the townsfolk. */
+  private readonly crowd: CrowdMember[] = [];
   private readonly locks = new Map<DistrictId, Phaser.GameObjects.Image>();
   private readonly labelTexts = new Map<DistrictId, Phaser.GameObjects.Text>();
   private readonly props: {
@@ -129,8 +145,18 @@ export class CityScene extends Phaser.Scene {
   private markerArrow!: Phaser.GameObjects.Triangle;
   private arrivedKey: string | null = null;
   private dots!: Phaser.GameObjects.Graphics;
+  /** Arrow at the selected citizen's feet showing the screen direction they face. */
+  private facingArrow!: Phaser.GameObjects.Graphics;
+  /** The not-owned notice was already shown for the keys held right now. */
+  private notOwnedShown = false;
   private drag: { x: number; y: number; scrollX: number; scrollY: number; moved: boolean } | null = null;
+  /** While true the camera glides after the selected citizen; dragging the map lets go. */
+  private following = false;
+  private lastBlockedAt = 0;
+  private keys: Record<string, Phaser.Input.Keyboard.Key> = {};
   private lastActivity = '';
+  private ambience: CityAmbience | undefined;
+  private resizeHandler: (() => void) | null = null;
 
   constructor(options: CitySceneOptions) {
     super('city');
@@ -143,7 +169,9 @@ export class CityScene extends Phaser.Scene {
     this.load.image('lock-watch', '/images/city/lock-watch.png');
     this.load.image('lock-frontier', '/images/city/lock-frontier.png');
     this.load.image('lock-summit', '/images/city/lock-summit.png');
-    for (const citizen of this.options.citizens) this.load.image(`citizen-${citizen.id}`, citizen.sprite);
+    for (const citizen of this.options.citizens) {
+      this.load.image(sideKey(citizen.id), citizen.sprite);
+    }
   }
 
   create(): void {
@@ -167,6 +195,7 @@ export class CityScene extends Phaser.Scene {
     this.ring = this.add.ellipse(0, 0, 50, 20).setStrokeStyle(3, GOLD).setDepth(0);
     this.tweens.add({ targets: this.ring, scaleX: 1.15, scaleY: 1.15, duration: 600, yoyo: true, repeat: -1 });
     this.dots = this.add.graphics().setDepth(1);
+    this.facingArrow = this.add.graphics().setDepth(1);
     this.markerTile = this.add.graphics().setDepth(-0.5).setVisible(false);
     this.markerArrow = this.add
       .triangle(0, 0, 0, 0, 22, 0, 11, 16, GOLD)
@@ -175,6 +204,15 @@ export class CityScene extends Phaser.Scene {
       .setVisible(false);
 
     this.options.citizens.forEach((citizen, index) => this.spawn(citizen, index));
+    const strangerScores = Object.fromEntries(
+      Object.keys(this.options.citizens[0]?.scores ?? {}).map((stat) => [stat, 0]),
+    ) as unknown as Scores;
+    this.ambience = new CityAmbience(this, {
+      depthAt: (x, y, size, cell) => this.depthAt(x, y, size, cell).depth,
+      strangerScores,
+    });
+    this.ambience.create();
+    this.crowd.push(...this.ambience.members());
     for (const [district, position] of this.labelPositions()) {
       const text = this.add
         .text(position.x, position.y, '', {
@@ -200,6 +238,7 @@ export class CityScene extends Phaser.Scene {
   /** Called by the React side whenever store data the scene shows has changed. */
   sync(options: CitySceneOptions): void {
     const modeChanged = options.mode !== this.options.mode;
+    if (options.selectedId !== this.options.selectedId) this.following = true;
     this.options = options;
     for (const citizen of options.citizens) {
       const walker = this.walkers.get(citizen.id);
@@ -217,12 +256,150 @@ export class CityScene extends Phaser.Scene {
 
   zoomBy(step: 1 | -1): void {
     const camera = this.cameras.main;
-    camera.zoomTo(Phaser.Math.Clamp(camera.zoom * (step > 0 ? 1.25 : 0.8), ZOOM_MIN, ZOOM_MAX), 160);
+    camera.zoomTo(Phaser.Math.Clamp(camera.zoom * (step > 0 ? 1.25 : 0.8), this.minZoom(), ZOOM_MAX), 160);
   }
 
   focusSelected(): void {
     const walker = this.walkers.get(this.options.selectedId);
-    if (walker) this.cameras.main.pan(walker.root.x, walker.root.y - 30, 300, 'Sine.easeInOut');
+    if (!walker) return;
+    this.following = true;
+    const camera = this.cameras.main;
+    // Snap straight to the citizen; `update` then keeps the camera on them.
+    camera.centerOn(walker.root.x, walker.root.y - 30);
+  }
+
+  /**
+   * Walks the citizen of the current mission step to its stop and brings the
+   * camera along. Works in both city modes, since the player asked for it.
+   */
+  walkToTarget(): void {
+    const target = this.options.target;
+    const walker = target ? this.walkers.get(target.citizenId) : undefined;
+    if (!target || !walker || !walker.data.owned) return;
+    this.routeTo(walker, target.cell);
+    this.focusSelected();
+  }
+
+  /**
+   * Arrow keys / WASD move the selected citizen freely while held, in screen directions,
+   * sliding along walls. F or Space brings the camera back to them.
+   */
+  private handleKeys(elapsed: number): void {
+    const walker = this.walkers.get(this.options.selectedId);
+    if (!walker) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
+    const k = this.keys;
+    const down = (a: string, b: string) => Boolean(k[a]?.isDown || k[b]?.isDown);
+    if (Phaser.Input.Keyboard.JustDown(k.F as Phaser.Input.Keyboard.Key) || Phaser.Input.Keyboard.JustDown(k.SPACE as Phaser.Input.Keyboard.Key)) {
+      this.focusSelected();
+    }
+    let sx = (down('RIGHT', 'D') ? 1 : 0) - (down('LEFT', 'A') ? 1 : 0);
+    let sy = (down('DOWN', 'S') ? 1 : 0) - (down('UP', 'W') ? 1 : 0);
+    if (sx === 0 && sy === 0) {
+      walker.keyMoving = false;
+      this.notOwnedShown = false;
+      return;
+    }
+    this.following = true;
+    if (!this.isPlayerControlled(walker)) {
+      // Holding a key repeats every frame; the notice opens once per key press.
+      if (!walker.data.owned && !this.notOwnedShown) {
+        this.notOwnedShown = true;
+        this.options.onNotOwned();
+      }
+      return;
+    }
+    if (sx !== 0 && sy !== 0) {
+      sx *= Math.SQRT1_2;
+      sy *= Math.SQRT1_2;
+    }
+    // A pending click route is dropped: the keyboard takes over from where the citizen stands.
+    walker.path = [];
+    walker.progress = 1;
+    const scores = walker.data.scores;
+    const open = (x: number, y: number) => {
+      const cell = cellAt(x, y);
+      if (!cell || !isWalkable(cell, scores)) return undefined;
+      const zone = zoneOf(cell);
+      if (zone && zone !== 'road' && !canEnter(zone, scores)) return undefined;
+      return cell;
+    };
+    const stepPx = elapsed * WALK_SPEED;
+    const x0 = walker.root.x;
+    const y0 = walker.root.y;
+    const dx = sx * stepPx;
+    const dy = sy * stepPx;
+    const tries: Array<[number, number]> = [
+      [dx, dy],
+      [dx, 0],
+      [0, dy],
+    ];
+    let moved: Cell | undefined;
+    let nx = x0;
+    let ny = y0;
+    for (const [tx, ty] of tries) {
+      if (tx === 0 && ty === 0) continue;
+      const cell = open(x0 + tx, y0 + ty);
+      if (cell) {
+        moved = cell;
+        nx = x0 + tx;
+        ny = y0 + ty;
+        break;
+      }
+    }
+    if (!moved) {
+      let lockedZone: DistrictId | undefined;
+      const ahead = cellAt(x0 + dx * 6, y0 + dy * 6);
+      const zone = ahead ? zoneOf(ahead) : undefined;
+      if (zone && zone !== 'road' && !canEnter(zone, scores)) lockedZone = zone;
+      if (lockedZone && this.time.now - this.lastBlockedAt > 1500) {
+        this.lastBlockedAt = this.time.now;
+        this.options.onBlocked(lockedZone);
+      }
+      return;
+    }
+    walker.root.setPosition(nx, ny);
+    walker.cell = moved;
+    walker.from = { x: nx, y: ny };
+    walker.to = { x: nx, y: ny };
+    walker.travelled += Math.hypot(nx - x0, ny - y0);
+    walker.keyMoving = true;
+    walker.face = { x: sx, y: sy };
+  }
+
+  /**
+   * Every direction uses the same portrait; it is only mirrored, to face left or right. Walking
+   * straight up or down keeps the last mirroring, so the citizen keeps their shape.
+   */
+  private applyFrame(walker: Walker): void {
+    if (Math.abs(walker.face.x) < 1e-3) return;
+    const flipped = walker.face.x < 0;
+    if (flipped === walker.flipped) return;
+    walker.body.setFlipX(flipped);
+    walker.flipped = flipped;
+  }
+
+  /**
+   * A gold arrow on the ground, just outside the ring, pointing the way the citizen walks.
+   * Walking away it lies on the ground behind the body, so the sprite covers it, as it would
+   * cover anything else standing there; the back sprite shows the direction then.
+   */
+  private drawFacingArrow(walker: Walker): void {
+    const len = Math.hypot(walker.face.x, walker.face.y) || 1;
+    const ux = walker.face.x / len;
+    const uy = walker.face.y / len;
+    const cx = walker.root.x + ux * 36;
+    const cy = walker.root.y + uy * 15;
+    const px = -uy;
+    const py = ux;
+    const g = this.facingArrow;
+    // Ahead of the citizen it draws over the sprite; behind them it draws under it.
+    g.clear().setDepth(walker.root.depth + (uy < -0.3 ? -0.005 : 0.5));
+    g.fillStyle(GOLD, 1).lineStyle(2, 0x1a2734, 1);
+    g.fillTriangle(cx + ux * 11, cy + uy * 11, cx + px * 8 - ux * 6, cy + py * 8 - uy * 6, cx - px * 8 - ux * 6, cy - py * 8 - uy * 6);
+    g.strokeTriangle(cx + ux * 11, cy + uy * 11, cx + px * 8 - ux * 6, cy + py * 8 - uy * 6, cx - px * 8 - ux * 6, cy - py * 8 - uy * 6);
+    g.setVisible(true);
   }
 
   override update(time: number, delta: number): void {
@@ -230,8 +407,18 @@ export class CityScene extends Phaser.Scene {
     // device that renders fewer frames. Move by the real frame time instead,
     // capped so a backgrounded tab does not teleport anyone.
     const elapsed = Math.min(this.game.loop.rawDelta || delta, MAX_FRAME_MS);
+    // Routes move everyone from where the route says; the crowd pass then nudges overlapping people apart.
+    liftShoves(this.crowd);
+    this.handleKeys(elapsed);
     for (const walker of this.walkers.values()) {
       this.step(walker, time, elapsed);
+      this.applyFrame(walker);
+    }
+    this.ambience?.update(time, elapsed);
+    for (const walker of this.walkers.values()) walker.member.anchored = this.isPlayerControlled(walker);
+    separate(this.crowd);
+    this.ambience?.refreshDepths();
+    for (const walker of this.walkers.values()) {
       // Tags live outside the citizen's container so they always draw above the district labels.
       walker.tag.setPosition(walker.root.x, walker.root.y - walker.size - 6);
       walker.root.setDepth(this.depthOf(walker));
@@ -249,8 +436,19 @@ export class CityScene extends Phaser.Scene {
         this.dots.fillRect(x - 3, y - 3, 6, 6);
       });
       this.reportActivity(selected);
+      this.drawFacingArrow(selected);
     } else {
       this.ring.setVisible(false);
+      this.facingArrow.clear();
+    }
+    if (this.following && selected && !this.drag?.moved) {
+      const camera = this.cameras.main;
+      const tx = selected.root.x;
+      const ty = selected.root.y - 30;
+      const cx = camera.scrollX + camera.width / 2;
+      const cy = camera.scrollY + camera.height / 2;
+      const ease = Math.min(1, elapsed / 140);
+      camera.centerOn(cx + (tx - cx) * ease, cy + (ty - cy) * ease);
     }
   }
 
@@ -262,10 +460,10 @@ export class CityScene extends Phaser.Scene {
     const spots = spotsOf(district).filter((cell) => isWalkable(cell, citizen.scores));
     const cell = spots[index % Math.max(spots.length, 1)] ?? ([12, 10] as Cell);
     const { x, y } = cellCenter(cell);
-    const size = citizen.owned ? 56 : 46;
+    const size = citizen.owned ? 46 : 38;
 
     const shadow = this.add.ellipse(0, 0, size * 0.62, size * 0.18, 0x000000, 0.35);
-    const body = this.add.image(0, 0, `citizen-${citizen.id}`).setOrigin(0.5, 1).setDisplaySize(size, size);
+    const body = this.add.image(0, 0, sideKey(citizen.id)).setOrigin(0.5, 1).setDisplaySize(size, size);
     body.setInteractive({ useHandCursor: true });
     body.on('pointerup', () => {
       if (!this.drag?.moved) this.options.onSelect(citizen.id);
@@ -287,6 +485,14 @@ export class CityScene extends Phaser.Scene {
     body.on('pointerout', () => tag.setVisible(citizen.id === this.options.selectedId));
     const parts: Phaser.GameObjects.GameObject[] = [shadow, body];
     const root = this.add.container(x, y, parts).setDepth(y);
+    const member: CrowdMember = {
+      root,
+      shove: { x: 0, y: 0 },
+      radius: size * 0.33,
+      anchored: false,
+      canStand: (px, py) => standable(px, py, this.walkers.get(citizen.id)?.data.scores ?? citizen.scores),
+    };
+    this.crowd.push(member);
     this.walkers.set(citizen.id, {
       data: citizen,
       root,
@@ -303,6 +509,10 @@ export class CityScene extends Phaser.Scene {
       routineIndex: index,
       restUntil: 600 + index * 450,
       heading: zoneOf(cell),
+      keyMoving: false,
+      face: { x: 0, y: 1 },
+      flipped: false,
+      member,
     });
   }
 
@@ -326,8 +536,10 @@ export class CityScene extends Phaser.Scene {
     const { root, body } = walker;
 
     if (walker.path.length === 0) {
-      body.y = Math.sin(time / 380 + walker.data.id) * 1.2;
-      if (!this.isPlayerControlled(walker) && time >= walker.restUntil) this.chooseNextStop(walker, time);
+      body.y = walker.keyMoving
+        ? -Math.abs(Math.sin(walker.travelled / 11)) * 7
+        : Math.sin(time / 380 + walker.data.id) * 1.2;
+      if (!walker.keyMoving && !this.isPlayerControlled(walker) && time >= walker.restUntil) this.chooseNextStop(walker, time);
       return;
     }
 
@@ -350,7 +562,7 @@ export class CityScene extends Phaser.Scene {
     root.y = Phaser.Math.Linear(walker.from.y, walker.to.y, walker.progress);
     const hop = Math.abs(Math.sin(walker.travelled / 11));
     body.y = -hop * 7;
-    body.setFlipX(walker.to.x < walker.from.x);
+    walker.face = { x: walker.to.x - walker.from.x, y: walker.to.y - walker.from.y };
 
     if (walker.progress >= 1) {
       walker.cell = walker.path[1] as Cell;
@@ -387,9 +599,9 @@ export class CityScene extends Phaser.Scene {
     const h = HALF_TILE_H;
     this.markerTile
       .fillStyle(GOLD, 0.45)
-      .fillPoints([new Phaser.Math.Vector2(x, y - h), new Phaser.Math.Vector2(x + w, y), new Phaser.Math.Vector2(x, y + h), new Phaser.Math.Vector2(x - w, y)], true)
+      .fillRect(x - w, y - h, w * 2, h * 2)
       .lineStyle(2, 0x1a2734, 1)
-      .strokePoints([new Phaser.Math.Vector2(x, y - h), new Phaser.Math.Vector2(x + w, y), new Phaser.Math.Vector2(x, y + h), new Phaser.Math.Vector2(x - w, y)], true)
+      .strokeRect(x - w, y - h, w * 2, h * 2)
       .setVisible(true);
     this.tweens.killTweensOf(this.markerArrow);
     this.markerArrow.setPosition(x, y - 74).setVisible(true);
@@ -411,9 +623,15 @@ export class CityScene extends Phaser.Scene {
    * stands behind, drawn over every other prop its sprite touches.
    */
   private depthOf(walker: Walker): number {
-    const { root, size } = walker;
-    const cell = cellAt(root.x, root.y - 1) ?? walker.cell;
-    const area = new Phaser.Geom.Rectangle(root.x - size / 2, root.y - size, size, size);
+    const { depth, hidden } = this.depthAt(walker.root.x, walker.root.y, walker.size, walker.cell);
+    walker.hidden = hidden;
+    return depth;
+  }
+
+  /** Painter's depth of something `size` pixels tall standing at a world point. */
+  private depthAt(x: number, y: number, size: number, fallback: Cell): { depth: number; hidden: boolean } {
+    const cell = cellAt(x, y - 1) ?? fallback;
+    const area = new Phaser.Geom.Rectangle(x - size / 2, y - size, size, size);
     let behind = Infinity;
     let front = -Infinity;
     for (const { prop, bounds } of this.props) {
@@ -423,11 +641,10 @@ export class CityScene extends Phaser.Scene {
       else front = Math.max(front, order);
     }
     // Ties between citizens go to the one lower on screen.
-    const tie = root.y / MAP_HEIGHT;
-    walker.hidden = behind !== Infinity;
-    if (behind !== Infinity) return behind * DEPTH_STEP - 2 + tie;
-    if (front !== -Infinity) return front * DEPTH_STEP + 1 + tie;
-    return (cell[0] + cell[1] + 1) * DEPTH_STEP + 1 + tie;
+    const tie = y / MAP_HEIGHT;
+    if (behind !== Infinity) return { depth: behind * DEPTH_STEP - 2 + tie, hidden: true };
+    if (front !== -Infinity) return { depth: front * DEPTH_STEP + 1 + tie, hidden: false };
+    return { depth: (cell[1] + 1) * DEPTH_STEP + 1 + tie, hidden: false };
   }
 
   /** A district label over a citizen fades out, so the citizen and its name stay readable. */
@@ -452,6 +669,7 @@ export class CityScene extends Phaser.Scene {
     const selected = this.options.citizens.find((citizen) => citizen.id === this.options.selectedId);
     for (const [district, image] of this.locks) {
       image.setVisible(!selected || !canEnter(district, selected.scores));
+      this.ambience?.setLocked(district, image.visible);
     }
     for (const { prop, index, image } of this.props) {
       const locked = prop.dimmedFrame !== undefined && (this.locks.get(prop.zone as DistrictId)?.visible ?? false);
@@ -489,28 +707,44 @@ export class CityScene extends Phaser.Scene {
 
   private setupCamera(): void {
     const camera = this.cameras.main;
-    camera.setBounds(-MAP_WIDTH / 2, -MAP_HEIGHT / 2, MAP_WIDTH * 2, MAP_HEIGHT * 2);
+    // Full screen: the map always covers the whole view, and the player scrolls around it.
+    camera.setBounds(0, 0, MAP_WIDTH, MAP_HEIGHT);
+    let first = true;
     const fit = () => {
       const { width, height } = this.scale.gameSize;
       const walker = this.walkers.get(this.options.selectedId);
-      if (width < PHONE_WIDTH && walker) {
-        // Phones show part of the map, centered on the citizen being played.
-        camera.setZoom(Phaser.Math.Clamp((height / MAP_HEIGHT) * 0.9, ZOOM_MIN, ZOOM_MAX));
-        camera.centerOn(walker.root.x, walker.root.y);
-        return;
-      }
-      // Wider screens see the whole map below the header bar.
-      const free = Math.max(height - HEADER_SPACE, 200);
-      const zoom = Phaser.Math.Clamp(Math.min(width / MAP_WIDTH, free / MAP_HEIGHT) * 0.96, ZOOM_MIN, ZOOM_MAX);
-      camera.setZoom(zoom);
-      camera.centerOn(MAP_WIDTH / 2, MAP_HEIGHT / 2 - HEADER_SPACE / 2 / zoom);
+      const min = this.minZoom();
+      const wanted = first ? (width < PHONE_WIDTH ? 0.9 : 1) : camera.zoom;
+      camera.setZoom(Phaser.Math.Clamp(wanted, min, ZOOM_MAX));
+      if (first && walker) camera.centerOn(walker.root.x, walker.root.y);
+      first = false;
     };
     fit();
+    if (this.resizeHandler) this.scale.off('resize', this.resizeHandler);
+    this.resizeHandler = fit;
     this.scale.on('resize', fit);
+    this.events.once('shutdown', () => {
+      if (this.resizeHandler) this.scale.off('resize', this.resizeHandler);
+      this.resizeHandler = null;
+    });
+  }
+
+  /** The smallest zoom at which the map still fills the whole screen. */
+  private minZoom(): number {
+    const { width, height } = this.scale.gameSize;
+    return Math.max(width / MAP_WIDTH, height / MAP_HEIGHT, ZOOM_MIN);
   }
 
   private setupInput(): void {
     const camera = this.cameras.main;
+    const keyboard = this.input.keyboard;
+    if (keyboard) {
+      // Do not swallow keys globally, so text fields elsewhere on the page keep working.
+      keyboard.disableGlobalCapture();
+      this.keys = keyboard.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,F,SPACE', false) as Record<string, Phaser.Input.Keyboard.Key>;
+      this.game.canvas.tabIndex = 0;
+      this.game.canvas.focus({ preventScroll: true });
+    }
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       this.drag = { x: pointer.x, y: pointer.y, scrollX: camera.scrollX, scrollY: camera.scrollY, moved: false };
     });
@@ -518,7 +752,10 @@ export class CityScene extends Phaser.Scene {
       if (!this.drag || !pointer.isDown) return;
       const dx = pointer.x - this.drag.x;
       const dy = pointer.y - this.drag.y;
-      if (Math.abs(dx) + Math.abs(dy) > 6) this.drag.moved = true;
+      if (Math.abs(dx) + Math.abs(dy) > 6) {
+        this.drag.moved = true;
+        this.following = false;
+      }
       if (this.drag.moved) camera.setScroll(this.drag.scrollX - dx / camera.zoom, this.drag.scrollY - dy / camera.zoom);
     });
     this.input.on('pointerup', (pointer: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
@@ -551,12 +788,16 @@ export class CityScene extends Phaser.Scene {
     }
     const goal = this.nearestWalkable(target, walker.data.scores);
     if (!goal) return;
+    this.routeTo(walker, goal);
+  }
+
+  /** Sends a walker to `goal`; a step already in progress is finished first. */
+  private routeTo(walker: Walker, goal: Cell): void {
     const midStep = walker.path.length >= 2 && walker.progress < 1;
     const start = midStep ? (walker.path[1] as Cell) : walker.cell;
     const route = findPath(start, goal, walker.data.scores);
     if (route.length === 0) return;
     if (midStep) {
-      // Finish the step in progress, then follow the new route.
       walker.path = [walker.path[0] as Cell, ...route];
       walker.heading = zoneOf(goal);
     } else {

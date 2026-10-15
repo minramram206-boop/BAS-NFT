@@ -1,0 +1,38 @@
+{
+  "name": "Baker Mabel #013",
+  "symbol": "BAS",
+  "description": "Proprietor of the district's favorite bakery. Her cosmic pastries restore morale across the entire neighborhood.",
+  "image": "https://bas-district-devnet.vercel.app/characters/13.png",
+  "external_url": "https://bas-district-devnet.vercel.app/citizen/13",
+  "attributes": [
+    {
+      "trait_type": "Role",
+      "value": "Artisan"
+    },
+    {
+      "trait_type": "Serial",
+      "value": "#013"
+    },
+    {
+      "trait_type": "Insight",
+      "value": 0
+    },
+    {
+      "trait_type": "Bond",
+      "value": 1
+    },
+    {
+      "trait_type": "Craft",
+      "value": 2
+    }
+  ],
+  "properties": {
+    "category": "image",
+    "files": [
+      {
+        "uri": "https://bas-district-devnet.vercel.app/characters/13.png",
+        "type": "image/png"
+      }
+    ]
+  }
+}

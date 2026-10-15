@@ -1,0 +1,38 @@
+{
+  "name": "Hacker WFH #006",
+  "symbol": "BAS",
+  "description": "Writes smart contracts, audits programs, and never attends morning standups.",
+  "image": "https://bas-district-devnet.vercel.app/characters/6.png",
+  "external_url": "https://bas-district-devnet.vercel.app/citizen/6",
+  "attributes": [
+    {
+      "trait_type": "Role",
+      "value": "Scholar"
+    },
+    {
+      "trait_type": "Serial",
+      "value": "#006"
+    },
+    {
+      "trait_type": "Insight",
+      "value": 2
+    },
+    {
+      "trait_type": "Bond",
+      "value": 1
+    },
+    {
+      "trait_type": "Craft",
+      "value": 0
+    }
+  ],
+  "properties": {
+    "category": "image",
+    "files": [
+      {
+        "uri": "https://bas-district-devnet.vercel.app/characters/6.png",
+        "type": "image/png"
+      }
+    ]
+  }
+}

@@ -3,32 +3,49 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import React from 'react';
-import { BoardIcon, PersonIcon, PlazaIcon, TrophyIcon, UpIcon } from '@/components/ui/icons';
+import { BoardIcon, MarketIcon, PersonIcon, PlazaIcon, PlusIcon, TrophyIcon, UpIcon } from '@/components/ui/icons';
 import { cn } from '@/lib/utils/cn';
 import { MESSAGES } from '@/messages';
-import { useSelectedCitizenId } from '@/stores/selectors';
+import { useOwnedIds, useSelectedCitizenId } from '@/stores/selectors';
 
-/** Tab bar for phones; hidden from tablet width up, where panels carry the links. */
-export const BottomNav: React.FC = () => {
+export interface NavTab {
+  href: string;
+  label: string;
+  icon: React.ReactNode;
+  active: boolean;
+}
+
+/** The six places of the app, with the current one marked. Shared by the phone bar and the desktop header. */
+export function useNavTabs(iconSize = 20): NavTab[] {
   const pathname = usePathname();
   const selectedId = useSelectedCitizenId();
-  const tabs = [
-    { href: '/', label: MESSAGES.nav.city, icon: <PlazaIcon size={20} />, active: pathname === '/' },
-    { href: '/missions', label: MESSAGES.nav.missions, icon: <BoardIcon size={20} />, active: pathname === '/missions' },
-    { href: '/training', label: MESSAGES.nav.training, icon: <UpIcon size={20} />, active: pathname === '/training' },
-    { href: '/season', label: MESSAGES.nav.season, icon: <TrophyIcon size={20} />, active: pathname === '/season' },
-    {
-      href: `/citizen/${selectedId}`,
-      label: MESSAGES.nav.citizen,
-      icon: <PersonIcon size={20} />,
-      active: pathname.startsWith('/citizen'),
-    },
+  const newcomer = useOwnedIds().length === 0;
+  return [
+    { href: '/', label: MESSAGES.nav.city, icon: <PlazaIcon size={iconSize} />, active: pathname === '/' },
+    { href: '/missions', label: MESSAGES.nav.missions, icon: <BoardIcon size={iconSize} />, active: pathname === '/missions' },
+    { href: '/training', label: MESSAGES.nav.training, icon: <UpIcon size={iconSize} />, active: pathname === '/training' },
+    { href: '/season', label: MESSAGES.nav.season, icon: <TrophyIcon size={iconSize} />, active: pathname === '/season' },
+    { href: '/market', label: MESSAGES.nav.market, icon: <MarketIcon size={iconSize} />, active: pathname === '/market' },
+    // Someone without a citizen has no profile of their own yet; the last place is where one is minted.
+    newcomer
+      ? { href: '/mint', label: MESSAGES.nav.mint, icon: <PlusIcon size={iconSize} />, active: pathname === '/mint' }
+      : {
+          href: `/citizen/${selectedId}`,
+          label: MESSAGES.nav.citizen,
+          icon: <PersonIcon size={iconSize} />,
+          active: pathname.startsWith('/citizen'),
+        },
   ];
+}
+
+/** Tab bar for phones; hidden from tablet width up, where the header carries the links. */
+export const BottomNav: React.FC = () => {
+  const tabs = useNavTabs();
 
   return (
     <nav
       aria-label={MESSAGES.nav.label}
-      className="pointer-events-auto grid h-16 shrink-0 grid-cols-5 border-t-2 border-[#05090e] bg-[#1a2734] px-1 pb-[env(safe-area-inset-bottom)] md:hidden"
+      className="pointer-events-auto grid h-16 shrink-0 grid-cols-6 border-t-2 border-[#05090e] bg-[#1a2734] px-1 pb-[env(safe-area-inset-bottom)] md:hidden"
     >
       {tabs.map((tab) => (
         <Link

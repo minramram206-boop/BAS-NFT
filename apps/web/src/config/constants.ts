@@ -21,6 +21,3 @@ export const STAT_COLORS: Readonly<Record<StatKey, { fill: string; light: string
   alignment: { fill: '#3f9252', light: '#8fdc9b', soft: '#e4f3e7' },
   compute: { fill: '#8c579c', light: '#d3a8e0', soft: '#f3e8f6' },
 };
-
-/** Hours until the first district event in the mock season. */
-export const EVENT_OPENS_IN_HOURS = 52;

@@ -266,18 +266,47 @@ export function buildTransaction(instructions, signers, recentBlockhash) {
 
 // --- JSON-RPC ------------------------------------------------------------------
 
+/**
+ * An RPC address that is safe to print. Hosted endpoints carry the account's API
+ * key in the query string or the path, so only the host is shown.
+ */
+export function describeRpc(url) {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return 'the configured RPC';
+  }
+}
+
 export function createRpc(url) {
   let id = 0;
+  // The public devnet endpoint limits requests per method and answers with HTTP 429
+  // or a "Too many requests" JSON error; both clear after a short wait.
+  const isRateLimit = (status, message) => status === 429 || /too many requests|rate limit/i.test(message);
   const call = async (method, params = []) => {
-    id += 1;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
-    });
-    const body = await response.json();
-    if (body.error) throw new Error(`${method}: ${body.error.message}`);
-    return body.result;
+    for (let attempt = 0; ; attempt += 1) {
+      id += 1;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
+      });
+      const text = await response.text();
+      let body;
+      try {
+        body = JSON.parse(text);
+      } catch {
+        body = { error: { message: text.slice(0, 200) || `HTTP ${response.status}` } };
+      }
+      if (body.error) {
+        if (isRateLimit(response.status, body.error.message) && attempt < 8) {
+          await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
+          continue;
+        }
+        throw new Error(`${method}: ${body.error.message}`);
+      }
+      return body.result;
+    }
   };
 
   const getAccount = async (pubkey) => {
@@ -302,7 +331,7 @@ export function createRpc(url) {
         throw new Error(`transaction ${signature} failed: ${JSON.stringify(status.err)}\n${(tx?.meta?.logMessages ?? []).join('\n')}`);
       }
       if (status?.confirmationStatus === 'confirmed' || status?.confirmationStatus === 'finalized') return signature;
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
     }
     throw new Error(`transaction ${signature} was not confirmed in time`);
   };

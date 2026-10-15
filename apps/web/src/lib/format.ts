@@ -1,5 +1,5 @@
 import type { StatKey } from '@bas/content';
-import { formatTokenAtoms } from '@bas/chain-client/stats';
+import { formatTokenAtoms, tierOf } from '@bas/chain-client/stats';
 import { DISTRICT_RULES } from '@/lib/data/districts';
 import type { DistrictId } from '@/lib/data/types';
 import { MESSAGES, formatMessage } from '@/messages';
@@ -33,8 +33,9 @@ export function statList(stats: readonly StatKey[]): string {
   return stats.length === 3 ? MESSAGES.districts.anyStat : stats.map(statLabel).join(MESSAGES.districts.or);
 }
 
+/** Tier of a score, from the same thresholds the program uses. */
 export function tierForScore(score: number): number {
-  return score >= 10 ? 3 : score >= 6 ? 2 : score >= 3 ? 1 : 0;
+  return tierOf(score);
 }
 
 export function districtName(id: DistrictId | 'road' | undefined): string {
@@ -49,4 +50,14 @@ export function lockedRule(id: DistrictId): string {
     stats: statList(rule.stats),
     score: rule.unlockScore,
   });
+}
+
+/** A wait such as the time until the chat quota resets: "5h 12m", "12m" or "under a minute". */
+export function formatWait(ms: number): string {
+  const minutes = Math.ceil(Math.max(ms, 0) / 60_000);
+  if (minutes < 1) return 'under a minute';
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours === 0) return `${rest}m`;
+  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
 }

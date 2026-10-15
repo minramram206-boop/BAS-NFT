@@ -1,0 +1,38 @@
+{
+  "name": "Rosie Rivet #014",
+  "symbol": "BAS",
+  "description": "District engineer capable of fixing everything from micro-drones to atmospheric air scrubbers.",
+  "image": "https://bas-district-devnet.vercel.app/characters/14.png",
+  "external_url": "https://bas-district-devnet.vercel.app/citizen/14",
+  "attributes": [
+    {
+      "trait_type": "Role",
+      "value": "Artisan"
+    },
+    {
+      "trait_type": "Serial",
+      "value": "#014"
+    },
+    {
+      "trait_type": "Insight",
+      "value": 0
+    },
+    {
+      "trait_type": "Bond",
+      "value": 1
+    },
+    {
+      "trait_type": "Craft",
+      "value": 2
+    }
+  ],
+  "properties": {
+    "category": "image",
+    "files": [
+      {
+        "uri": "https://bas-district-devnet.vercel.app/characters/14.png",
+        "type": "image/png"
+      }
+    ]
+  }
+}

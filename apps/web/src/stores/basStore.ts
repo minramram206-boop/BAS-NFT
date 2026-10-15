@@ -1,4 +1,5 @@
 import { createStore, useStore, type StoreApi } from 'zustand';
+import { createChatSlice } from './slices/chatSlice';
 import { createCitySlice } from './slices/citySlice';
 import { createDistrictSlice } from './slices/districtSlice';
 import { createUiSlice } from './slices/uiSlice';
@@ -8,12 +9,13 @@ export type { BasStore, CityMode, CreateBasStoreOptions, ModalState, TrainingCon
 
 export type BasStoreApi = StoreApi<BasStore>;
 
-/** One store per page load, composed from the district, city and UI slices. */
+/** One store per page load, composed from the district, city, UI and chat slices. */
 export function createBasStore(options: CreateBasStoreOptions): BasStoreApi {
   return createStore<BasStore>()((set, get) => ({
     ...createDistrictSlice(options, set, get),
     ...createCitySlice(set, get),
     ...createUiSlice(set, get),
+    ...createChatSlice(set, get),
   }));
 }
 

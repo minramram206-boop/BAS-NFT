@@ -1,0 +1,38 @@
+{
+  "name": "Warden #004",
+  "symbol": "BAS",
+  "description": "Staunch protector stationed at the training dojo gates. Ready to test any aspiring agent.",
+  "image": "https://bas-district-devnet.vercel.app/characters/4.png",
+  "external_url": "https://bas-district-devnet.vercel.app/citizen/4",
+  "attributes": [
+    {
+      "trait_type": "Role",
+      "value": "Sentinel"
+    },
+    {
+      "trait_type": "Serial",
+      "value": "#004"
+    },
+    {
+      "trait_type": "Insight",
+      "value": 0
+    },
+    {
+      "trait_type": "Bond",
+      "value": 2
+    },
+    {
+      "trait_type": "Craft",
+      "value": 1
+    }
+  ],
+  "properties": {
+    "category": "image",
+    "files": [
+      {
+        "uri": "https://bas-district-devnet.vercel.app/characters/4.png",
+        "type": "image/png"
+      }
+    ]
+  }
+}

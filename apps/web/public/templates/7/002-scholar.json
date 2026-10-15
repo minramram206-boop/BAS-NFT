@@ -1,0 +1,38 @@
+{
+  "name": "Dr. Nebu #002",
+  "symbol": "BAS",
+  "description": "Manages atmospheric scrubbers and medical canisters across the district domes.",
+  "image": "https://bas-district-devnet.vercel.app/characters/2.png",
+  "external_url": "https://bas-district-devnet.vercel.app/citizen/2",
+  "attributes": [
+    {
+      "trait_type": "Role",
+      "value": "Scholar"
+    },
+    {
+      "trait_type": "Serial",
+      "value": "#002"
+    },
+    {
+      "trait_type": "Insight",
+      "value": 2
+    },
+    {
+      "trait_type": "Bond",
+      "value": 1
+    },
+    {
+      "trait_type": "Craft",
+      "value": 0
+    }
+  ],
+  "properties": {
+    "category": "image",
+    "files": [
+      {
+        "uri": "https://bas-district-devnet.vercel.app/characters/2.png",
+        "type": "image/png"
+      }
+    ]
+  }
+}

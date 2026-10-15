@@ -94,6 +94,11 @@ export function parseCitizen(raw: unknown, index: number): CitizenRecord {
   if (typeof source.registered !== 'boolean') {
     invalid(index, 'registered', 'expected a boolean');
   }
+  for (const key of ['spriteFront', 'spriteBack'] as const) {
+    if (source[key] !== undefined && (typeof source[key] !== 'string' || source[key].length === 0)) {
+      invalid(index, key, 'expected a non-empty string when present');
+    }
+  }
 
   return {
     id,
@@ -104,6 +109,8 @@ export function parseCitizen(raw: unknown, index: number): CitizenRecord {
     image: source.image as string,
     avatar: source.avatar as string,
     sprite: source.sprite as string,
+    ...(source.spriteFront === undefined ? {} : { spriteFront: source.spriteFront as string }),
+    ...(source.spriteBack === undefined ? {} : { spriteBack: source.spriteBack as string }),
     intelligence: requireScore(source.intelligence, index, 'intelligence'),
     alignment: requireScore(source.alignment, index, 'alignment'),
     compute: requireScore(source.compute, index, 'compute'),

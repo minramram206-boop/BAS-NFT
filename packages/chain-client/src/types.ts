@@ -30,7 +30,7 @@ export const STAT_LABELS: Readonly<Record<StatType, string>> = {
 } as const;
 
 /**
- * Phase A role (SPEC v2 §6.5).
+ * Phase A role (SPEC v2 §7).
  *
  * The role is named by the NFT's metadata file (`018-navigator.json`, D-0022)
  * and determines the starting stats, which the program derives from its own
@@ -91,7 +91,7 @@ export interface CitizenStateOnChain {
 }
 
 /**
- * Receipt returned after one atomic training transaction (SPEC v2 §17).
+ * Receipt returned after one atomic training transaction (SPEC v2 §12).
  *
  * Named after what it reports: the transaction raised one score and burned the
  * tokens it cost. Nothing is minted and nothing is transferred to a wallet.
@@ -110,4 +110,15 @@ export interface MintResult {
   signature: string;
   assetAddress: string;
   citizenId: number;
+}
+
+/** Supply side of a Core Candy Machine, from `decodeCandyMachine`. */
+export interface CandyMachineOnChain {
+  authority: string;
+  mintAuthority: string;
+  collection: string;
+  /** Items handed out so far. */
+  itemsRedeemed: number;
+  /** Items the machine was created to hold. */
+  itemsAvailable: number;
 }

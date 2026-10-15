@@ -1,0 +1,38 @@
+{
+  "name": "Captain Gale #018",
+  "symbol": "BAS",
+  "description": "Patrols the upper stratosphere, providing aerial reconnaissance for the district.",
+  "image": "https://bas-district-devnet.vercel.app/characters/18.png",
+  "external_url": "https://bas-district-devnet.vercel.app/citizen/18",
+  "attributes": [
+    {
+      "trait_type": "Role",
+      "value": "Navigator"
+    },
+    {
+      "trait_type": "Serial",
+      "value": "#018"
+    },
+    {
+      "trait_type": "Insight",
+      "value": 2
+    },
+    {
+      "trait_type": "Bond",
+      "value": 0
+    },
+    {
+      "trait_type": "Craft",
+      "value": 1
+    }
+  ],
+  "properties": {
+    "category": "image",
+    "files": [
+      {
+        "uri": "https://bas-district-devnet.vercel.app/characters/18.png",
+        "type": "image/png"
+      }
+    ]
+  }
+}

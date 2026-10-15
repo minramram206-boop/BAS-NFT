@@ -1,0 +1,41 @@
+[package]
+name = "market"
+description = "BAS citizen market - fixed-price listings without custody"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "market"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build"]
+# Devnet only: auctions run in minutes instead of days (see AUCTION_HOUR_SECONDS).
+devnet-clock = []
+# Anchor 0.30's macros test these cfgs. Naming them keeps rustc 1.80 and later
+# from warning about each one in host builds; none of them is ever turned on.
+anchor-debug = []
+custom-heap = []
+custom-panic = []
+
+[lints.rust]
+# The entrypoint macro tests `target_os = "solana"`, which host rustc does not know.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
+
+[dependencies]
+anchor-lang = { workspace = true }
+solana-program = { workspace = true }
+
+# Host-side instruction tests only (tests/integration). Not in the BPF binary.
+[dev-dependencies]
+solana-program-test = { workspace = true }
+solana-sdk = { workspace = true }
+tokio = { workspace = true }

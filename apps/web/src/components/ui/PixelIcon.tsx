@@ -18,7 +18,7 @@ export interface PixelIconProps {
 
 /**
  * Pixel-art sprite rendered with nearest-neighbour scaling and a soft drop shadow.
- * Centralises the repeated `image-rendering` / `drop-shadow-xs` markup.
+ * Centralises the repeated `image-rendering` / `drop-shadow-sm` markup.
  */
 export const PixelIcon: React.FC<PixelIconProps> = ({
   src,
@@ -34,7 +34,7 @@ export const PixelIcon: React.FC<PixelIconProps> = ({
     title={title}
     loading={loading}
     className={cn(
-      'w-auto object-contain drop-shadow-xs',
+      'w-auto object-contain drop-shadow-sm',
       className,
       effectClassName,
     )}

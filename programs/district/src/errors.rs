@@ -70,4 +70,24 @@ pub enum DistrictError {
     /// Not in §13: an address is empty or the training cost is zero.
     #[msg("Configuration value is invalid.")]
     InvalidConfig,
+
+    /// Not in §13: the asset's metadata URI is outside the approved
+    /// template. Kept apart from `InvalidAssetState` so a wrong URI is not
+    /// reported as a broken asset account.
+    #[msg("Asset metadata URI is not approved for this template.")]
+    InvalidMetadataUri,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Clients match on these numbers, so existing codes must never move.
+    #[test]
+    fn codes_keep_their_numbers_and_new_ones_go_last() {
+        assert_eq!(u32::from(DistrictError::Unauthorized), 6000);
+        assert_eq!(u32::from(DistrictError::InvalidAssetState), 6007);
+        assert_eq!(u32::from(DistrictError::InvalidConfig), 6019);
+        assert_eq!(u32::from(DistrictError::InvalidMetadataUri), 6020);
+    }
 }

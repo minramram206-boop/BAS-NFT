@@ -1,0 +1,33 @@
+[package]
+name = "market-integration"
+description = "Runs the market program against the Metaplex Core program itself"
+version = "0.1.0"
+edition = "2021"
+license = "UNLICENSED"
+publish = false
+
+# Its own workspace and lockfile: Core and its client pull in crates the SBF
+# toolchain (rustc 1.75) cannot build, and they must not move the versions
+# the root workspace resolves for `cargo build-sbf`.
+[workspace]
+
+[features]
+# Runs every test against the fast devnet auction clock of the market program.
+devnet-clock = ["market/devnet-clock"]
+
+[dependencies]
+anchor-lang = "0.30.1"
+# Without its entrypoint, so its `entrypoint` symbol does not clash with Core's.
+market = { path = "..", features = ["no-entrypoint"] }
+solana-program = "=1.18.26"
+solana-program-test = "=1.18.26"
+solana-sdk = "=1.18.26"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+# Core 0.9.8 is the last release on Solana 1.x, so it runs natively in this
+# bank. Transfer, delegate and registry code is the same in later releases;
+# tests/fixtures/mpl_core.so, when present, runs the deployed program instead.
+mpl-core-program = { git = "https://github.com/metaplex-foundation/mpl-core", tag = "release/core@0.9.8" }
+# The Core client from the same commit: instruction builders and an account
+# decoder written independently of this repository's hand-built ones.
+mpl-core = { git = "https://github.com/metaplex-foundation/mpl-core", tag = "release/core@0.9.8" }

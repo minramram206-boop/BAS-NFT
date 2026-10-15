@@ -1,0 +1,30 @@
+{
+  "name": "@bas/worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Background upkeep for citizen chat: summary rewrites and public history lines",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "pnpm build && node --env-file-if-exists=../../.env dist/main.js",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "typecheck": "tsc -p tsconfig.build.json && tsc --noEmit",
+    "lint": "tsc -p tsconfig.build.json --noEmit",
+    "test": "pnpm build && node --experimental-strip-types --disable-warning=ExperimentalWarning --test --test-reporter=spec \"test/*.test.ts\""
+  },
+  "dependencies": {
+    "@bas/ai": "workspace:*",
+    "@bas/chat-store": "workspace:*",
+    "bullmq": "6.3.15"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "typescript": "^5.7.3"
+  }
+}

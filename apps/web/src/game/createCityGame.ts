@@ -5,7 +5,24 @@ export interface CityGame {
   sync(options: CitySceneOptions): void;
   zoomBy(step: 1 | -1): void;
   focusSelected(): void;
+  walkToTarget(): void;
   destroy(): void;
+}
+
+/**
+ * Phaser follows the size of its parent. When the parent has no size (hidden, or
+ * the window minimised) it would resize the canvas to 0 x 0, and WebGL then
+ * fails with "Framebuffer status: Incomplete Attachment" and stays broken. An
+ * empty parent is treated as "nothing changed": the canvas keeps its last size
+ * until the parent has a real one again.
+ */
+function ignoreEmptyParent(game: Phaser.Game, parent: HTMLElement): void {
+  const scale = game.scale;
+  const measure = scale.getParentBounds.bind(scale);
+  scale.getParentBounds = () => {
+    const box = parent.getBoundingClientRect();
+    return box.width < 1 || box.height < 1 ? false : measure();
+  };
 }
 
 /**
@@ -23,10 +40,11 @@ export async function createCityGame(parent: HTMLElement, options: CitySceneOpti
     backgroundColor: '#17262d',
     pixelArt: true,
     banner: false,
-    scale: { mode: Phaser.Scale.RESIZE, width: parent.clientWidth, height: parent.clientHeight },
+    scale: { mode: Phaser.Scale.RESIZE, width: Math.max(parent.clientWidth, 1), height: Math.max(parent.clientHeight, 1) },
     input: { mouse: { preventDefaultWheel: true } },
     scene: [scene],
   });
+  ignoreEmptyParent(game, parent);
 
   const whenReady = (action: () => void) => {
     if (scene.sys.isActive()) action();
@@ -37,6 +55,7 @@ export async function createCityGame(parent: HTMLElement, options: CitySceneOpti
     sync: (next) => scene.sync(next),
     zoomBy: (step) => whenReady(() => scene.zoomBy(step)),
     focusSelected: () => whenReady(() => scene.focusSelected()),
+    walkToTarget: () => whenReady(() => scene.walkToTarget()),
     destroy: () => game.destroy(true),
   };
 }

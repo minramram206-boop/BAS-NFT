@@ -1,0 +1,38 @@
+{
+  "name": "Boss Ledger #005",
+  "symbol": "BAS",
+  "description": "Oversees the district treasury vault and manages voting delegations.",
+  "image": "https://bas-district-devnet.vercel.app/characters/5.png",
+  "external_url": "https://bas-district-devnet.vercel.app/citizen/5",
+  "attributes": [
+    {
+      "trait_type": "Role",
+      "value": "Steward"
+    },
+    {
+      "trait_type": "Serial",
+      "value": "#005"
+    },
+    {
+      "trait_type": "Insight",
+      "value": 1
+    },
+    {
+      "trait_type": "Bond",
+      "value": 2
+    },
+    {
+      "trait_type": "Craft",
+      "value": 0
+    }
+  ],
+  "properties": {
+    "category": "image",
+    "files": [
+      {
+        "uri": "https://bas-district-devnet.vercel.app/characters/5.png",
+        "type": "image/png"
+      }
+    ]
+  }
+}

@@ -10,27 +10,42 @@ and the mandated technology choices in [`id/TECH_STACK_ID.md`](./id/TECH_STACK_I
 apps/
   web/                     Next.js 15 App Router application
     src/
-      app/                 routes and the root layout
+      app/                 routes (/, /missions, /training, /mint, /season, /citizen/[id]) and the root layout
       components/
-        layout/            arcade shell, status bar
-        hud/               header bars and their shared parts
-        district/          District 01 plaza, dialogue, registry, agent card
-        training/          Agent Training Dojo
-        modal/             global dialog
-        ui/                shared primitives (PixelIcon, PixelSprite, StatMeter, TrainStatButton)
-      config/              presentation constants, stage tuning, stat metadata, copy
-      lib/                 audio synthesizer, DOM effects, hooks, class helper
-      stores/              zustand store: types, slices/ (registry, training, ui), provider, selectors
+        city/              city screen (top bar, sidebar, framed map), Phaser host, selected citizen card with roster tabs, mission tracker and mission popup, event card
+        citizen/           profile screen, the citizen rail (left column of Missions and the city sidebar), the player strip (Training), avatar switcher, stat rows
+        journey/           the route from Tier 0 to Tier 3: next-step line and path panel
+        layout/            top bars with the desktop tab group, phone tab bar, screen shell and its column layout, telemetry context
+        missions/          mission board, step dialog, mission copy lookup
+        modal/             global dialog and the mission reward popup
+        season/            season standings and prize vault
+        training/          training screen
+        mint/              the mint screen (a citizen is minted, not picked) and the panel shown to a wallet without a citizen
+        token/             where the official token is bought (Pump.fun)
+        ui/                shared primitives (PixelIcon, StatBar, PanelTab, Ribbon, ReceiptRow, icons)
+      config/              presentation constants and server-side cluster telemetry
+      game/                Phaser scene, ambience, grid and the generated city layout
+      lib/                 data adapter (types, districts, missions, journey, season, mock/, chain/), Wallet Standard layer (wallet/), audio synthesizer, DOM effects, formatters, class helper, `usePersistedFlag` (open/closed state of the city panels kept in the browser)
+      messages/            all public English copy (en.json) and formatMessage
+      stores/              zustand store: types, slices/ (district, city, ui), provider, selectors, useJourney
+    test/                  node:test for the journey planner and the mission data (hooks.mjs resolves the `@/` imports)
     public/
       avatars/             120x57 portraits referenced by content
-      characters/          1000x1000 sprites referenced by content
+      characters/          1000x1000 art referenced by content
+      sprites/citizens/    128x128 map sprites (<id> side portrait, optional <id>-front and <id>-back) referenced by content
       icons/               the six icons the UI actually renders
-      images/district/     plaza stage background
+      images/city/         generated city ground, props sheet and district lock overlays
+      images/district/     training stage background
+      licenses/            OFL texts of the bundled fonts
+  mission-server/          mission rules and claim signing (D-0059): catalog, rules, store, chain reader, HTTP API
+    src/                   see docs/MISSION_SERVER.md
+    test/                  rules, claim transaction, sign-in, service flow, HTTP, file store
 
 packages/
   config/                  typed cluster configuration, read from config/*.json
   content/                 content schema, validation, and server-only loaders
   chain-client/            typed client for the District program
+  metaplex-client/         Node-only builders for the public sale and the mint transaction (Umi, Core Candy Machine)
 
 programs/
   Anchor.toml              Anchor toolchain and program ids
@@ -54,9 +69,18 @@ config/
 
 content/
   en/citizens.json         authored English citizen roster
+  en/citizens.archive.json citizens held back from the roster
+  en/roles.json            seven-role registry: starting stats and mint supply
 
 scripts/
   check-assets.mjs         asset guard: no orphan and no duplicate public file
+  check-font-licenses.mjs  font license texts match the bundled fonts
+  check-metadata.mjs       NFT metadata files match the program's URI and role rules
+  check-public-copy.mjs    public copy lives in English only
+  gen-metadata.mjs         writes apps/web/public/templates/7/*.json (pnpm metadata)
+  gen-program-id.mjs       one-off program keypair and placeholder generator
+  devnet/                  deploy.sh, setup.mjs, mint-setup.mjs (Candy Machine), mint-simulate.mjs and the dependency-free solana.mjs they use
+  mock-city/               generate_city.py: city images and cityLayout.json
 
 docs/                      this directory
 tests/                     reserved for e2e and integration suites (TECH_STACK_ID.md §11)
@@ -70,7 +94,10 @@ tests/                     reserved for e2e and integration suites (TECH_STACK_I
 | `@bas/config` | Node only | `node:fs`, `node:path`, `node:module` | validated `DEVNET_CONFIG` / `MAINNET_CONFIG`, `getNetworkConfig()`, `resolveNetwork()`, `validateProductionReadiness()`, `loadRepoJson()` |
 | `@bas/content` | browser **and** Node | none (browser-safe) | `CitizenRecord`, `StatKey`, `MAX_STAT_SCORE`, `STAT_KEYS`, `parseCitizenRoster()` |
 | `@bas/content/server` | Node only | `@bas/config`, `server-only` | `getCitizens()`, `loadCitizens()`, `getCitizenById()`, `getDefaultCitizenId()` |
-| `@bas/chain-client` | Node only | `@bas/config` | `DistrictChainClient`, protocol constants, receipt types |
+| `@bas/chain-client` | Node only | `@bas/config` | `DistrictChainClient`, protocol constants, receipt types, instruction builders, account decoders |
+| `@bas/chain-client/browser` | browser **and** Node | `@solana/kit` only | the same constants, instruction builders and account decoders, without `@bas/config` |
+| `@bas/chain-client/stats` | browser **and** Node | none | stat and tier arithmetic |
+| `@bas/metaplex-client` | Node only | `@bas/chain-client`, Umi, `mpl-core`, `mpl-core-candy-machine` | `createMintBackend()`, `buildMintTransaction()`, `readSale()`, `buildCreateSale()`, `buildAddItems()`, royalties helpers |
 
 Two rules keep these boundaries honest:
 
@@ -112,6 +139,50 @@ is never empty on first paint.
 Nothing in the store is canonical. Ownership, progression, burns, credits and
 claims must be verified by `programs/district` and trusted server logic.
 
+The store only holds minted citizens. `DistrictDataSource.mintCitizen()` is the
+one way a citizen enters it: the mock draws one of the roster citizens nobody
+holds yet, takes the mint price in SOL and registers it at its role scores; the
+chain source will send the Candy Machine mint and `register_citizen` as one
+transaction (SPEC §6.3). `NEXT_PUBLIC_BAS_MOCK_START=empty` starts the mock
+wallet without any citizen, to try the first mint.
+
+## 3a. Mode chain
+
+`NEXT_PUBLIC_BAS_DATA=chain` swaps the mock `DistrictDataSource` for
+`lib/data/chain/chainDataSource.ts` (D-0060). The default stays the mock, so
+`pnpm dev` works without a wallet, a cluster or a server.
+
+| Concern | Where it comes from |
+| --- | --- |
+| Citizens of the connected wallet | Core assets of the collection (`getProgramAccounts`, memcmp on the collection field), joined with `CitizenState` by asset. The roster record comes from the serial in the metadata URI (`NNN-role.json`) |
+| Scores, credits, tier | `CitizenState` on chain |
+| `$BAS` balance | the owner's token account for `utilityTokenMint` |
+| Missions | `apps/mission-server` (sign-in with `signMessage`, steps, claim) |
+| Claim and training | transactions built from `@bas/chain-client/browser` and signed by the wallet through Wallet Standard (`solana:signTransaction`) |
+| Season standings | `GET /season/standings` on the mission server |
+| Public sale (supply, minted, minted by this wallet) | the Core Candy Machine account (`itemsAvailable`, `itemsRedeemed`) and the wallet's `MintCounter` account; the manifest `maxSupply` is not used |
+| Mint | `POST /mint/prepare` on the mission server returns a transaction signed by everything but the buyer's wallet; the wallet signs and sends it (D-0061) |
+
+Rules that keep this layer honest:
+
+1. The browser bundle imports `@bas/chain-client/browser` (or `/stats`), never
+   the package root, because the root reaches `node:fs` through `@bas/config`.
+   `packages/chain-client/test/browser.test.ts` fails if that changes.
+2. Every write goes through the wallet. A declined prompt answers `declined`;
+   a transaction that fails after signing answers `transaction-failed` and the
+   adapter re-reads the chain, so the screen never keeps a guess.
+3. Environment variables: `NEXT_PUBLIC_BAS_DATA`, `NEXT_PUBLIC_MISSION_SERVER_URL`
+   and `NEXT_PUBLIC_SOLANA_RPC_URL` (https only; plain http is accepted for
+   localhost on devnet). `getProgramAccounts` is restricted on many public RPC
+   endpoints, so a hosted RPC is recommended.
+4. `mintCitizen()` asks the server for the mint transaction, has the wallet
+   sign and send it, then re-reads the chain until the new citizen is visible.
+   The transaction is `setComputeUnitLimit`, the Candy Guard `mintV1` (0.01 SOL
+   to the treasury, one mint per wallet, `thirdPartySigner` = the server's mint
+   key) and `register_citizen`, all in one packet, so a citizen never exists
+   without its `CitizenState`. Only the Node-only `@bas/metaplex-client` builds
+   it; the browser reads the sale through `@bas/chain-client/browser`.
+
 ## 4. Build order
 
 ```bash
@@ -147,14 +218,15 @@ Every sprite the UI renders is referenced from exactly one place:
 
 | Asset | Referenced by |
 | --- | --- |
-| `public/characters/<id>.png`, `public/avatars/<id>.png` | `content/en/citizens.json` |
-| `public/images/district/courtyard_stage_bg.png` | `STAGE.backgroundImage` in `apps/web/src/config/constants.ts` |
+| `public/characters/<id>.png`, `public/avatars/<id>.png`, `public/sprites/citizens/<id>.png`, `public/sprites/citizens/<id>-front.png`, `public/sprites/citizens/<id>-back.png` | `content/en/citizens.json` (no screen renders `avatar` yet; `spriteFront` and `spriteBack` are optional) |
+| `public/images/city/*.png` | `apps/web/src/game/CityScene.ts`, produced by `scripts/mock-city/generate_city.py` |
+| `public/images/district/courtyard_stage_bg.png` | `apps/web/src/components/training/TrainingScreen.tsx` |
 | `public/icons/*.png` | `PixelIcon` call sites in `apps/web/src/components` |
 
 Two guards keep this true:
 
 - `packages/content/test/citizens.test.ts` fails when the roster points at a
-  sprite that does not exist in `apps/web/public`.
+  sprite (front or back) that does not exist in `apps/web/public`.
 - `scripts/check-assets.mjs` (run as `pnpm assets`, and as the `@bas/web` test)
   fails when a public file is referenced by nothing, or when two public files
   are byte-identical.
@@ -190,11 +262,13 @@ production metadata host at the approved template path; then re-run the gate.
 
 ## 7. Cluster telemetry in the UI
 
-The shell never hardcodes a cluster label, program id, or supply. `app/layout.tsx`
-calls `loadDistrictTelemetry()` (server-only), which reads the resolved cluster
+The shell never hardcodes cluster values. `app/layout.tsx` calls
+`loadDistrictTelemetry()` (server-only), which reads the resolved cluster
 through `@bas/config` and passes `DistrictTelemetry` down through
-`DistrictTelemetryProvider`. Header pill, ticker and status bar all render from
-that object, so switching `NEXT_PUBLIC_SOLANA_NETWORK` updates every label.
+`DistrictTelemetryProvider`. Today the layout uses it to seed the store with the
+base training cost and token decimals, so training costs come from the active
+cluster's manifest. `useDistrictTelemetry()` has no consumer yet: the header
+shows a mock-data badge, not a cluster label, program id or supply.
 
 Measured values that do not exist yet — latency, sync state — are not displayed.
 
@@ -206,7 +280,7 @@ pull request:
 | Job | Steps | Notes |
 | --- | --- | --- |
 | `typescript` | install (runs `postinstall` → `build:packages`), `pnpm typecheck`, `pnpm test`, `pnpm lint`, `node scripts/check-assets.mjs`, `pnpm build` | The web build uses self-hosted `@fontsource` assets and does not require Google Fonts egress |
-| `programs` | `cargo fmt --check`, `cargo check --all-targets`, `cargo test --lib`, then `cargo test --test integration -- --test-threads=1` | 29 unit tests (Core parser, template allowlist, state, roles, cost formula) and 63 instruction-level tests, including adversarial cases for forged assets, front-run initialization, cross-citizen claims and prefunded receipts (D-0012, D-0016). `RUSTFLAGS: -A unexpected_cfgs` and `RUST_LOG: error` keep macro warnings and runtime logs out of the summary. A real `anchor build` / `anchor test` against a validator must still run before deployment |
+| `programs` | `cargo fmt --check`, `cargo check --all-targets`, `cargo test --lib`, then `cargo test --test integration -- --test-threads=1` | 31 unit tests (32 in the `cargo test` summary, which also counts the `test_id` that `declare_id!` generates; Core parser, template allowlist, state, roles, cost formula) and 63 instruction-level tests, including adversarial cases for forged assets, front-run initialization, cross-citizen claims and prefunded receipts (D-0012, D-0016). `RUSTFLAGS: -A unexpected_cfgs` and `RUST_LOG: error` keep macro warnings and runtime logs out of the summary. A real `anchor build` / `anchor test` against a validator must still run before deployment |
 
 ## 9. Known gaps
 
@@ -218,10 +292,13 @@ Tracked in [`DECISIONS.md`](./DECISIONS.md):
   Compressed assets are rejected, because a
   `HashedAssetV1` account stores no readable owner or collection. Supporting
   them would need a Merkle tree and a separate decision.
-- The web app has no wallet integration yet: `walletAddress` is a placeholder
-  and `LOGIN` only toggles local state. `@solana/kit` plus Wallet Standard is
-  the mandated integration.
-- `apps/worker`, `packages/ai`, `packages/db`, `packages/metaplex-client`,
+- The wallet layer (`lib/wallet`, Wallet Standard through `@solana/kit`) is
+  only used in chain mode. In mock mode the wallet is still a fixture and the
+  connect button opens the wallet dialog without a real wallet.
+- Nothing serves the NFT metadata at `/templates/<id>/` yet. The approved
+  prefix is locked by `initialize_config` (D-0027), so a route or static folder
+  for it has to exist before `scripts/devnet/setup.mjs` runs.
+- `apps/worker`, `packages/ai`, `packages/db`,
   `packages/mission-engine`, `packages/competition-engine` and `packages/ui`
   do not exist yet. They are later stages of `TECH_STACK_ID.md` §12. The
   required `tests/e2e` and `tests/integration` directories are present; the
@@ -232,8 +309,14 @@ Tracked in [`DECISIONS.md`](./DECISIONS.md):
   `anchor test` against a real validator before deploying: the emitted event
   payloads, which this harness cannot observe, and everything specific to the
   BPF target, including real compute-unit limits.
-- The interactive district is React/CSS today. `TECH_STACK_ID.md` mandates
-  Phaser 3 for Stage 4; that scene has not been built yet.
-- `packages/metaplex-client`, the off-chain adapter required by
-  `TECH_STACK_ID.md` §11, still does not exist. On-chain verification does not
-  depend on it, but a wallet integration will.
+- The city is a Phaser 3 scene (D-0021) fed with mock data through the
+  `DistrictDataSource` adapter in `apps/web/src/lib/data`. The chain-backed data
+  source exists (D-0060, section 3a); the mock stays the default.
+- `packages/metaplex-client` exists (D-0061) and builds the public sale and the
+  mint transaction. It has been checked against the Candy Machine and Candy
+  Guard sources and unit-tested, but not yet run against the deployed
+  programs: use `pnpm devnet:mint-simulate` first.
+- The agents of SPEC §3.3 (owner-only conversational citizens, Phase E:
+  OpenRouter gateway, Postgres, Redis, worker) are not started. They need
+  `apps/worker`, `packages/ai` and `packages/db`, and come after the devnet
+  end-to-end test and before the mainnet mint opens (D-0061).

@@ -32,6 +32,7 @@ import {
   associatedTokenAddress,
   borshString,
   createRpc,
+  describeRpc,
   findProgramAddress,
   u32,
   u64,
@@ -69,7 +70,7 @@ const keysDir = dirname(keypairPath);
 const rawConfig = readFileSync(configPath, 'utf8');
 const eol = rawConfig.includes('\r\n') ? '\r\n' : '\n';
 const config = JSON.parse(rawConfig);
-const rpcUrl = option('rpc', config.rpcUrl);
+const rpcUrl = option('rpc', process.env.NEXT_PUBLIC_SOLANA_RPC_URL || config.rpcUrl);
 
 function saveConfig() {
   writeFileSync(configPath, JSON.stringify(config, null, 2).replace(/\n/g, eol) + eol);
@@ -121,7 +122,7 @@ function readDistrictConfig(data) {
 
 // --- main ----------------------------------------------------------------------
 
-console.log(`RPC        ${rpcUrl}`);
+console.log(`RPC        ${describeRpc(rpcUrl)}`);
 console.log(`Deployer   ${deployer.publicKey}`);
 console.log(`Program    ${programId}`);
 
@@ -315,4 +316,4 @@ if (district.isPaused) {
 } else done('district already live');
 
 console.log(`\nDone. config/devnet.json now holds the devnet addresses.`);
-console.log('Still placeholders until the mint step: candyMachine, candyGuard, royaltyRecipient.');
+console.log('Next: pnpm devnet:mint-setup creates the Candy Machine and Candy Guard and sets the royalties.');

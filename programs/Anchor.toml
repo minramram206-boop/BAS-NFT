@@ -5,7 +5,7 @@ solana_version = "1.18.26"
 # This file lives in programs/, so the program sits at ./district rather than
 # Anchor's default programs/*.
 [workspace]
-members = ["district"]
+members = ["district", "market"]
 
 [features]
 resolution = true
@@ -13,6 +13,8 @@ skip-lint = false
 
 [programs.devnet]
 district = "82zccW1Z97ic24aCrt2c3U6qDUZMfbHufZMCjv2dm1Ym"
+# Devnet only until an external audit (docs/MARKET.md).
+market = "EVjdJiuyVfKUoQFirJDbCauvkHcVKZ38y9i2XAP1ypyP"
 
 [programs.mainnet]
 district = "82zccW1Z97ic24aCrt2c3U6qDUZMfbHufZMCjv2dm1Ym"

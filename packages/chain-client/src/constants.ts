@@ -80,3 +80,29 @@ export const ROLE_TEMPLATES = [
   alignment: number;
   compute: number;
 }>;
+
+/** Core Candy Machine program, which holds the sale's supply and mint order. */
+export const CORE_CANDY_MACHINE_PROGRAM_ID = 'CMACYFENjoBMHzapRXyo1JZkVS6EtaDDzkjMrmQLvr4J';
+
+/** Core Candy Guard program, which enforces payment, the mint limit and the backend signer. */
+export const CORE_CANDY_GUARD_PROGRAM_ID = 'CMAGAKJ67e9hRZgfC5SFTbZH8MgEmtqazKXjmkaJjWTJ';
+
+/**
+ * Id of the `mintLimit` guard of the public sale. The counter PDAs that say how
+ * many citizens a wallet has minted are derived from it, so the setup script,
+ * the mission server and the web app all use this one number.
+ */
+export const MINT_LIMIT_ID = 0;
+
+/** Byte layout of a Core `CandyMachine` account (`candy-machine-core/.../state/candy_machine.rs`). */
+export const CANDY_MACHINE_LAYOUT = {
+  /** First 8 bytes of `sha256("account:CandyMachine")`. */
+  discriminator: Uint8Array.of(51, 173, 177, 113, 25, 241, 109, 189),
+  authorityOffset: 8,
+  mintAuthorityOffset: 40,
+  collectionOffset: 72,
+  itemsRedeemedOffset: 104,
+  /** `CandyMachineData` starts here and opens with `itemsAvailable` (u64). */
+  itemsAvailableOffset: 112,
+  minLength: 120,
+} as const;

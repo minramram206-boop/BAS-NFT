@@ -12,13 +12,13 @@
  *
  * It refuses to overwrite an existing keypair, because a second run would
  * generate a program id that no longer matches declare_id!, Anchor.toml and
- * config/*.json. Pass --force only if you intend to update all four copies.
+ * config/*.json. Pass --force only if you intend to update every copy.
  */
 
 import { generateKeyPairSync } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
@@ -60,10 +60,10 @@ if (keypair.length !== 64) {
 
 const keypairPath = join(repoRoot, 'programs/district/keypair.json');
 if (existsSync(keypairPath) && !process.argv.includes('--force')) {
-  console.error(`${keypairPath.replace(repoRoot + '/', '')} already exists.`);
+  console.error(`${relative(repoRoot, keypairPath)} already exists.`);
   console.error('Refusing to generate a program id that would disagree with declare_id!,');
   console.error('programs/Anchor.toml and config/*.json. Re-run with --force if you intend');
-  console.error('to update all four copies, then let `pnpm test` verify they still match.');
+  console.error('to update every copy, then let `pnpm test` verify they still match.');
   process.exit(1);
 }
 await mkdir(dirname(keypairPath), { recursive: true });
@@ -80,6 +80,6 @@ const placeholderMint = base58Encode(
   ]),
 );
 
-console.log('program keypair :', keypairPath.replace(repoRoot + '/', ''));
+console.log('program keypair :', relative(repoRoot, keypairPath));
 console.log('programId       :', programId, `(${programId.length} chars)`);
 console.log('placeholderMint :', placeholderMint, `(${placeholderMint.length} chars)`);

@@ -31,6 +31,20 @@ export interface DistrictTelemetry {
   burnBps: number;
   /** Abbreviated utility token mint. */
   utilityTokenShort: string;
+  /** Official Metaplex Core collection the citizens belong to. */
+  coreCollection: string;
+  /** Core Candy Machine of the public sale; its account holds the real supply. */
+  candyMachine: string;
+  /** Official utility token mint, as configured; the Pump.fun page of the token on mainnet. */
+  utilityTokenMint: string;
+  /** The fixed-price market program, or `null` on a cluster without one (mainnet until an audit). */
+  marketProgramId: string | null;
+  /** `devnet-fast` when the market's auctions run in minutes for testing; `null` for the real clock. */
+  auctionClock: 'devnet-fast' | null;
+  /** Lamports one citizen mint costs, a decimal string. */
+  mintPriceLamports: string;
+  /** Citizens one wallet can mint in the public sale. */
+  mintLimitPerWallet: number;
 }
 
 function abbreviate(value: string, head = 4, tail = 4): string {
@@ -55,5 +69,12 @@ export function loadDistrictTelemetry(): DistrictTelemetry {
     maxScore: config.maxScore,
     burnBps: config.burnBps,
     utilityTokenShort: abbreviate(config.utilityTokenMint, 4, 4),
+    coreCollection: config.coreCollection,
+    candyMachine: config.candyMachine,
+    utilityTokenMint: config.utilityTokenMint,
+    marketProgramId: config.marketProgramId ?? null,
+    auctionClock: config.auctionClock ?? null,
+    mintPriceLamports: config.mintPriceLamports,
+    mintLimitPerWallet: config.mintLimitPerWallet,
   };
 }

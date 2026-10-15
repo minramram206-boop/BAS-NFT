@@ -1,0 +1,35 @@
+{
+  "name": "@bas/chat-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Owner-only chat with a citizen: wallet check, quota, model call",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "pnpm build && node --env-file-if-exists=../../.env dist/main.js",
+    "smoke": "pnpm build && node --env-file-if-exists=../../.env scripts/smoke.mjs",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "typecheck": "tsc -p tsconfig.build.json && tsc --noEmit",
+    "lint": "tsc -p tsconfig.build.json --noEmit",
+    "test": "pnpm build && node --experimental-strip-types --disable-warning=ExperimentalWarning --test --test-reporter=spec \"test/*.test.ts\""
+  },
+  "dependencies": {
+    "@bas/ai": "workspace:*",
+    "@bas/chain-client": "workspace:*",
+    "@bas/chat-store": "workspace:*",
+    "@bas/config": "workspace:*",
+    "@bas/content": "workspace:*",
+    "@bas/server-kit": "workspace:*",
+    "@solana/web3.js": "1.99.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "typescript": "^5.7.3"
+  }
+}

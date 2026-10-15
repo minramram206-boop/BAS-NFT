@@ -83,7 +83,7 @@ export function canUpgrade(currentScore: number): boolean {
   return clampStatScore(currentScore) < STAT_MAX;
 }
 
-/** Starting stats of a Phase A role (SPEC v2 §6.5). */
+/** Starting stats of a Phase A role (SPEC v2 §7). */
 export function roleTemplate(index: RoleIndex): RoleTemplate | undefined {
   return ROLE_TEMPLATES.find((role) => role.index === index);
 }

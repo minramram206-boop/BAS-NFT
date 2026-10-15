@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { ROLE_KEYS, ROLE_LABELS } from '@bas/content';
 import { ScreenShell } from '@/components/layout/ScreenShell';
+import { PanelTab } from '@/components/ui/PanelTab';
 import { PixelIcon } from '@/components/ui/PixelIcon';
 import { LockIcon } from '@/components/ui/icons';
 import { MIN_VALID_ENTRIES, actualWinners, bracketPoolLamports, prizesLamports } from '@/lib/data/season';
@@ -11,7 +12,7 @@ import { formatSol } from '@/lib/format';
 import { cn } from '@/lib/utils/cn';
 import { MESSAGES, formatMessage } from '@/messages';
 import { useBasStoreApi } from '@/stores/BasStoreProvider';
-import { useCitizens, useOwnedIds, useSeason } from '@/stores/selectors';
+import { useCitizens, useDataMode, useOwnedIds, useSeason } from '@/stores/selectors';
 
 const copy = MESSAGES.season;
 /** Gold, silver and bronze for the first three places. */
@@ -119,7 +120,9 @@ const Leaderboard: React.FC<{ pool: BracketPool; rows: readonly LeaderboardEntry
 export const SeasonScreen: React.FC = () => {
   const season = useSeason();
   const api = useBasStoreApi();
-  const [bracket, setBracket] = useState<BracketId>('skilled');
+  const mode = useDataMode();
+  // The preview data carries rows for Skilled only; on a cluster everyone starts from the open standings.
+  const [bracket, setBracket] = useState<BracketId>(mode === 'chain' ? 'open' : 'skilled');
   const pool = season.pools.find((item) => item.id === bracket) ?? season.pools[0];
   if (!pool) return null;
 
@@ -139,7 +142,7 @@ export const SeasonScreen: React.FC = () => {
         left: season.length - season.day,
       })}
     >
-      <div className="mx-auto grid max-w-6xl gap-3 md:gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="grid gap-3 md:gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
         <section className="bas-panel flex min-w-0 flex-col gap-3 self-start p-3 md:p-4">
           <div role="tablist" aria-label={copy.bracketLabel} className="flex flex-wrap gap-1.5">
             {BRACKETS.map((id) => (
@@ -173,10 +176,7 @@ export const SeasonScreen: React.FC = () => {
         <div className="flex flex-col gap-3 md:gap-4">
           <section className="bas-panel flex flex-col gap-2.5 p-3 md:p-4">
             <div className="flex items-center justify-between gap-2">
-              <span className="flex items-center gap-2">
-                <PixelIcon src="/icons/shield_crest.png" className="h-8" />
-                <span className="bas-label">{copy.vault}</span>
-              </span>
+              <PanelTab icon="/icons/shield_crest.png">{copy.vault}</PanelTab>
               <span className="flex items-center gap-1 rounded bg-[#1a2734] px-1.5 py-0.5 font-heading text-[11px] text-[#8fdc9b]">
                 <LockIcon size={10} />
                 {copy.noWithdraw}
@@ -192,17 +192,27 @@ export const SeasonScreen: React.FC = () => {
                 <span className="font-heading text-[17px]">{formatSol(season.fundedLamports)}</span>
               </div>
             </div>
-            <button
-              type="button"
-              className="bas-btn"
-              onClick={() => api.getState().openModal(copy.explorerTitle, copy.explorerMessage)}
-            >
-              {copy.explorer} · {season.vaultAddress}
-            </button>
+            {season.vaultAddress === '—' ? (
+              <p className="m-0 text-[13px] leading-snug text-[#33485c]">{copy.vaultSoon}</p>
+            ) : (
+              <button
+                type="button"
+                className="bas-btn"
+                onClick={() => {
+                  const chain = api.getState().source.mode === 'chain';
+                  api.getState().openModal(
+                    chain ? copy.explorerTitleChain : copy.explorerTitle,
+                    chain ? copy.explorerMessageChain : copy.explorerMessage,
+                  );
+                }}
+              >
+                {copy.explorer} · {season.vaultAddress}
+              </button>
+            )}
           </section>
 
           <section className="bas-panel flex flex-col gap-2 p-3 md:p-4">
-            <span className="bas-label">{formatMessage(copy.pools, { number: season.number })}</span>
+            <PanelTab>{formatMessage(copy.pools, { number: season.number })}</PanelTab>
             <ul className="m-0 flex list-none flex-col gap-1 p-0">
               {season.pools.map((item) => (
                 <li
@@ -225,7 +235,7 @@ export const SeasonScreen: React.FC = () => {
           </section>
 
           <section className="bas-panel flex flex-col gap-2 p-3 md:p-4">
-            <span className="bas-label">{copy.howFundsLeave}</span>
+            <PanelTab>{copy.howFundsLeave}</PanelTab>
             <ol className="m-0 grid list-none grid-cols-4 gap-1.5 p-0">
               {steps.map((step) => (
                 <li key={step.label} className="flex flex-col items-center gap-1 rounded-md bg-[#f2f6fa] p-1.5 text-center">

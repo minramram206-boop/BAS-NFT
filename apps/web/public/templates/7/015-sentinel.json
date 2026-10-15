@@ -1,0 +1,38 @@
+{
+  "name": "Inspector Holt #015",
+  "symbol": "BAS",
+  "description": "Strict investigator maintaining on-chain integrity and district law.",
+  "image": "https://bas-district-devnet.vercel.app/characters/15.png",
+  "external_url": "https://bas-district-devnet.vercel.app/citizen/15",
+  "attributes": [
+    {
+      "trait_type": "Role",
+      "value": "Sentinel"
+    },
+    {
+      "trait_type": "Serial",
+      "value": "#015"
+    },
+    {
+      "trait_type": "Insight",
+      "value": 0
+    },
+    {
+      "trait_type": "Bond",
+      "value": 2
+    },
+    {
+      "trait_type": "Craft",
+      "value": 1
+    }
+  ],
+  "properties": {
+    "category": "image",
+    "files": [
+      {
+        "uri": "https://bas-district-devnet.vercel.app/characters/15.png",
+        "type": "image/png"
+      }
+    ]
+  }
+}

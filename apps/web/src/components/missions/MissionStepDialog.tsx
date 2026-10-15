@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import type { MissionDefinition, MissionStep } from '@/lib/data/types';
+import type { MissionDefinition, StepProof } from '@/lib/data/types';
+import type { StepOutcome } from '@/stores/types';
 import { cn } from '@/lib/utils/cn';
 import { MESSAGES, formatMessage } from '@/messages';
 import { missionCopy, type StepCopy } from './missionCopy';
@@ -21,19 +22,27 @@ function scrambled(count: number, seed: string): number[] {
   return order;
 }
 
-const Talk: React.FC<{ step: Extract<MissionStep, { kind: 'talk' }>; text: StepCopy; onSolved: () => void }> = ({
-  step,
-  text,
-  onSolved,
-}) => {
+type Submit = (proof: StepProof) => Promise<StepOutcome>;
+
+const Talk: React.FC<{ text: StepCopy; onSubmit: Submit }> = ({ text, onSubmit }) => {
   const [wrong, setWrong] = useState<number | null>(null);
+  const [pending, setPending] = useState(false);
+
+  const answer = async (index: number) => {
+    setPending(true);
+    const outcome = await onSubmit({ kind: 'talk', answer: index });
+    setPending(false);
+    if (outcome === 'wrong') setWrong(index);
+  };
+
   return (
     <div className="flex flex-col gap-2">
       {(text.options ?? []).map((option, index) => (
         <button
           key={option}
           type="button"
-          onClick={() => (index === step.answer ? onSolved() : setWrong(index))}
+          disabled={pending}
+          onClick={() => void answer(index)}
           className={cn(
             'bas-chip rounded-md border-2 px-3 py-2.5 text-left text-[15px] leading-snug',
             wrong === index ? 'border-[#a3432f] bg-[#f6e1dc]' : 'border-[#1b2a38] bg-white hover:bg-[#f2f6fa]',
@@ -47,22 +56,26 @@ const Talk: React.FC<{ step: Extract<MissionStep, { kind: 'talk' }>; text: StepC
   );
 };
 
-const Puzzle: React.FC<{ text: StepCopy; seed: string; onSolved: () => void }> = ({ text, seed, onSolved }) => {
+const Puzzle: React.FC<{ text: StepCopy; seed: string; onSubmit: Submit }> = ({ text, seed, onSubmit }) => {
   const pieces = text.pieces ?? [];
   const order = useMemo(() => scrambled(pieces.length, seed), [pieces.length, seed]);
   const [placed, setPlaced] = useState<number[]>([]);
   const [wrong, setWrong] = useState(false);
+  const [pending, setPending] = useState(false);
 
-  const pick = (piece: number) => {
-    if (piece !== placed.length) {
-      setPlaced([]);
-      setWrong(true);
-      return;
-    }
+  const pick = async (piece: number) => {
     const next = [...placed, piece];
     setPlaced(next);
     setWrong(false);
-    if (next.length === pieces.length) onSolved();
+    if (next.length < pieces.length) return;
+    // The whole order is checked at once, so the player sees the result only after the last piece.
+    setPending(true);
+    const outcome = await onSubmit({ kind: 'puzzle', order: next });
+    setPending(false);
+    if (outcome === 'wrong') {
+      setPlaced([]);
+      setWrong(true);
+    }
   };
 
   return (
@@ -77,7 +90,7 @@ const Puzzle: React.FC<{ text: StepCopy; seed: string; onSolved: () => void }> =
             )}
           >
             <span className="font-heading text-[12px]">{index + 1}</span>
-            <span className="flex-1">{index < placed.length ? pieces[index] : ''}</span>
+            <span className="flex-1">{index < placed.length ? pieces[placed[index] as number] : ''}</span>
             {index === 0 && <span className="text-[12px] text-[#5b6b7a]">{copy.slotFirst}</span>}
             {index === pieces.length - 1 && <span className="text-[12px] text-[#5b6b7a]">{copy.slotLast}</span>}
           </li>
@@ -88,8 +101,8 @@ const Puzzle: React.FC<{ text: StepCopy; seed: string; onSolved: () => void }> =
           <button
             key={piece}
             type="button"
-            disabled={placed.includes(piece)}
-            onClick={() => pick(piece)}
+            disabled={pending || placed.includes(piece)}
+            onClick={() => void pick(piece)}
             className="bas-btn min-h-11 bg-white font-pixel text-[15px] normal-case tracking-normal"
           >
             {pieces[piece]}
@@ -106,12 +119,15 @@ const Puzzle: React.FC<{ text: StepCopy; seed: string; onSolved: () => void }> =
 export interface MissionStepDialogProps {
   mission: MissionDefinition;
   index: number;
-  onSolved: () => void;
+  /** Sends what the player did and says how the step ended. */
+  onSubmit: Submit;
   onClose: () => void;
+  /** True when the citizen just walked here, so the dialog says so. */
+  arrived?: boolean | undefined;
 }
 
 /** The talk and puzzle steps of a mission, played in a dialog. */
-export const MissionStepDialog: React.FC<MissionStepDialogProps> = ({ mission, index, onSolved, onClose }) => {
+export const MissionStepDialog: React.FC<MissionStepDialogProps> = ({ mission, index, onSubmit, onClose, arrived = false }) => {
   const step = mission.steps[index];
   const text = missionCopy(mission).steps[index];
   if (!step || !text || step.kind === 'goto') return null;
@@ -129,6 +145,11 @@ export const MissionStepDialog: React.FC<MissionStepDialogProps> = ({ mission, i
         onClick={(event) => event.stopPropagation()}
         className="bas-panel flex w-full max-w-md flex-col gap-3 p-5"
       >
+        {arrived && (
+          <span className="self-start rounded bg-[#3f9252] px-2 py-0.5 font-heading text-[12px] tracking-wide text-white">
+            {copy.arrived}
+          </span>
+        )}
         <div className="flex items-center justify-between gap-2">
           <span className="font-heading text-[12px] tracking-wide text-[#7a4689]">{missionCopy(mission).title}</span>
           <span className="text-[13px] text-[#33485c]">
@@ -138,9 +159,9 @@ export const MissionStepDialog: React.FC<MissionStepDialogProps> = ({ mission, i
         <div className="font-heading text-[17px] tracking-wide">{text.title}</div>
         {text.prompt && <p className="m-0 text-[15px] leading-relaxed text-[#22354a]">{text.prompt}</p>}
         {step.kind === 'talk' ? (
-          <Talk step={step} text={text} onSolved={onSolved} />
+          <Talk text={text} onSubmit={onSubmit} />
         ) : (
-          <Puzzle text={text} seed={`${mission.id}:${index}`} onSolved={onSolved} />
+          <Puzzle text={text} seed={`${mission.id}:${index}`} onSubmit={onSubmit} />
         )}
         <button type="button" onClick={onClose} className="bas-btn self-end">
           {copy.close}

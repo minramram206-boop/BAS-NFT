@@ -67,6 +67,12 @@ export const MinusIcon = (props: IconProps) => (
   </Icon>
 );
 
+export const ChevronIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M3 6l5 5 5-5" strokeWidth={2.5} />
+  </Icon>
+);
+
 export const TargetIcon = (props: IconProps) => (
   <Icon {...props}>
     <circle cx="8" cy="8" r="4" />
@@ -103,6 +109,13 @@ export const PersonIcon = (props: IconProps) => (
 export const UpIcon = (props: IconProps) => (
   <Icon {...props}>
     <path d="M8 13V3M3 8l5-5 5 5" strokeWidth={2.5} />
+  </Icon>
+);
+
+export const MarketIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M2 8.5V2h6.5L14 7.5 8.5 13z" />
+    <circle cx="5.2" cy="5.2" r="1" fill="currentColor" stroke="none" />
   </Icon>
 );
 

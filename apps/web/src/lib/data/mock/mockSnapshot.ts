@@ -1,17 +1,23 @@
 import type { CitizenRecord, StatKey } from '@bas/content';
 import { trainingCostAtoms } from '@bas/chain-client/stats';
+import { MISSION_CATALOG } from '../missionCatalog';
+import { AUCTION_CLOCKS, AUCTION_HOURS, MAX_PRICE_LAMPORTS, MIN_PRICE_LAMPORTS, ROYALTY_BPS, minNextBid } from '../market';
 import type {
   DistrictSnapshot,
   HistoryEntry,
   LeaderboardEntry,
+  MarketAuction,
+  MarketListing,
   MissionDefinition,
   StatCredits,
 } from '../types';
 
 /**
  * The mock district: one wallet that owns three citizens on day 12 of
- * season 1. Every number follows the program rules, so the history of an
- * owned citizen adds up to its scores and burned tokens.
+ * season 1, all of which have played for a while. Pip has not been minted
+ * yet; minting is how the start of the route (Tier 0) is tried. Every number
+ * follows the program rules, so the history of an owned citizen adds up to
+ * its scores and burned tokens.
  */
 
 type Scores = Readonly<Record<StatKey, number>>;
@@ -23,14 +29,82 @@ const SCORES: Readonly<Record<number, Scores>> = {
   4: { intelligence: 0, alignment: 3, compute: 1 },
   8: { intelligence: 2, alignment: 1, compute: 5 },
   11: { intelligence: 0, alignment: 2, compute: 6 },
-  12: { intelligence: 2, alignment: 1, compute: 4 },
   13: { intelligence: 1, alignment: 3, compute: 5 },
   18: { intelligence: 6, alignment: 1, compute: 3 },
   19: { intelligence: 1, alignment: 5, compute: 0 },
 };
 
 const OWNED = [1, 2, 4] as const;
+
+/** Roster citizens nobody has minted yet; a mint draws from these. */
+export const MOCK_UNMINTED: readonly number[] = [12];
+
+/** Mock wallet balance in lamports, enough for a few mints. */
+const MOCK_SOL_LAMPORTS = 2_500_000_000n;
 const FOUNDING = [1, 2, 3, 4, 8] as const;
+
+/**
+ * What other players have put up for sale in the preview. They are citizens of the
+ * roster the wallet does not own, so each one can be opened, bought and kept.
+ */
+const MOCK_LISTINGS: readonly MarketListing[] = [
+  { citizenId: 19, seller: '3mRt…Wq2', priceLamports: 650_000_000n, listedDay: 10 },
+  { citizenId: 3, seller: '9bKd…4Lp', priceLamports: 450_000_000n, listedDay: 11 },
+  { citizenId: 8, seller: '3mRt…Wq2', priceLamports: 1_200_000_000n, listedDay: 9 },
+  { citizenId: 11, seller: 'H2vN…x5T', priceLamports: 2_400_000_000n, listedDay: 12 },
+];
+
+/**
+ * Auctions other players run in the preview, timed from when the preview
+ * starts: one with bids that ends in a few hours, one nobody has bid on yet.
+ */
+function mockAuctions(nowSeconds: number): MarketAuction[] {
+  /** `bids` oldest first, as `[bidder, lamports, minutes ago]`. */
+  const auction = (
+    citizenId: number,
+    seller: string,
+    start: bigint,
+    bids: readonly (readonly [string, bigint, number])[],
+    hours: number,
+  ): MarketAuction => {
+    const newestFirst = [...bids].reverse().map(([bidder, amountLamports, minutesAgo]) => ({
+      bidder,
+      amountLamports,
+      at: nowSeconds - minutesAgo * 60,
+      mine: false,
+    }));
+    const highest = newestFirst[0]?.amountLamports ?? null;
+    return {
+      citizenId,
+      seller,
+      startPriceLamports: start,
+      highestBidLamports: highest,
+      bidCount: newestFirst.length,
+      bids: newestFirst,
+      endsAt: nowSeconds + Math.round(hours * 3_600),
+      minBidLamports: minNextBid(start, highest),
+      leading: false,
+      deliverable: true,
+    };
+  };
+  return [
+    auction(
+      13,
+      'Fz8e…M7c',
+      500_000_000n,
+      [
+        ['Kx3p…9Qe', 500_000_000n, 1_220],
+        ['Bn7w…T2s', 530_000_000n, 1_105],
+        ['Kx3p…9Qe', 560_000_000n, 760],
+        ['Hd4r…L8m', 620_000_000n, 312],
+        ['Bn7w…T2s', 700_000_000n, 95],
+        ['Hd4r…L8m', 820_000_000n, 14],
+      ],
+      3.2,
+    ),
+    auction(18, 'Q6aY…r1D', 1_500_000_000n, [], 41),
+  ];
+}
 
 const CREDITS: Readonly<Record<number, StatCredits>> = {
   1: { intelligence: 0, alignment: 1, compute: 2 },
@@ -40,55 +114,26 @@ const CREDITS: Readonly<Record<number, StatCredits>> = {
 
 const NO_CREDITS: StatCredits = { intelligence: 0, alignment: 0, compute: 0 };
 
-export const MOCK_MISSIONS: readonly MissionDefinition[] = [
-  {
-    id: 'streetLamp',
-    district: 'forge',
-    rewards: ['compute'],
-    steps: [{ kind: 'goto', cell: [10, 10] }, { kind: 'goto', cell: [17, 8] }, { kind: 'puzzle' }],
-  },
-  {
-    id: 'lightsOut',
-    district: 'archive',
-    rewards: ['intelligence'],
-    steps: [{ kind: 'goto', cell: [8, 8] }, { kind: 'talk', answer: 1 }, { kind: 'talk', answer: 2 }],
-  },
-  {
-    id: 'hearthDeliveries',
-    district: 'hearth',
-    rewards: ['alignment'],
-    steps: [{ kind: 'goto', cell: [13, 10] }, { kind: 'goto', cell: [6, 16] }, { kind: 'talk', answer: 0 }],
-  },
-  {
-    id: 'nightPatrol',
-    district: 'watch',
-    rewards: ['alignment', 'compute'],
-    steps: [
-      { kind: 'goto', cell: [20, 14] },
-      { kind: 'goto', cell: [22, 16] },
-      { kind: 'goto', cell: [18, 19] },
-      { kind: 'talk', answer: 2 },
-    ],
-  },
-  {
-    id: 'ruinsExpedition',
-    district: 'frontier',
-    rewards: ['intelligence', 'compute'],
-    steps: [
-      { kind: 'goto', cell: [12, 13] },
-      { kind: 'goto', cell: [21, 19] },
-      { kind: 'goto', cell: [23, 23] },
-      { kind: 'puzzle' },
-    ],
-  },
-  {
-    id: 'blackoutNight',
-    district: 'plaza',
-    rewards: ['intelligence', 'alignment', 'compute'],
-    steps: [{ kind: 'puzzle' }, { kind: 'talk', answer: 1 }, { kind: 'talk', answer: 0 }],
-    opensInHours: 52,
-  },
-];
+/**
+ * Right reply of every talk step, by mission and step index. The mock source
+ * checks proofs against this table; the screens never see it, as with the
+ * mission server's catalog.
+ */
+export const MOCK_ANSWERS: Readonly<Record<string, Readonly<Record<number, number>>>> = {
+  lightsOut: { 1: 1, 2: 2 },
+  hearthDeliveries: { 2: 0 },
+  nightPatrol: { 3: 2 },
+  blackoutNight: { 1: 1, 2: 0 },
+  summitTrial: { 2: 1 },
+};
+
+/** Hours until the mock season's event opens, by mission id. */
+const MOCK_EVENT_OPENS_IN_HOURS: Readonly<Record<string, number>> = { blackoutNight: 52 };
+
+export const MOCK_MISSIONS: readonly MissionDefinition[] = MISSION_CATALOG.map((mission) => {
+  const opensInHours = MOCK_EVENT_OPENS_IN_HOURS[mission.id];
+  return opensInHours === undefined ? mission : { ...mission, opensInHours };
+});
 
 /** Training steps an owned citizen took, oldest first, as `[day, stat]`. */
 const TRAINING: Readonly<Record<number, readonly (readonly [number, StatKey])[]>> = {
@@ -164,7 +209,7 @@ function leaderboard(): readonly LeaderboardEntry[] {
     [13, '#013', 'artisan', 1190],
     [19, '#019', 'steward', 1040],
     [1, '#001', 'artisan', 985],
-    [12, '#012', 'pioneer', 930],
+    [null, '#027', 'pioneer', 930],
     [8, '#008', 'mentor', 870],
     [3, '#003', 'steward', 845],
     [null, '#031', 'scholar', 790],
@@ -172,17 +217,33 @@ function leaderboard(): readonly LeaderboardEntry[] {
   return rows.map(([citizenId, serial, roleKey, points]) => ({ citizenId, serial, roleKey, points }));
 }
 
+export interface MockSnapshotOptions {
+  /** Lamports one mint costs, from the cluster manifest. */
+  mintPriceLamports: bigint;
+  /** Citizens one wallet can mint, from the cluster manifest. */
+  mintLimitPerWallet: number;
+  /** `empty` starts a wallet that owns no citizen yet, to try the first mint. */
+  start?: 'owned' | 'empty';
+  /** Unix seconds the sample auctions are timed from. */
+  nowSeconds: number;
+}
+
 export function createMockSnapshot(
   roster: readonly CitizenRecord[],
   baseTrainingCostAtoms: string,
+  options: MockSnapshotOptions,
 ): DistrictSnapshot {
-  const citizens = roster.map((citizen) => {
-    const scores = SCORES[citizen.id];
-    return scores ? { ...citizen, ...scores, registered: true } : { ...citizen };
-  });
+  // Only minted citizens are part of the district; a mint adds the others.
+  const citizens = roster
+    .filter((citizen) => !MOCK_UNMINTED.includes(citizen.id))
+    .map((citizen) => {
+      const scores = SCORES[citizen.id];
+      return scores ? { ...citizen, ...scores, registered: true } : { ...citizen, registered: true };
+    });
+  const owned = options.start === 'empty' ? [] : OWNED.filter((id) => citizens.some((citizen) => citizen.id === id));
 
   const history: Record<number, HistoryEntry[]> = {};
-  for (const id of OWNED) {
+  for (const id of owned) {
     const base = roster.find((citizen) => citizen.id === id);
     if (base) history[id] = historyOf(base, base, baseTrainingCostAtoms);
   }
@@ -191,10 +252,19 @@ export function createMockSnapshot(
   for (const citizen of citizens) credits[citizen.id] = CREDITS[citizen.id] ?? NO_CREDITS;
 
   return {
-    wallet: { label: '7xQ4…9fA', tokenAtoms: 1_240_000_000n },
+    wallet: { connected: true, label: '7xQ4…9fA', tokenAtoms: 1_240_000_000n, solLamports: MOCK_SOL_LAMPORTS },
+    // The preview roster is the whole collection, so the mint ends when it is out.
+    mint: {
+      priceLamports: options.mintPriceLamports,
+      maxSupply: roster.length,
+      minted: citizens.length,
+      limitPerWallet: options.mintLimitPerWallet,
+      // Citizens the wallet already holds came from the market, not from this sale.
+      mintedByWallet: 0,
+    },
     citizens,
     credits,
-    owned: OWNED.filter((id) => citizens.some((citizen) => citizen.id === id)),
+    owned,
     founding: [...FOUNDING],
     history,
     missions: MOCK_MISSIONS,
@@ -214,6 +284,21 @@ export function createMockSnapshot(
         { id: 'master', shareBps: 2500, maxWinners: 3, validEntries: 0 },
       ],
       leaderboards: { skilled: leaderboard() },
+    },
+    market: {
+      open: true,
+      royaltyBps: ROYALTY_BPS,
+      minPriceLamports: MIN_PRICE_LAMPORTS,
+      maxPriceLamports: MAX_PRICE_LAMPORTS,
+      listings: MOCK_LISTINGS.filter(
+        (listing) => citizens.some((citizen) => citizen.id === listing.citizenId) && !(owned as readonly number[]).includes(listing.citizenId),
+      ),
+      auctions: mockAuctions(options.nowSeconds).filter(
+        (auction) => citizens.some((citizen) => citizen.id === auction.citizenId) && !(owned as readonly number[]).includes(auction.citizenId),
+      ),
+      auctionHours: AUCTION_HOURS,
+      auctionClock: AUCTION_CLOCKS.real,
+      notices: [],
     },
   };
 }

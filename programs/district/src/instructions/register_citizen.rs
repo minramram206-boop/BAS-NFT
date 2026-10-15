@@ -67,7 +67,7 @@ impl<'info> RegisterCitizen<'info> {
                 .accounts
                 .approved_template
                 .approved_file_name(read_core_asset_uri(&data)?)
-                .ok_or(DistrictError::InvalidAssetState)?;
+                .ok_or(DistrictError::InvalidMetadataUri)?;
             role_from_metadata_file(file_name)?
         };
 

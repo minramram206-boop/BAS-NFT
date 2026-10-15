@@ -7,12 +7,30 @@ const CLOSED_MODAL: ModalState = { isOpen: false, title: '', message: '' };
 /** Modal, sound toggle and the wallet placeholder. */
 export function createUiSlice(set: SetState, get: GetState): UiSlice {
   return {
+    focus: { training: null, mission: null },
+    missionPrompt: { dismissed: null, arrived: null },
+    reward: null,
     sfxEnabled: true,
     modal: CLOSED_MODAL,
+    walletDialog: false,
 
-    showWalletConnectorUnavailable: () => {
+    dismissMissionPrompt: (stepKey) => set({ missionPrompt: { ...get().missionPrompt, dismissed: stepKey } }),
+    reopenMissionPrompt: () => set({ missionPrompt: { ...get().missionPrompt, dismissed: null } }),
+    markMissionArrival: (stepKey) => set({ missionPrompt: { dismissed: null, arrived: stepKey } }),
+
+    setFocus: (focus) => set({ focus: { ...get().focus, ...focus } }),
+
+    openWallet: () => {
       retroAudio.play('click');
-      get().openModal(MESSAGES.actions.walletTitle, MESSAGES.actions.walletMessage);
+      if (get().source.mode === 'chain') set({ walletDialog: true });
+      else get().openModal(MESSAGES.actions.walletTitle, MESSAGES.actions.walletMessage);
+    },
+
+    closeWalletDialog: () => set({ walletDialog: false }),
+
+    closeReward: () => {
+      retroAudio.play('click');
+      set({ reward: null });
     },
 
     toggleSfx: () => {

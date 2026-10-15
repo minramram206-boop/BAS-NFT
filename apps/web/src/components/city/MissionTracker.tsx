@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
-import { MissionStepDialog } from '@/components/missions/MissionStepDialog';
+import React from 'react';
 import { missionCopy, stepInstruction } from '@/components/missions/missionCopy';
 import { StatSwatch } from '@/components/ui/StatBar';
 import { CheckIcon, TargetIcon } from '@/components/ui/icons';
@@ -11,11 +10,13 @@ import { cn } from '@/lib/utils/cn';
 import { MESSAGES, formatMessage } from '@/messages';
 import {
   useAbandonMission,
-  useAdvanceMission,
   useBusy,
+  useIsOwned,
   useMissionProgress,
   useMissions,
+  useReopenMissionPrompt,
   useRequestFocus,
+  useRequestWalk,
   useSelectedCitizen,
 } from '@/stores/selectors';
 
@@ -26,14 +27,16 @@ export const MissionTracker: React.FC<{ className?: string; compact?: boolean }>
   const citizen = useSelectedCitizen();
   const missions = useMissions();
   const missionProgress = useMissionProgress();
-  const advance = useAdvanceMission();
   const abandon = useAbandonMission();
   const focus = useRequestFocus();
+  const walk = useRequestWalk();
   const busy = useBusy();
-  const [dialog, setDialog] = useState(false);
+  const owned = useIsOwned(citizen?.id ?? -1);
+  const reopen = useReopenMissionPrompt();
 
   const playing = citizen ? currentStepOf({ missions, missionProgress }, citizen.id) : undefined;
-  if (!citizen || !playing) return null;
+  // Another player's mission is not the viewer's to steer.
+  if (!citizen || !playing || !owned) return null;
 
   const { mission, progress, step, index } = playing;
   const text = missionCopy(mission);
@@ -42,8 +45,8 @@ export const MissionTracker: React.FC<{ className?: string; compact?: boolean }>
     <section
       aria-label={copy.trackerTitle}
       className={cn(
-        'bas-panel pointer-events-auto flex w-[340px] max-w-full flex-col p-3 md:p-4',
-        compact ? 'gap-2' : 'gap-2.5',
+        'bas-panel pointer-events-auto flex w-[320px] max-w-full flex-col p-3',
+        'gap-2',
         className,
       )}
     >
@@ -70,7 +73,7 @@ export const MissionTracker: React.FC<{ className?: string; compact?: boolean }>
         ))}
       </ol>
 
-      <div className={cn('rounded-md border-2 border-[#1b2a38] bg-white', compact ? 'p-2' : 'p-2.5')}>
+      <div className="rounded-md border-2 border-[#1b2a38] bg-white p-2">
         <div className="flex items-center gap-1.5 text-[13px] text-[#33485c]">
           {formatMessage(copy.trackerStep, { step: index + 1, steps: mission.steps.length })}
         </div>
@@ -80,14 +83,21 @@ export const MissionTracker: React.FC<{ className?: string; compact?: boolean }>
         </div>
       </div>
 
-      <div className="grid grid-cols-[1fr_auto] gap-2">
+      <div className="grid grid-cols-[1fr_auto] gap-2 md:[&_.bas-btn]:min-h-10">
         {step.kind === 'goto' ? (
-          <button type="button" onClick={focus} className="bas-btn bas-btn-primary">
+          <button
+            type="button"
+            onClick={() => {
+              focus();
+              walk();
+            }}
+            className="bas-btn bas-btn-primary"
+          >
             <TargetIcon size={14} />
-            {copy.centerMap}
+            {copy.walkThere}
           </button>
         ) : (
-          <button type="button" disabled={busy} onClick={() => setDialog(true)} className="bas-btn bas-btn-primary">
+          <button type="button" disabled={busy} onClick={reopen} className="bas-btn bas-btn-primary">
             <CheckIcon size={14} />
             {step.kind === 'talk' ? copy.answer : copy.solve}
           </button>
@@ -97,17 +107,6 @@ export const MissionTracker: React.FC<{ className?: string; compact?: boolean }>
         </button>
       </div>
 
-      {dialog && (
-        <MissionStepDialog
-          mission={mission}
-          index={index}
-          onClose={() => setDialog(false)}
-          onSolved={() => {
-            setDialog(false);
-            void advance(mission);
-          }}
-        />
-      )}
     </section>
   );
 };

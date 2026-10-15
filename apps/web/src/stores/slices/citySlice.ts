@@ -7,6 +7,7 @@ export function createCitySlice(set: SetState, get: GetState): CitySlice {
     cityMode: 'control',
     zoomRequest: { id: 0, step: 1 },
     focusRequest: 0,
+    walkRequest: 0,
 
     setCityMode: (mode) => {
       if (mode === get().cityMode) return;
@@ -17,5 +18,7 @@ export function createCitySlice(set: SetState, get: GetState): CitySlice {
     requestZoom: (step) => set({ zoomRequest: { id: get().zoomRequest.id + 1, step } }),
 
     requestFocus: () => set({ focusRequest: get().focusRequest + 1 }),
+
+    requestWalk: () => set({ walkRequest: get().walkRequest + 1 }),
   };
 }
