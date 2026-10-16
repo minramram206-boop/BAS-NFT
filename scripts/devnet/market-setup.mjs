@@ -8,8 +8,12 @@
  *   2. the collection's Royalties plugin is 500 basis points, paid in full to
  *      `royaltyRecipient`, because the program cannot read collection plugins,
  *   3. the payout account holds at least the rent minimum,
- *   4. initialize_config: 500 bps royalty, no fee, both paid to `royaltyRecipient`,
- *   5. set_paused(false), or set_paused(true) with --pause.
+ *   4. the market authority PDA exists on the cluster (D-0095): it receives
+ *      every auctioned citizen, and a wallet that sees a citizen sent to an
+ *      address unknown on its network (Solflare) takes the transaction for
+ *      another cluster and refuses to sign it,
+ *   5. initialize_config: 500 bps royalty, no fee, both paid to `royaltyRecipient`,
+ *   6. set_paused(false), or set_paused(true) with --pause.
  *
  * Usage (from the repository root, after `pnpm install`):
  *   node scripts/devnet/market-setup.mjs [--keypair .keys/devnet-deployer.json]
@@ -19,7 +23,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { Keypair, MPL_CORE_PROGRAM, PublicKey, createRpc, describeRpc } from './solana.mjs';
+import { Keypair, MPL_CORE_PROGRAM, PublicKey, SYSTEM_PROGRAM, createRpc, describeRpc, u32, u64 } from './solana.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const clientEntry = resolve(repoRoot, 'packages/chain-client/dist/index.js');
@@ -121,6 +125,30 @@ if (BigInt(balance) < BigInt(rentMinimum)) {
 }
 done(`${recipient} holds ${sol(balance)}`);
 
+step('Market authority exists on this cluster');
+const authority = await marketAuthorityAddress(programId);
+const { value: authorityBalance } = await rpc.call('getBalance', [authority, { commitment: 'confirmed' }]);
+if (BigInt(authorityBalance) >= BigInt(rentMinimum)) {
+  done(`${authority} holds ${sol(authorityBalance)}`);
+} else {
+  // A plain system transfer; the program never writes to this account, it only signs for it.
+  const lamports = BigInt(rentMinimum) - BigInt(authorityBalance);
+  const signature = await rpc.send(
+    [
+      {
+        programId: SYSTEM_PROGRAM,
+        keys: [
+          { pubkey: deployer.publicKey, isSigner: true, isWritable: true },
+          { pubkey: new PublicKey(authority), isSigner: false, isWritable: true },
+        ],
+        data: Uint8Array.from(Buffer.concat([u32(2), u64(lamports)])),
+      },
+    ],
+    [deployer],
+  );
+  done(`sent ${sol(lamports)} to ${authority} (${signature})`);
+}
+
 step('Market config');
 const configAddress = await marketConfigAddress(programId);
 let marketConfig = await rpc.getAccount(new PublicKey(configAddress));
@@ -163,5 +191,5 @@ if (current.isPaused === wantPaused) {
   done(`${wantPaused ? 'paused' : 'open'} (${signature})`);
 }
 
-console.log(`\nSellers delegate transfers to ${await marketAuthorityAddress(programId)}.`);
+console.log(`\nSellers delegate transfers to ${authority}, which also holds every auctioned citizen.`);
 console.log(wantPaused ? 'Listing and buying are refused until this runs again without --pause.' : 'Citizens can now be listed and bought on /market.');

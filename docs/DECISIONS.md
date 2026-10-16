@@ -1045,3 +1045,17 @@ bukan untuk mengganti persyaratan yang sudah eksplisit.
 - Batas yang diketahui: `declare_id!` program district dan `Anchor.toml` masih memakai alamat devnet. Saat mainnet disiapkan, program district perlu keypair baru, dan tes yang memastikan alamat itu sama di semua tempat perlu disesuaikan untuk dua cluster.
 - Komponen terkait: `packages/config`, `apps/mission-server`, `apps/chat-server`, `apps/web`
 - Menggantikan: —
+
+## D-0095 — Alamat market harus ada di jaringan agar Solflare mau menandatangani lelang
+
+- Tanggal: 2026-10-16
+- Status: Approved (pemilik mencoba saran ini di devnet dan lelang langsung berhasil)
+- Pemilik keputusan: Owner
+- Konteks: Setelah upgrade D-0092, memulai lelang dari web selalu ditolak Solflare dengan "Network mismatch: your current network is set to devnet, but this transaction is for mainnet", walaupun web mengirim `chain: solana:devnet` lewat Wallet Standard. Listing harga tetap dari wallet yang sama tetap lolos. Simulasi `create_auction` yang sama di devnet berhasil (33.683 compute unit). Satu-satunya hal yang khas di transaksi lelang: citizen dikirim dari wallet penandatangan ke PDA `market-authority` (`86Czje…AYhR`), dan PDA itu belum pernah menerima lamport, jadi belum ada sebagai akun di devnet. Setelah pemilik mengirim 0,001 SOL ke alamat itu, lelang Baker Mabel (mulai 0,03 SOL, 4 menit) langsung bisa ditandatangani dan dibuka.
+- Keputusan: `scripts/devnet/market-setup.mjs` mendapat satu langkah: bila PDA `market-authority` memegang kurang dari minimum sewa untuk akun kosong, deployer mengirim selisihnya (sekitar 0,00089 SOL) dengan transfer sistem biasa. Langkah ini dilewati bila saldonya sudah cukup. Program tidak berubah; ia tidak pernah menulis ke akun itu, hanya menandatangani atas namanya. Setup mainnet nanti harus melakukan hal yang sama.
+- Alasan: Solflare tampaknya menilai jaringan dari keadaan akun yang disentuh transaksi, bukan dari `chain` yang dikirim aplikasi, dan menganggap alamat tujuan yang tidak dikenal sebagai tanda jaringan lain. Cara Solflare mendeteksi jaringan tidak didokumentasikan, jadi ini disimpulkan dari percobaan: alamat tanpa akun ditolak, alamat yang sudah ada diterima. Mengisi alamat itu sekali murah dan tidak mengubah apa pun di program atau web.
+- Dampak: `scripts/devnet/market-setup.mjs`, `docs/MARKET.md`.
+- Bukti: Pemilik mengirim 0,001 SOL ke `86CzjeSfC3P7Wa8Dk3D1rKG11f9PLTWB1ThQtpBxAYhR` di devnet (saldo terbaca 1.000.000 lamport), lalu lelang yang sebelumnya dua kali ditolak Solflare langsung terbuka. Data instruksi transfer di skrip sama byte demi byte dengan `SystemProgram.transfer` dari `@solana/web3.js`.
+- Batas yang diketahui: Wallet lain (Phantom, Backpack) belum dicoba dengan alamat kosong; dengan alamat yang sudah terisi, perilaku mereka tidak relevan lagi.
+- Komponen terkait: `scripts/devnet/market-setup.mjs`, `docs/MARKET.md`
+- Menggantikan: —

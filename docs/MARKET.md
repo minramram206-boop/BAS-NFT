@@ -373,9 +373,14 @@ runs after the deploy, with the deployer key in `.keys/devnet-deployer.json`:
 2. reads the collection's Royalties plugin and stops unless it is 500 basis
    points paid in full to `royaltyRecipient` in `config/devnet.json`;
 3. stops unless that account holds at least the rent minimum;
-4. sends `initialize_config` (500 bps royalty, no fee, both to
+4. sends the market authority PDA the rent minimum for an empty account
+   (0.00089 SOL) when it holds less (D-0095). The PDA receives every
+   auctioned citizen, and Solflare refuses to sign a transaction that sends
+   a citizen to an address its network has never seen, calling it a
+   mainnet transaction. The program never writes to the account;
+5. sends `initialize_config` (500 bps royalty, no fee, both to
    `royaltyRecipient`), or checks an existing config field by field;
-5. unpauses the market. `--pause` pauses it instead.
+6. unpauses the market. `--pause` pauses it instead.
 
 It skips what is already done, so running it again is safe. Its instructions
 come from `@bas/chain-client`, so `pnpm install` (or `pnpm build:packages`)
@@ -407,7 +412,11 @@ must have run first.
    auction's bids (D-0091).
 10. The market holds an auctioned citizen, so an auction with bids cannot be
     stopped (D-0092). Deployed on devnet on 2026-10-16 (slot 511552165).
-11. The market history in Postgres (D-0093). Written and tested.
+11. The market history in Postgres (D-0093). Running on the owner's machine
+    since 2026-10-16.
+12. The market authority funded on devnet, so Solflare signs an auction
+    start (D-0095). The first auction of the new kind opened the same day:
+    Baker Mabel from 0.03 SOL for 4 minutes.
 
 ## The auction clock
 
