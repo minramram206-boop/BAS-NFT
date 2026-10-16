@@ -417,6 +417,15 @@ must have run first.
 12. The market authority funded on devnet, so Solflare signs an auction
     start (D-0095). The first auction of the new kind opened the same day:
     Baker Mabel from 0.03 SOL for 4 minutes.
+13. Escrowed auctions tried end to end on devnet on 2026-10-16 (D-0092):
+    Baker Mabel's 4-minute auction cancelled before a bid went straight
+    back to `CJkc…t2AK`; the next one, 12 minutes from 0.02 SOL, took
+    0.023 SOL from `CJLT…ZaY1` and 0.04 SOL from `9fd6…WBD8`, held the
+    citizen at the market authority, refused the seller's cancel on chain
+    (`AuctionHasBids`, simulated), and was claimed by `9fd6…WBD8` at
+    09:48:30 WIB: the seller got 0.038 SOL plus the rent, the royalty
+    0.002 SOL. After a restart of `pnpm dev:all` the FINISHED tab still
+    listed all four sales, read from Postgres (D-0093).
 
 ## The auction clock
 
