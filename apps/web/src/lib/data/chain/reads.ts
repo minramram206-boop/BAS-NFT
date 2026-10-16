@@ -8,6 +8,8 @@ import {
   CORE_CANDY_MACHINE_PROGRAM_ID,
   LISTING_DISCRIMINATOR,
   LISTING_LAYOUT,
+  OFFER_DISCRIMINATOR,
+  OFFER_LAYOUT,
   MINT_LIMIT_ID,
   MPL_CORE_PROGRAM_ID,
   associatedTokenAddress,
@@ -20,12 +22,14 @@ import {
   decodeListing,
   decodeMarketConfig,
   decodeMintCounter,
+  decodeOffer,
   decodeTokenAccountAmount,
   marketAuthorityAddress,
   marketConfigAddress,
   mintCounterAddress,
   serialFromMetadataUri,
   type AuctionOnChain,
+  type OfferOnChain,
   type ListingOnChain,
 } from '@bas/chain-client/browser';
 import { address, createSolanaRpc, getAddressEncoder, getBase58Decoder, getBase64Encoder, type Address } from '@solana/kit';
@@ -51,6 +55,8 @@ export interface ReadRpc {
   programAccounts(program: string, filters: readonly ProgramFilter[], dataSize?: number): Promise<readonly (RawAccount & { address: string })[]>;
   account(address: string): Promise<RawAccount | null>;
   balance(address: string): Promise<bigint>;
+  /** Lamports an account of `bytes` data must hold to be rent exempt. */
+  rentExempt(bytes: number): Promise<bigint>;
 }
 
 export interface ReadsOptions {
@@ -101,6 +107,9 @@ export function kitReadRpc(url: string): ReadRpc {
     },
     async balance(target) {
       return (await rpc.getBalance(address(target), { commitment: 'confirmed' }).send()).value;
+    },
+    async rentExempt(bytes) {
+      return rpc.getMinimumBalanceForRentExemption(BigInt(bytes)).send();
     },
   };
 }
@@ -179,10 +188,13 @@ export function createReads(options: ReadsOptions): DistrictReads {
       if (!marketProgramId) return null;
       const program = address(marketProgramId);
       const [configAddress, authority] = await Promise.all([marketConfigAddress(program), marketAuthorityAddress(program)]);
-      const [configAccount, entries, auctionEntries] = await Promise.all([
+      const [configAccount, entries, auctionEntries, offerEntries, offerDepositLamports] = await Promise.all([
         rpc.account(configAddress),
         rpc.programAccounts(marketProgramId, [{ offset: 0, bytes: LISTING_DISCRIMINATOR }], LISTING_LAYOUT.length),
         rpc.programAccounts(marketProgramId, [{ offset: 0, bytes: AUCTION_DISCRIMINATOR }], AUCTION_LAYOUT.length),
+        rpc.programAccounts(marketProgramId, [{ offset: 0, bytes: OFFER_DISCRIMINATOR }], OFFER_LAYOUT.length),
+        // The rent of a new offer account; clusters have changed the rate before, so it is asked, not assumed.
+        rpc.rentExempt(OFFER_LAYOUT.length),
       ]);
       // Accounts the program does not own are not its state, whatever their bytes say.
       const config = configAccount?.owner === marketProgramId ? decodeMarketConfig(configAccount.data) : undefined;
@@ -197,7 +209,12 @@ export function createReads(options: ReadsOptions): DistrictReads {
         const auction = entry.owner === marketProgramId ? decodeAuction(entry.data) : undefined;
         if (auction) auctions.push(auction);
       }
-      return { config, authority, listings, auctions };
+      const offers: OfferOnChain[] = [];
+      for (const entry of offerEntries) {
+        const offer = entry.owner === marketProgramId ? decodeOffer(entry.data) : undefined;
+        if (offer) offers.push(offer);
+      }
+      return { config, authority, listings, auctions, offers, offerDepositLamports };
     },
 
     async balances(owner): Promise<Balances> {

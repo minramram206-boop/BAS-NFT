@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { ReceiptRow } from '@/components/ui/ReceiptRow';
-import { formatSolExact } from '@/lib/data/market';
+import { NETWORK_FEE_LAMPORTS, formatSolExact, walletCost } from '@/lib/data/market';
 import { MESSAGES, formatMessage } from '@/messages';
 import {
   useBusy,
@@ -30,7 +30,8 @@ export const BuyDialog: React.FC<{ citizenId: number; onClose: () => void }> = (
   if (!citizen || !listing) return null;
 
   const needsWallet = mode === 'chain' && !wallet.connected;
-  const enough = wallet.solLamports >= listing.priceLamports;
+  const cost = walletCost(listing.priceLamports, mode);
+  const enough = wallet.solLamports >= cost;
 
   return (
     <MarketDialog title={formatMessage(copy.buyTitle, { name: citizen.name.toUpperCase() })} onClose={onClose}>
@@ -40,9 +41,8 @@ export const BuyDialog: React.FC<{ citizenId: number; onClose: () => void }> = (
       <div className="bas-inset flex flex-col px-3 py-1">
         <ReceiptRow label={copy.rowPrice} value={formatSolExact(listing.priceLamports)} strong />
         <ReceiptRow label={copy.rowYourSol} value={needsWallet ? MESSAGES.mint.notConnected : formatSolExact(wallet.solLamports)} />
-        {!needsWallet && enough && (
-          <ReceiptRow label={copy.rowAfter} value={formatSolExact(wallet.solLamports - listing.priceLamports)} />
-        )}
+        {mode === 'chain' && <ReceiptRow label={copy.rowNetworkFee} value={formatSolExact(NETWORK_FEE_LAMPORTS)} />}
+        {!needsWallet && enough && <ReceiptRow label={copy.rowAfter} value={formatSolExact(wallet.solLamports - cost)} />}
       </div>
 
       {!needsWallet && !enough && (

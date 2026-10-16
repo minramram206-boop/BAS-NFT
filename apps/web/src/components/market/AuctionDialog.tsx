@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { ReceiptRow } from '@/components/ui/ReceiptRow';
 import {
   AUCTION_CLOCKS,
+  NETWORK_FEE_LAMPORTS,
   auctionStage,
   clockSpan,
   formatSolExact,
@@ -12,6 +13,7 @@ import {
   splitSale,
   suggestedBid,
   timeLeftText,
+  walletCost,
   type AuctionStage,
 } from '@/lib/data/market';
 import { cn } from '@/lib/utils/cn';
@@ -34,15 +36,10 @@ import {
 import { bidCountText } from './AuctionCard';
 import { AuctionBids } from './BidHistory';
 import { CitizenLine, StatTiles } from './CitizenLine';
+import { Note } from './DialogParts';
 import { MarketDialog } from './MarketDialog';
 
 const copy = MESSAGES.market;
-
-const Note: React.FC<{ children: React.ReactNode; strong?: boolean }> = ({ children, strong }) => (
-  <p className={strong ? 'm-0 text-[14px] font-semibold leading-snug text-[#1d6b34]' : 'm-0 text-[14px] leading-snug text-[#33485c]'}>
-    {children}
-  </p>
-);
 
 /**
  * One auction, seen by whoever opens it: a bidder bids, the seller can cancel
@@ -112,7 +109,8 @@ export const AuctionDialog: React.FC<{ citizenId: number; onClose: () => void }>
             ? formatMessage(copy.priceHigh, { max: formatSolExact(market.maxPriceLamports) })
             : null;
   const valid = parsed !== null && problem === null;
-  const enough = valid && wallet.solLamports >= parsed;
+  const cost = parsed === null ? null : walletCost(parsed, mode);
+  const enough = valid && cost !== null && wallet.solLamports >= cost;
   const done = (ok: boolean) => {
     if (ok) onClose();
   };
@@ -132,8 +130,9 @@ export const AuctionDialog: React.FC<{ citizenId: number; onClose: () => void }>
         <ReceiptRow label={copy.rowEnds} value={now === null ? '—' : ended ? copy.ended : timeLeftText(auction.endsAt - now)} />
         {biddable && <ReceiptRow label={copy.rowMinBid} value={formatSolExact(auction.minBidLamports)} />}
         {biddable && !needsWallet && <ReceiptRow label={copy.rowYourSol} value={formatSolExact(wallet.solLamports)} />}
-        {biddable && !needsWallet && enough && parsed !== null && (
-          <ReceiptRow label={copy.rowAfterBid} value={formatSolExact(wallet.solLamports - parsed)} />
+        {biddable && mode === 'chain' && <ReceiptRow label={copy.rowNetworkFee} value={formatSolExact(NETWORK_FEE_LAMPORTS)} />}
+        {biddable && !needsWallet && enough && cost !== null && (
+          <ReceiptRow label={copy.rowAfterBid} value={formatSolExact(wallet.solLamports - cost)} />
         )}
       </div>
 

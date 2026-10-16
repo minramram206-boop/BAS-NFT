@@ -31,7 +31,8 @@ custom-panic = []
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
 
 [dependencies]
-anchor-lang = { workspace = true }
+# `init-if-needed` lets `make_offer` both open an offer and replace it.
+anchor-lang = { workspace = true, features = ["init-if-needed"] }
 solana-program = { workspace = true }
 
 # Host-side instruction tests only (tests/integration). Not in the BPF binary.

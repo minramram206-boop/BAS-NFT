@@ -3,11 +3,12 @@ import {
   AUCTION_DURATIONS_HOURS,
   MARKET_MAX_PRICE_LAMPORTS,
   MARKET_MIN_PRICE_LAMPORTS,
+  OFFER_DAYS as PROGRAM_OFFER_DAYS,
   type AuctionClock,
 } from '@bas/chain-client/browser';
 import type { CitizenRecord, RoleKey } from '@bas/content';
 import { highestStat } from './districts';
-import type { MarketAuction, MarketBid, MarketListing, MarketNotice, MarketSale, MarketSnapshot } from './types';
+import type { MarketAuction, MarketBid, MarketListing, MarketNotice, MarketOffer, MarketSale, MarketSnapshot } from './types';
 
 /**
  * The market as the screens use it (D-0082, D-0087, docs/MARKET.md). The
@@ -27,6 +28,18 @@ export const MIN_PRICE_LAMPORTS = MARKET_MIN_PRICE_LAMPORTS;
 export const MAX_PRICE_LAMPORTS = MARKET_MAX_PRICE_LAMPORTS;
 /** The collection's Royalties plugin (SPEC §6.2). */
 export const ROYALTY_BPS = 500;
+
+/**
+ * Solana's base fee for one signature, which every market transaction pays
+ * on top of what it moves. A wallet may add a priority fee, so screens call
+ * it an estimate. Mock mode charges nothing.
+ */
+export const NETWORK_FEE_LAMPORTS = 5_000n;
+
+/** What paying `amountLamports` takes from the wallet, the network fee included on chain. */
+export function walletCost(amountLamports: bigint, mode: 'mock' | 'chain'): bigint {
+  return amountLamports + (mode === 'chain' ? NETWORK_FEE_LAMPORTS : 0n);
+}
 
 /**
  * Reads a price typed in SOL into lamports without going through floating point.
@@ -119,7 +132,50 @@ export const CLOSED_MARKET: MarketSnapshot = {
   auctionHours: AUCTION_HOURS,
   auctionClock: AUCTION_CLOCKS.real,
   notices: [],
+  offersOpen: false,
+  offers: [],
+  offerDays: [],
+  offerDepositLamports: 0n,
 };
+
+/** How long an offer may stay open, in days (D-0097), as `OFFER_DAYS` in the program. */
+export const OFFER_DAYS: readonly number[] = PROGRAM_OFFER_DAYS;
+
+/** Seconds an offer of `days` stays open on `clock`: a day is 24 of its hours, so the test clock shortens it too. */
+export function offerSeconds(days: number, clock: AuctionClock = AUCTION_CLOCKS.real): number {
+  return days * 24 * clock.hourSeconds;
+}
+
+/** `3 days`; on the test clock the span it really lasts, `12 minutes`. */
+export function offerSpanText(days: number, clock: AuctionClock = AUCTION_CLOCKS.real): string {
+  if (clock.hourSeconds !== AUCTION_CLOCKS.real.hourSeconds) return clockSpan(offerSeconds(days, clock));
+  return `${days} day${days === 1 ? '' : 's'}`;
+}
+
+export function offerExpired(offer: MarketOffer, now: number | null): boolean {
+  return now !== null && now >= offer.expiresAt;
+}
+
+/** The offers on one citizen, the highest first; expired ones last, since they can no longer be accepted. */
+export function offersOn(offers: readonly MarketOffer[], citizenId: number, now: number | null): MarketOffer[] {
+  return offers
+    .filter((offer) => offer.citizenId === citizenId)
+    .sort(
+      (a, b) =>
+        Number(offerExpired(a, now)) - Number(offerExpired(b, now)) ||
+        (a.amountLamports === b.amountLamports ? a.madeAt - b.madeAt : a.amountLamports > b.amountLamports ? -1 : 1),
+    );
+}
+
+/** The highest offer the owner can still accept, if any. */
+export function bestOffer(offers: readonly MarketOffer[], citizenId: number, now: number | null): MarketOffer | undefined {
+  return offersOn(offers, citizenId, now).find((offer) => !offerExpired(offer, now));
+}
+
+/** The connected wallet's offer on a citizen, if it has one. */
+export function myOffer(offers: readonly MarketOffer[], citizenId: number): MarketOffer | undefined {
+  return offers.find((offer) => offer.citizenId === citizenId && offer.mine);
+}
 
 /** A price as it is typed in the form: `650000000` is `0.65`, `1000000000` is `1`. */
 export function solInputText(lamports: bigint): string {
@@ -264,6 +320,11 @@ export function auctionNotices(auctions: readonly MarketAuction[], now: number |
 export function unseenNotices(notices: readonly MarketNotice[], seen: readonly string[]): readonly MarketNotice[] {
   const known = new Set(seen);
   return notices.filter((notice) => !known.has(notice.id));
+}
+
+/** Two lists of seen notice ids as one, `first` ahead, each id once, at most `SEEN_NOTICES_LIMIT`. */
+export function mergeSeen(first: readonly string[], second: readonly string[]): string[] {
+  return [...new Set([...first, ...second])].slice(0, SEEN_NOTICES_LIMIT);
 }
 
 /** `seen` with every id of `notices` added, newest first, at most `SEEN_NOTICES_LIMIT`. */

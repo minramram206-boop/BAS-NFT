@@ -18,6 +18,7 @@ import {
   useSimulateSale,
 } from '@/stores/selectors';
 import { CitizenLine, StatTiles } from './CitizenLine';
+import { Chip } from './DialogParts';
 import { MarketDialog } from './MarketDialog';
 
 const copy = MESSAGES.market;
@@ -33,20 +34,6 @@ function priceMessage(text: string, parsed: bigint | null, market: ReturnType<ty
 }
 
 type SaleMode = 'fixed' | 'auction';
-
-const Chip: React.FC<{ pressed: boolean; onClick: () => void; children: React.ReactNode }> = ({ pressed, onClick, children }) => (
-  <button
-    type="button"
-    aria-pressed={pressed}
-    onClick={onClick}
-    className={cn(
-      'bas-chip min-h-10 flex-1 rounded-md border-2 border-[#1b2a38] px-2 font-heading text-[11px]',
-      pressed ? 'bg-[#f7d23d]' : 'bg-[#c5d5e5]',
-    )}
-  >
-    {children}
-  </button>
-);
 
 /**
  * Lists an owned citizen at a fixed price or puts it up for auction, or

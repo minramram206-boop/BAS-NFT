@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import { after, before, describe, it } from 'node:test';
 import { Keypair } from '@solana/web3.js';
-import { Authenticator, createMissionServer } from '../dist/index.js';
+import { Authenticator, MemorySeenStore, createMissionServer } from '../dist/index.js';
 import { rig, signMessage, type Rig } from './fixtures.ts';
 
 describe('http api', () => {
@@ -17,6 +17,7 @@ describe('http api', () => {
       auth: new Authenticator(Buffer.alloc(32, 5)),
       allowedOrigins: ['http://localhost:3000'],
       rateLimit: 40,
+      seen: new MemorySeenStore(),
     });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -122,6 +123,23 @@ describe('http api', () => {
     assert.equal(response.json.day, 1);
     assert.equal(response.json.open, true);
     assert.deepEqual(response.json.events, {});
+  });
+
+  it('keeps the notices a wallet dismissed: anyone reads them, only the wallet adds', async () => {
+    const wallet = r.owner.publicKey.toBase58();
+    assert.deepEqual((await call(`/market/seen?wallet=${wallet}`)).json, { ids: [] });
+    assert.equal((await call('/market/seen', { body: { ids: ['won-abc'] } })).status, 401);
+
+    const token = await signIn(r.owner);
+    const sale = '5'.repeat(88);
+    const added = await call('/market/seen', { token, body: { ids: [sale, 'claim-5-1000'] } });
+    assert.deepEqual(added.json, { ids: [sale, 'claim-5-1000'] });
+    await call('/market/seen', { token, body: { ids: ['won-abc', sale] } });
+    assert.deepEqual((await call(`/market/seen?wallet=${wallet}`)).json, { ids: ['won-abc', sale, 'claim-5-1000'] }, 'newest first, once each');
+
+    assert.equal((await call('/market/seen', { token, body: { ids: ['no spaces'] } })).status, 400);
+    assert.equal((await call('/market/seen', { token, body: { ids: 'won-abc' } })).status, 400);
+    assert.equal((await call('/market/seen?wallet=nope')).status, 400);
   });
 
   it('limits a client that sends too many requests', async () => {

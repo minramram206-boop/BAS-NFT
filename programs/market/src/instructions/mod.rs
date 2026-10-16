@@ -1,31 +1,39 @@
 //! One module per instruction: the accounts it takes and its handler.
 
 pub mod accept_admin;
+pub mod accept_offer;
 pub mod buy;
 pub mod cancel_auction;
 pub mod cancel_listing;
+pub mod close_expired_offer;
 pub mod close_stale_listing;
 pub mod create_auction;
 pub mod create_listing;
 pub mod initialize_config;
+pub mod make_offer;
 pub mod place_bid;
 pub mod propose_admin;
 pub mod set_paused;
 pub mod settle_auction;
 pub mod update_config;
 pub mod update_price;
+pub mod withdraw_offer;
 
 pub use accept_admin::*;
+pub use accept_offer::*;
 pub use buy::*;
 pub use cancel_auction::*;
 pub use cancel_listing::*;
+pub use close_expired_offer::*;
 pub use close_stale_listing::*;
 pub use create_auction::*;
 pub use create_listing::*;
 pub use initialize_config::*;
+pub use make_offer::*;
 pub use place_bid::*;
 pub use propose_admin::*;
 pub use set_paused::*;
 pub use settle_auction::*;
 pub use update_config::*;
 pub use update_price::*;
+pub use withdraw_offer::*;

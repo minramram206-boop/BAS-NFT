@@ -13,6 +13,8 @@ import { PixelIcon } from '@/components/ui/PixelIcon';
 import { auctionAction } from '@/components/market/AuctionCard';
 import { AuctionDialog } from '@/components/market/AuctionDialog';
 import { BuyDialog } from '@/components/market/BuyDialog';
+import { OfferDialog } from '@/components/market/OfferDialog';
+import { OffersDialog, offersLineText } from '@/components/market/OffersDialog';
 import { SellDialog } from '@/components/market/SellDialog';
 import { Ribbon } from '@/components/ui/Ribbon';
 import { StatBar, StatSwatch } from '@/components/ui/StatBar';
@@ -20,7 +22,7 @@ import { CheckIcon, LockIcon, StarIcon } from '@/components/ui/icons';
 import { STAT_COLORS, STAT_ORDER, TIER_SCORES } from '@/config/constants';
 import { DISTRICT_ORDER, DISTRICT_RULES, bracketOf, highestStat, isDistrictOpen, unlockingStat } from '@/lib/data/districts';
 import type { HistoryEntry } from '@/lib/data/types';
-import { auctionStage, formatSolExact, timeLeftText } from '@/lib/data/market';
+import { auctionStage, formatSolExact, myOffer, offerExpired, offersOn, timeLeftText } from '@/lib/data/market';
 import { useNow } from '@/lib/utils/useNow';
 import { districtName, formatTokens, lockedRule, statLabel, tierForScore } from '@/lib/format';
 import { cn } from '@/lib/utils/cn';
@@ -337,7 +339,7 @@ export const ProfileScreen: React.FC<{ id: number }> = ({ id }) => {
   const auction = useAuction(id);
   const market = useMarket();
   const now = useNow();
-  const [marketDialog, setMarketDialog] = React.useState<'buy' | 'sell' | 'auction' | null>(null);
+  const [marketDialog, setMarketDialog] = React.useState<'buy' | 'sell' | 'auction' | 'offer' | 'offers' | null>(null);
   const closeMarketDialog = React.useCallback(() => setMarketDialog(null), []);
   /** Same button as the auction's market card, except that a live auction names the bid to beat. */
   const auctionButton = (current: NonNullable<typeof auction>): { label: string; primary: boolean } => {
@@ -362,6 +364,12 @@ export const ProfileScreen: React.FC<{ id: number }> = ({ id }) => {
   }
 
   const bracket = bracketOf(citizen);
+  // The owner reviews the offers on a citizen, its own auction included; anyone else may make one,
+  // except on a citizen at auction, which is bought by bidding.
+  const ownerSide = owned || auction?.sellerIsMe === true;
+  const canOffer = market.offersOpen && !ownerSide && !auction;
+  const offers = market.offersOpen ? offersOn(market.offers, citizen.id, now) : [];
+  const mine = myOffer(market.offers, citizen.id);
 
   const identity = (
     <section className="bas-panel flex flex-col gap-3 p-3 md:p-4">
@@ -411,7 +419,7 @@ export const ProfileScreen: React.FC<{ id: number }> = ({ id }) => {
           </Link>
         )}
       </div>
-      {market.open && (owned || listing || auction) && (
+      {market.open && (owned || listing || auction || canOffer) && (
         <div className="flex flex-col gap-2 border-t-2 border-[#b9c9d8] pt-3">
           {listing && (
             <span className="text-center text-[15px] font-semibold text-[#1d6b34]">
@@ -449,6 +457,35 @@ export const ProfileScreen: React.FC<{ id: number }> = ({ id }) => {
               </button>
             )
           )}
+          {ownerSide && offers.length > 0 && (
+            <>
+              <span className="text-center text-[14px] font-semibold text-[#8a5a00]">
+                {offersLineText(offers, now)}
+              </span>
+              <button type="button" className="bas-btn" onClick={() => setMarketDialog('offers')}>
+                {MESSAGES.market.reviewOffers}
+              </button>
+            </>
+          )}
+          {canOffer && (
+            <>
+              {mine && (
+                <span className="text-center text-[14px] font-semibold text-[#8a5a00]">
+                  {formatMessage(MESSAGES.market.yourOfferLine, {
+                    price: formatSolExact(mine.amountLamports),
+                    time: now === null || offerExpired(mine, now) ? MESSAGES.market.offerExpired : timeLeftText(mine.expiresAt - now),
+                  })}
+                </span>
+              )}
+              <button
+                type="button"
+                className={cn('bas-btn', !listing && !mine && 'bas-btn-primary')}
+                onClick={() => setMarketDialog('offer')}
+              >
+                {mine ? MESSAGES.market.changeOffer : MESSAGES.market.makeOffer}
+              </button>
+            </>
+          )}
         </div>
       )}
     </section>
@@ -468,6 +505,8 @@ export const ProfileScreen: React.FC<{ id: number }> = ({ id }) => {
       {marketDialog === 'sell' && owned && <SellDialog citizenId={citizen.id} onClose={closeMarketDialog} />}
       {marketDialog === 'buy' && !owned && <BuyDialog citizenId={citizen.id} onClose={closeMarketDialog} />}
       {marketDialog === 'auction' && <AuctionDialog citizenId={citizen.id} onClose={closeMarketDialog} />}
+      {marketDialog === 'offer' && canOffer && <OfferDialog citizenId={citizen.id} onClose={closeMarketDialog} />}
+      {marketDialog === 'offers' && ownerSide && <OffersDialog citizenId={citizen.id} onClose={closeMarketDialog} />}
     </ScreenShell>
   );
 };

@@ -25,7 +25,7 @@ export interface SaleActivity {
   readonly buyer: string;
   readonly priceLamports: string;
   readonly sellerLamports: string;
-  readonly kind: 'fixed' | 'auction';
+  readonly kind: 'fixed' | 'auction' | 'offer';
   /** Unix seconds. */
   readonly at: number;
 }
@@ -133,6 +133,23 @@ export class MissionApi {
   async marketActivity(): Promise<MarketActivity> {
     const body = await this.request<MarketActivity>('GET', '/market/activity', undefined, false);
     return { sales: Array.isArray(body.sales) ? body.sales : [], bids: Array.isArray(body.bids) ? body.bids : [] };
+  }
+
+  /** The market notices `wallet` dismissed in any browser, newest first. Public: no sign-in. */
+  async seenNotices(wallet: string): Promise<string[]> {
+    const body = await this.request<{ ids?: unknown }>('GET', `/market/seen?wallet=${encodeURIComponent(wallet)}`, undefined, false);
+    return Array.isArray(body.ids) ? body.ids.filter((id): id is string => typeof id === 'string') : [];
+  }
+
+  /**
+   * Adds dismissed market notices for the connected wallet. Only with a token
+   * already held: a dismissed notice is not worth a wallet prompt, so without
+   * one this does nothing and returns `false`.
+   */
+  async rememberSeen(ids: readonly string[]): Promise<boolean> {
+    if (!this.signedIn || ids.length === 0) return false;
+    await this.request('POST', '/market/seen', { ids });
+    return true;
   }
 
   /** Asks for the mint transaction of the public sale. The server decides whether this wallet may mint. */

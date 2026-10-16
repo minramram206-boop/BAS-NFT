@@ -8,10 +8,13 @@ import { createPool, migrate } from '@bas/chat-store';
 import {
   Authenticator,
   MarketIndexer,
+  MemorySeenStore,
   PgMarketStore,
+  PgSeenStore,
+  SEEN_NOTICES_LIMIT,
   createMissionServer,
   describeSale,
-  openMarketStore,
+  openMarketDatabase,
   type BidRecord,
   type MarketSource,
   type MarketStore,
@@ -45,6 +48,10 @@ const settled = (asset: string, seller: string, winner: string | null, price: bi
     ...u64(delivered ? price - price / 20n : 0n),
     delivered ? 1 : 0,
   ]);
+const accepted = (asset: string, seller: string, buyer: string, price: bigint) =>
+  data([...MARKET_EVENT_DISCRIMINATORS.OfferAccepted, ...bytesOf(asset), ...bytesOf(seller), ...bytesOf(buyer), ...u64(price), ...u64(price / 20n), ...u64(0n), ...u64(price - price / 20n)]);
+const offerMade = (asset: string, buyer: string, amount: bigint) =>
+  data([...MARKET_EVENT_DISCRIMINATORS.OfferMade, ...bytesOf(asset), ...bytesOf(buyer), ...u64(amount), ...u64(0n), ...u64(99n)]);
 const bid = (asset: string, bidder: string, amount: bigint, previous: string | null) =>
   data([...MARKET_EVENT_DISCRIMINATORS.BidPlaced, ...bytesOf(asset), ...bytesOf(bidder), ...u64(amount), ...(previous ? bytesOf(previous) : new Array(32).fill(0)), ...u64(previous ? amount - 1n : 0n), ...u64(99n)]);
 
@@ -119,6 +126,25 @@ describe('market activity', () => {
       ],
     );
     assert.deepEqual(reported.map((sale) => sale.signature), ['sig0', 'sig5']);
+  });
+
+  it('reads an accepted offer as a sale, and an offer made as nothing yet', async () => {
+    const source = new FakeSource();
+    const [asset, seller, buyer] = [key(), key(), key()];
+    source.push(inMarket('Program log: Instruction: MakeOffer', offerMade(asset, buyer, 300_000_000n)));
+    source.push(inMarket('Program log: Instruction: AcceptOffer', accepted(asset, seller, buyer, 300_000_000n)));
+    const reported: SaleRecord[] = [];
+    const indexer = new MarketIndexer({ source, programId: MARKET, onSale: (sale) => reported.push(sale) });
+    await indexer.sync();
+    assert.deepEqual(indexer.activity().sales, [
+      { signature: 'sig1', asset, seller, buyer, priceLamports: '300000000', sellerLamports: '285000000', kind: 'offer', at: SEASON_START + 3 * DAY },
+    ]);
+    assert.deepEqual(indexer.activity().bids, []);
+    assert.equal(reported.length, 1);
+    assert.equal(
+      describeSale(reported[0]!, SEASON).line,
+      'Sold on an accepted offer in the market for 0.30 SOL on day 4 of season 1, and moved to a new owner.',
+    );
   });
 
   it('ignores event bytes another program wrote in the same transaction', async () => {
@@ -231,8 +257,8 @@ describe('market history kept between starts', () => {
   it('starts without a database, or with one that does not answer', async () => {
     const said: string[] = [];
     const log = { log: (line: string) => said.push(line), warn: (line: string) => said.push(line) };
-    assert.equal(await openMarketStore(undefined, MARKET, log), undefined);
-    assert.equal(await openMarketStore('postgres://bas:secret-word@127.0.0.1:1/bas', MARKET, log), undefined);
+    assert.equal(await openMarketDatabase(undefined, log), undefined);
+    assert.equal(await openMarketDatabase('postgres://bas:secret-word@127.0.0.1:1/bas', log), undefined);
     assert.match(said[0] ?? '', /DATABASE_URL is not set/);
     assert.match(said[1] ?? '', /Cannot reach Postgres at 127\.0\.0\.1:1/);
     assert.ok(said.every((line) => !line.includes('secret-word')));
@@ -260,9 +286,45 @@ describe('market history in Postgres', { skip: databaseUrl ? false : 'set BAS_TE
       await store.record('c', [sale], []);
       await store.record('c', [sale], []);
       await store.record('d', [], []);
+      const offerSale: SaleRecord = { ...sale, signature: 'e', priceLamports: '300000000', sellerLamports: '285000000', kind: 'offer', at: SEASON_START + 3 };
+      await store.record('e', [offerSale], []);
 
-      assert.deepEqual(await store.load(), { sales: [sale], bids: [secondBid, firstBid], cursor: 'd' });
+      assert.deepEqual(await store.load(), { sales: [offerSale, sale], bids: [secondBid, firstBid], cursor: 'e' });
       assert.deepEqual(await new PgMarketStore(pool, key()).load(), { sales: [], bids: [], cursor: null }, 'another program has its own history');
+    } finally {
+      await pool.end();
+    }
+  });
+});
+
+describe('dismissed market notices', () => {
+  it('keeps each id once, newest first, and no more than the limit', async () => {
+    const store = new MemorySeenStore();
+    const wallet = key();
+    await store.add(wallet, ['a', 'b'], 1);
+    await store.add(wallet, ['c', 'a'], 2);
+    assert.deepEqual(await store.list(wallet), ['c', 'a', 'b']);
+    assert.deepEqual(await store.list(key()), []);
+    await store.add(wallet, Array.from({ length: SEEN_NOTICES_LIMIT }, (_, index) => `n${index}`), 3);
+    const kept = await store.list(wallet);
+    assert.equal(kept.length, SEEN_NOTICES_LIMIT);
+    assert.equal(kept[0], 'n0');
+  });
+
+  it('keeps them in Postgres the same way', { skip: databaseUrl ? false : 'set BAS_TEST_DATABASE_URL to run the Postgres tests' }, async () => {
+    const pool = createPool(databaseUrl ?? 'postgres://unused');
+    try {
+      await migrate(pool);
+      const store = new PgSeenStore(pool);
+      const wallet = key();
+      await store.add(wallet, ['a', 'b'], 1);
+      await store.add(wallet, ['c', 'a'], 2);
+      assert.deepEqual(await store.list(wallet), ['c', 'a', 'b']);
+      await store.add(wallet, Array.from({ length: SEEN_NOTICES_LIMIT }, (_, index) => `n${String(index).padStart(3, '0')}`), 3);
+      const kept = await store.list(wallet);
+      assert.equal(kept.length, SEEN_NOTICES_LIMIT);
+      assert.ok(kept.every((id) => id.startsWith('n')), 'the oldest are dropped');
+      assert.deepEqual(await store.list(key()), []);
     } finally {
       await pool.end();
     }

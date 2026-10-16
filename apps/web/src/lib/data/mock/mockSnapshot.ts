@@ -1,13 +1,14 @@
 import type { CitizenRecord, StatKey } from '@bas/content';
 import { trainingCostAtoms } from '@bas/chain-client/stats';
 import { MISSION_CATALOG } from '../missionCatalog';
-import { AUCTION_CLOCKS, AUCTION_HOURS, MAX_PRICE_LAMPORTS, MIN_PRICE_LAMPORTS, ROYALTY_BPS, minNextBid } from '../market';
+import { AUCTION_CLOCKS, AUCTION_HOURS, MAX_PRICE_LAMPORTS, MIN_PRICE_LAMPORTS, OFFER_DAYS, ROYALTY_BPS, minNextBid } from '../market';
 import type {
   DistrictSnapshot,
   HistoryEntry,
   LeaderboardEntry,
   MarketAuction,
   MarketListing,
+  MarketOffer,
   MarketSale,
   MissionDefinition,
   StatCredits,
@@ -59,6 +60,33 @@ const MOCK_LISTINGS: readonly MarketListing[] = [
  * Sales other players finished before the preview starts: Ivy won at auction
  * and Milo bought at a fixed price, each by the wallet that lists it again now.
  */
+/** The mock wallet's address as the header shows it. */
+const MOCK_WALLET_LABEL = '7xQ4…9fA';
+
+/**
+ * Offers the preview starts with: three on Farmer Hale, one the wallet owns
+ * (one of them past its end, so the screens show that state too), and the
+ * wallet's own offer on Milo, who is also listed for a fixed price.
+ */
+function mockOffers(nowSeconds: number): MarketOffer[] {
+  const hours = (count: number) => Math.round(count * 3_600);
+  const offer = (id: string, citizenId: number, buyer: string, amountLamports: bigint, madeHoursAgo: number, days: number): MarketOffer => ({
+    id,
+    citizenId,
+    buyer,
+    amountLamports,
+    madeAt: nowSeconds - hours(madeHoursAgo),
+    expiresAt: nowSeconds - hours(madeHoursAgo) + days * hours(24),
+    mine: buyer === MOCK_WALLET_LABEL,
+  });
+  return [
+    offer('mock-offer-1', 1, 'Bn7w…T2s', 300_000_000n, 5, 3),
+    offer('mock-offer-2', 1, 'Kx3p…9Qe', 250_000_000n, 26, 7),
+    offer('mock-offer-3', 1, 'Hd4r…L8m', 400_000_000n, 30, 1),
+    offer('mock-offer-4', 3, MOCK_WALLET_LABEL, 350_000_000n, 3, 3),
+  ];
+}
+
 function mockSales(nowSeconds: number): MarketSale[] {
   const hoursAgo = (hours: number) => nowSeconds - Math.round(hours * 3_600);
   const bid = (bidder: string, amountLamports: bigint, hours: number) => ({ bidder, amountLamports, at: hoursAgo(hours), mine: false });
@@ -289,7 +317,7 @@ export function createMockSnapshot(
   for (const citizen of citizens) credits[citizen.id] = CREDITS[citizen.id] ?? NO_CREDITS;
 
   return {
-    wallet: { connected: true, label: '7xQ4…9fA', tokenAtoms: 1_240_000_000n, solLamports: MOCK_SOL_LAMPORTS },
+    wallet: { connected: true, label: MOCK_WALLET_LABEL, tokenAtoms: 1_240_000_000n, solLamports: MOCK_SOL_LAMPORTS },
     // The preview roster is the whole collection, so the mint ends when it is out.
     mint: {
       priceLamports: options.mintPriceLamports,
@@ -337,6 +365,15 @@ export function createMockSnapshot(
       auctionHours: AUCTION_HOURS,
       auctionClock: AUCTION_CLOCKS.real,
       notices: [],
+      offersOpen: true,
+      // An offer stays only on a minted citizen; offers to the wallet only on one it owns, its own only on one it does not.
+      offers: mockOffers(options.nowSeconds).filter(
+        (offer) =>
+          citizens.some((citizen) => citizen.id === offer.citizenId) &&
+          (owned as readonly number[]).includes(offer.citizenId) !== offer.mine,
+      ),
+      offerDays: OFFER_DAYS,
+      offerDepositLamports: 0n,
     },
   };
 }

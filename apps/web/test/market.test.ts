@@ -1,21 +1,28 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { OFFER_DAYS as PROGRAM_OFFER_DAYS } from '@bas/chain-client/browser';
 import { loadCitizens } from '@bas/content/server';
 
 import {
   MAX_PRICE_LAMPORTS,
   MIN_PRICE_LAMPORTS,
+  OFFER_DAYS,
   ROYALTY_BPS,
   AUCTION_CLOCKS,
   auctionNotices,
   auctionStage,
+  bestOffer,
   bidFeed,
   clockSpan,
   endAfterBid,
   formatSolExact,
   markNoticesSeen,
   minNextBid,
+  myOffer,
+  offerExpired,
+  offerSeconds,
+  offersOn,
   parseSolInput,
   priceProblem,
   shownAuctions,
@@ -595,5 +602,106 @@ describe('auctions in the preview', () => {
     assert.ok((await data.settleAuction(FARMER)).ok);
     assert.ok(data.snapshot().owned.includes(FARMER));
     assert.ok((await data.listCitizen(FARMER, SOL)).ok, 'the citizen moves freely again');
+  });
+});
+
+describe('offer rules shared with the program', () => {
+  it('offers the lengths the program takes', () => {
+    assert.deepEqual([...OFFER_DAYS], [...PROGRAM_OFFER_DAYS]);
+  });
+});
+
+describe('offers in the preview', () => {
+  const START = 1_800_000_000;
+  const timed = () => {
+    let seconds = START;
+    const data = createMockDataSource({
+      roster,
+      baseTrainingCostAtoms: '100000000',
+      mintPriceLamports: '10000000',
+      mintLimitPerWallet: 2,
+      random: () => 0,
+      clock: () => seconds * 1000,
+    });
+    return { data, pass: (by: number) => (seconds += by) };
+  };
+  const sol = (data: DistrictDataSource) => data.snapshot().wallet.solLamports;
+  const mineOn = (data: DistrictDataSource, id: number) => myOffer(data.snapshot().market.offers, id);
+
+  it('starts with offers on a citizen of the wallet and one of its own, the best still open first', () => {
+    const { data } = timed();
+    const { market } = data.snapshot();
+    assert.equal(market.offersOpen, true);
+    const onFarmer = offersOn(market.offers, FARMER, START);
+    assert.deepEqual(
+      onFarmer.map((offer) => [offer.amountLamports, offerExpired(offer, START)]),
+      [
+        [300_000_000n, false],
+        [250_000_000n, false],
+        [400_000_000n, true],
+      ],
+      'a higher offer that ran out goes last',
+    );
+    assert.equal(bestOffer(market.offers, FARMER, START)?.amountLamports, 300_000_000n);
+    assert.equal(mineOn(data, MILO)?.amountLamports, 350_000_000n);
+    assert.equal(offerSeconds(3, AUCTION_CLOCKS['devnet-fast']), 3 * 24 * 10, 'the test clock shortens offers too');
+  });
+
+  it('holds the SOL of an offer, swaps it for a new one, and gives it all back', async () => {
+    const { data } = timed();
+    const before = sol(data);
+    assert.deepEqual(await data.makeOffer(FARMER, SOL, 3), { ok: false, error: 'own-citizen' });
+    assert.deepEqual(await data.makeOffer(13, SOL, 3), { ok: false, error: 'in-auction' }, 'an auctioned citizen is bought by bidding');
+    assert.deepEqual(await data.makeOffer(8, MIN_PRICE_LAMPORTS - 1n, 3), { ok: false, error: 'invalid-price' });
+    assert.deepEqual(await data.makeOffer(8, SOL, 2), { ok: false, error: 'invalid-price' }, 'only the offered lengths');
+    assert.deepEqual(await data.makeOffer(8, 30n * SOL, 3), { ok: false, error: 'insufficient-sol' });
+
+    assert.ok((await data.makeOffer(8, SOL / 2n, 7)).ok);
+    assert.equal(sol(data), before - SOL / 2n);
+    assert.equal(mineOn(data, 8)?.expiresAt, START + 7 * 86_400);
+    assert.ok((await data.makeOffer(8, SOL, 1)).ok, 'a new offer replaces the old one');
+    assert.equal(sol(data), before - SOL);
+    assert.equal(data.snapshot().market.offers.filter((offer) => offer.citizenId === 8 && offer.mine).length, 1);
+
+    assert.ok((await data.withdrawOffer(8)).ok);
+    assert.equal(sol(data), before);
+    assert.deepEqual(await data.withdrawOffer(8), { ok: false, error: 'offer-gone' });
+  });
+
+  it('sells to the offer the owner picks: the citizen leaves, the owner is paid less the royalty', async () => {
+    const { data, pass } = timed();
+    const offers = offersOn(data.snapshot().market.offers, FARMER, START);
+    const [best, , expired] = offers;
+    assert.ok(best && expired);
+    assert.deepEqual(await data.acceptOffer(FARMER, expired.id), { ok: false, error: 'offer-gone' }, 'one that ran out cannot be taken');
+    assert.ok((await data.listCitizen(FARMER, 2n * SOL)).ok);
+    const before = sol(data);
+    assert.ok((await data.acceptOffer(FARMER, best.id)).ok);
+    const after = data.snapshot();
+    assert.ok(!after.owned.includes(FARMER));
+    assert.equal(sol(data) - before, splitSale(best.amountLamports, ROYALTY_BPS).proceedsLamports);
+    assert.equal(after.market.listings.some((listing) => listing.citizenId === FARMER), false, 'the listing goes with it');
+    const [sale] = after.market.sales;
+    assert.deepEqual(sale && [sale.kind, sale.citizenId, sale.buyer, sale.sellerIsMe], ['offer', FARMER, best.buyer, true]);
+    assert.equal(after.history[FARMER]?.[0]?.kind, 'sale');
+    pass(1);
+    assert.deepEqual(await data.acceptOffer(FARMER, offers[1]?.id ?? ''), { ok: false, error: 'not-owner' });
+  });
+
+  it("previews an offer arriving and the wallet's own offer being accepted", async () => {
+    const { data } = timed();
+    assert.ok(data.simulateOffer && (await data.simulateOffer(FARMER)).ok);
+    const [notice] = data.snapshot().market.notices;
+    assert.deepEqual(notice && [notice.kind, notice.citizenId], ['offer', FARMER]);
+    assert.equal(bestOffer(data.snapshot().market.offers, FARMER, START)?.amountLamports, 340_000_000n, 'a little over the best one');
+
+    const before = sol(data);
+    assert.ok(data.simulateOfferAccepted && (await data.simulateOfferAccepted(MILO)).ok);
+    const after = data.snapshot();
+    assert.ok(after.owned.includes(MILO));
+    assert.equal(sol(data), before, 'the SOL left with the offer');
+    assert.equal(after.market.listings.some((listing) => listing.citizenId === MILO), false);
+    assert.deepEqual(after.market.notices[0] && [after.market.notices[0].kind, after.market.notices[0].citizenId], ['offer-accepted', MILO]);
+    assert.equal(mineOn(data, MILO), undefined);
   });
 });

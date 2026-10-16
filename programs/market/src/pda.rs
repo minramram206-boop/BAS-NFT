@@ -2,7 +2,7 @@
 
 use anchor_lang::prelude::*;
 
-use crate::constants::{AUCTION_SEED, AUTHORITY_SEED, CONFIG_SEED, LISTING_SEED};
+use crate::constants::{AUCTION_SEED, AUTHORITY_SEED, CONFIG_SEED, LISTING_SEED, OFFER_SEED};
 
 pub fn config_address() -> (Pubkey, u8) {
     Pubkey::find_program_address(&[CONFIG_SEED], &crate::ID)
@@ -14,6 +14,10 @@ pub fn listing_address(asset: &Pubkey) -> (Pubkey, u8) {
 
 pub fn auction_address(asset: &Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[AUCTION_SEED, asset.as_ref()], &crate::ID)
+}
+
+pub fn offer_address(asset: &Pubkey, buyer: &Pubkey) -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[OFFER_SEED, asset.as_ref(), buyer.as_ref()], &crate::ID)
 }
 
 pub fn authority_address() -> (Pubkey, u8) {

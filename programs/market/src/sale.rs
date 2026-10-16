@@ -3,7 +3,7 @@
 
 use crate::constants::{
     AUCTION_DURATIONS_HOURS, AUCTION_EXTENSION_SECONDS, AUCTION_HOUR_SECONDS, BPS_DENOMINATOR,
-    MAX_PRICE_LAMPORTS, MIN_BID_INCREMENT_BPS, MIN_PRICE_LAMPORTS,
+    MAX_PRICE_LAMPORTS, MIN_BID_INCREMENT_BPS, MIN_PRICE_LAMPORTS, OFFER_DAYS,
 };
 
 /// Where the lamports of one sale go. The three parts always add up to the price.
@@ -67,6 +67,13 @@ pub fn auction_seconds(hours: u8) -> Option<i64> {
     AUCTION_DURATIONS_HOURS
         .contains(&hours)
         .then(|| i64::from(hours) * AUCTION_HOUR_SECONDS)
+}
+
+/// Seconds an offer open for `days` lasts, if that is one of the allowed lengths.
+pub fn offer_seconds(days: u8) -> Option<i64> {
+    OFFER_DAYS
+        .contains(&days)
+        .then(|| i64::from(days) * 24 * AUCTION_HOUR_SECONDS)
 }
 
 #[cfg(test)]
@@ -176,6 +183,16 @@ mod tests {
         for hours in [0, 1, 12, 23, 25, 71, 73, 255] {
             assert_eq!(auction_seconds(hours), None, "{hours}");
         }
+    }
+
+    #[test]
+    fn offers_stay_open_for_one_three_or_seven_days_only() {
+        for days in [0, 2, 4, 6, 8, 14, 255] {
+            assert_eq!(offer_seconds(days), None, "{days}");
+        }
+        assert_eq!(offer_seconds(1), auction_seconds(24));
+        assert_eq!(offer_seconds(3), auction_seconds(72));
+        assert_eq!(offer_seconds(7), Some(7 * 24 * AUCTION_HOUR_SECONDS));
     }
 
     #[cfg(not(feature = "devnet-clock"))]

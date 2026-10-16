@@ -14,7 +14,7 @@ import type {
   MissionDefinition,
   StepProof,
 } from '@/lib/data/types';
-import { auctionClockOf, auctionStage, clockSpan, formatSolExact, splitSale } from '@/lib/data/market';
+import { auctionClockOf, auctionStage, clockSpan, formatSolExact, myOffer, offerSpanText, splitSale } from '@/lib/data/market';
 import { districtName } from '@/lib/format';
 import { retroAudio } from '@/lib/audio/RetroAudioSynthesizer';
 import { spawnFloatingStatEffect } from '@/lib/effects/floatingStatEffect';
@@ -361,6 +361,72 @@ export function createDistrictSlice(options: CreateBasStoreOptions, set: SetStat
       const { simulateAuctionEnd } = source;
       if (!simulateAuctionEnd) return;
       await run(() => simulateAuctionEnd(citizenId));
+    },
+
+    makeOffer: async (citizenId, amountLamports, days) => {
+      const next = await run(() => source.makeOffer(citizenId, amountLamports, days));
+      if (!next) return false;
+      retroAudio.play('click');
+      const name = next.citizens.find((item) => item.id === citizenId)?.name ?? '';
+      get().openModal(
+        MESSAGES.market.offerMadeTitle,
+        formatMessage(MESSAGES.market.offerMadeMessage, {
+          name,
+          price: formatSolExact(amountLamports),
+          time: offerSpanText(days, next.market.auctionClock),
+        }),
+      );
+      return true;
+    },
+
+    withdrawOffer: async (citizenId) => {
+      const offer = myOffer(get().market.offers, citizenId);
+      const next = await run(() => source.withdrawOffer(citizenId));
+      if (!next || !offer) return Boolean(next);
+      retroAudio.play('click');
+      const name = next.citizens.find((item) => item.id === citizenId)?.name ?? '';
+      get().openModal(
+        MESSAGES.market.offerWithdrawnTitle,
+        formatMessage(MESSAGES.market.offerWithdrawnMessage, { name, price: formatSolExact(offer.amountLamports) }),
+      );
+      return true;
+    },
+
+    acceptOffer: async (citizenId, offerId) => {
+      const offer = get().market.offers.find((item) => item.id === offerId);
+      const name = get().citizens.find((item) => item.id === citizenId)?.name ?? '';
+      const next = await run(() => source.acceptOffer(citizenId, offerId));
+      if (!next || !offer) return Boolean(next);
+      retroAudio.play('mint');
+      // The citizen left the wallet, so the screens must not keep acting on it.
+      set({ selectedCitizenId: pickSelected(next, get().selectedCitizenId) });
+      get().openModal(
+        MESSAGES.market.offerAcceptedTitle,
+        formatMessage(MESSAGES.market.offerAcceptedMessage, {
+          name,
+          buyer: offer.buyer,
+          price: formatSolExact(offer.amountLamports),
+          amount: formatSolExact(splitSale(offer.amountLamports, next.market.royaltyBps).proceedsLamports),
+        }),
+      );
+      return true;
+    },
+
+    simulateOffer: async (citizenId) => {
+      const { simulateOffer } = source;
+      if (!simulateOffer) return;
+      const next = await run(() => simulateOffer(citizenId));
+      if (next) retroAudio.play('click');
+    },
+
+    simulateOfferAccepted: async (citizenId) => {
+      const { simulateOfferAccepted } = source;
+      if (!simulateOfferAccepted) return;
+      const next = await run(() => simulateOfferAccepted(citizenId));
+      if (!next) return;
+      // Told the way a real acceptance is: by the market notice the wallet finds next.
+      retroAudio.play('mint');
+      set({ selectedCitizenId: citizenId });
     },
 
     connectWallet: async (session) => {

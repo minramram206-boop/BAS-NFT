@@ -1,5 +1,6 @@
-//! BAS market: fixed-price sales (phase F1, D-0082) and English auctions
-//! (phase F3, D-0087) of district citizens for SOL. See docs/MARKET.md.
+//! BAS market: fixed-price sales (phase F1, D-0082), offers (phase F2,
+//! D-0098) and English auctions (phase F3, D-0087) of district citizens for
+//! SOL. See docs/MARKET.md.
 //!
 //! A listed citizen never leaves the seller's wallet: the seller names this
 //! program's authority PDA as the asset's Core transfer delegate, and `buy`
@@ -7,8 +8,10 @@
 //! seller and the royalty. An auctioned citizen is handed to the authority
 //! PDA when the auction starts (D-0092), so the seller cannot take it back
 //! once someone has bid; `settle_auction` hands it to the winner, or back to
-//! the seller without a bid. The program holds SOL only for an auction's
-//! highest bid.
+//! the seller without a bid. An offer holds the buyer's SOL until the owner
+//! accepts it, signing the Core transfer themselves, or the buyer takes it
+//! back. The program holds SOL only for an auction's highest bid and for
+//! open offers.
 //!
 //! Each instruction lives in `instructions/<name>.rs` next to its accounts.
 //! This file only wires them into the Anchor program.
@@ -93,5 +96,21 @@ pub mod market {
 
     pub fn settle_auction(ctx: Context<SettleAuction>) -> Result<()> {
         SettleAuction::process(ctx)
+    }
+
+    pub fn make_offer(ctx: Context<MakeOffer>, amount_lamports: u64, days: u8) -> Result<()> {
+        MakeOffer::process(ctx, amount_lamports, days)
+    }
+
+    pub fn withdraw_offer(ctx: Context<WithdrawOffer>) -> Result<()> {
+        WithdrawOffer::process(ctx)
+    }
+
+    pub fn close_expired_offer(ctx: Context<CloseExpiredOffer>) -> Result<()> {
+        CloseExpiredOffer::process(ctx)
+    }
+
+    pub fn accept_offer(ctx: Context<AcceptOffer>, amount_lamports: u64) -> Result<()> {
+        AcceptOffer::process(ctx, amount_lamports)
     }
 }

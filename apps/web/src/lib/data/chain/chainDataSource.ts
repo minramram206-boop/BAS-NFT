@@ -4,7 +4,17 @@ import { trainingCostAtoms } from '@bas/chain-client/stats';
 import type { AuctionClock } from '@bas/chain-client/browser';
 import { ChatPortError, type CitizenChatPort } from '../chat';
 import { bracketOf } from '../districts';
-import { AUCTION_CLOCKS, AUCTION_HOURS, CLOSED_MARKET, MAX_PRICE_LAMPORTS, MIN_PRICE_LAMPORTS, minNextBid, priceProblem } from '../market';
+import {
+  AUCTION_CLOCKS,
+  AUCTION_HOURS,
+  CLOSED_MARKET,
+  MAX_PRICE_LAMPORTS,
+  MIN_PRICE_LAMPORTS,
+  NETWORK_FEE_LAMPORTS,
+  OFFER_DAYS,
+  minNextBid,
+  priceProblem,
+} from '../market';
 import { MISSION_CATALOG } from '../missionCatalog';
 import { startBlocker } from '../missions';
 import { POOL_RULES } from '../season';
@@ -19,6 +29,7 @@ import type {
   MarketBid,
   MarketListing,
   MarketNotice,
+  MarketOffer,
   MarketSale,
   MarketSnapshot,
   MissionDefinition,
@@ -124,6 +135,13 @@ const MARKET_ERRORS: Readonly<Partial<Record<string, DistrictActionError>>> = {
   AuctionNotEnded: 'auction-live',
   AuctionHasBids: 'auction-has-bids',
   AuctionUndeliverable: 'listing-gone',
+  InvalidOfferLength: 'invalid-price',
+  AssetInAuction: 'in-auction',
+  // The offer was accepted, taken back or ran out between the read and the signature.
+  OfferExpired: 'offer-gone',
+  OfferNotExpired: 'offer-gone',
+  // The buyer changed the amount since the owner saw it.
+  OfferChanged: 'price-changed',
 };
 
 /** The error the screens show for anything that went wrong while talking to the wallet, server or cluster. */
@@ -137,6 +155,9 @@ export function actionErrorOf(error: unknown): DistrictActionError {
 const shorten = (address: string): string => `${address.slice(0, 4)}…${address.slice(-3)}`;
 
 const SECONDS_PER_DAY = 86_400;
+
+/** One offer per buyer and citizen, so the two name it; also part of its notice id. */
+const offerIdOf = (offer: { asset: string; buyer: string }): string => `${offer.asset}-${offer.buyer}`;
 
 /**
  * The district as the chain and the mission server hold it.
@@ -293,7 +314,32 @@ export function createChainDataSource(options: ChainDataSourceOptions): ChainDat
       auctionHours: AUCTION_HOURS,
       auctionClock: options.auctionClock ?? AUCTION_CLOCKS.real,
       notices: noticesNow(),
+      offersOpen: true,
+      offers: offersNow(minted),
+      offerDays: OFFER_DAYS,
+      offerDepositLamports: market.offerDepositLamports,
     };
+  };
+
+  /** Every offer on a roster citizen, open or expired; an accepted or withdrawn one is closed on chain and gone. */
+  const offersNow = (minted: Map<number, ChainCitizen>): MarketOffer[] => {
+    if (!market) return [];
+    const serials = new Map([...minted].map(([serial, citizen]) => [citizen.asset, serial]));
+    const offers: MarketOffer[] = [];
+    for (const offer of market.offers) {
+      const citizenId = serials.get(offer.asset);
+      if (citizenId === undefined) continue;
+      offers.push({
+        id: offerIdOf(offer),
+        citizenId,
+        buyer: shorten(offer.buyer),
+        amountLamports: offer.amountLamports,
+        madeAt: offer.madeAt,
+        expiresAt: offer.expiresAt,
+        mine: session !== null && offer.buyer === session.address,
+      });
+    }
+    return offers;
   };
 
   /**
@@ -376,7 +422,24 @@ export function createChainDataSource(options: ChainDataSourceOptions): ChainDat
         });
       } else if (sale.kind === 'auction' && sale.buyer === me) {
         found.push({ at: sale.at, notice: { id: `won-${sale.signature}`, kind: 'won', citizenId, priceLamports: BigInt(sale.priceLamports) } });
+      } else if (sale.kind === 'offer' && sale.buyer === me) {
+        found.push({
+          at: sale.at,
+          notice: { id: `accepted-${sale.signature}`, kind: 'offer-accepted', citizenId, amountLamports: BigInt(sale.priceLamports) },
+        });
       }
+    }
+    // Open offers on the wallet's citizens. A changed offer is news again, so its time is part of the id.
+    const now = Math.floor(clock() / 1000);
+    for (const offer of market?.offers ?? []) {
+      if (offer.buyer === me || now >= offer.expiresAt) continue;
+      const owned = chain.find((citizen) => citizen.asset === offer.asset && citizen.owner === me);
+      const citizenId = owned ? serialOf(owned.asset) : undefined;
+      if (citizenId === undefined) continue;
+      found.push({
+        at: offer.madeAt,
+        notice: { id: `offer-${offerIdOf(offer)}-${offer.madeAt}`, kind: 'offer', citizenId, amountLamports: offer.amountLamports },
+      });
     }
     // An outbid counts while it still stands: the wallet has not bid again on that auction since.
     const latestBidByAsset = new Map<string, (typeof activity.bids)[number]>();
@@ -641,6 +704,12 @@ export function createChainDataSource(options: ChainDataSourceOptions): ChainDat
     mode: 'chain',
     ...(chat ? { chat } : {}),
 
+    // A server that does not answer leaves this browser's own record in charge.
+    seenNotices: {
+      load: () => (session ? api.seenNotices(session.address).catch(() => []) : Promise.resolve([])),
+      save: (ids) => api.rememberSeen(ids).catch(() => false),
+    },
+
     snapshot: () => state,
 
     refresh: () => load(),
@@ -845,7 +914,7 @@ export function createChainDataSource(options: ChainDataSourceOptions): ChainDat
       if (auction.bidCount > 0 && auction.highestBidder === session.address) return fail('already-highest');
       if (amountLamports < minNextBid(auction.startPriceLamports, auction.bidCount > 0 ? auction.highestBidLamports : null)) return fail('bid-too-low');
       if (amountLamports > MAX_PRICE_LAMPORTS) return fail('invalid-price');
-      if (state.wallet.solLamports < amountLamports) return fail('insufficient-sol');
+      if (state.wallet.solLamports < amountLamports + NETWORK_FEE_LAMPORTS) return fail('insufficient-sol');
       const bidder = session.address;
       return sendMarket(() =>
         transactions.buildPlaceBid({ bidder, asset: auction.asset, amountLamports, previousBidder: auction.bidCount > 0 ? auction.highestBidder : null }),
@@ -884,6 +953,60 @@ export function createChainDataSource(options: ChainDataSourceOptions): ChainDat
       return sendMarket(() => transactions.buildSettleAuction({ caller, auction, config }));
     },
 
+    async makeOffer(citizenId: number, amountLamports: bigint, days: number) {
+      if (!market || market.config.isPaused) return fail('market-closed');
+      if (!session) return fail('not-connected');
+      const citizen = bySerial().get(citizenId);
+      if (!citizen) return fail('listing-gone');
+      const me = session.address;
+      if (citizen.owner === me) return fail('own-citizen');
+      // The market holds an auctioned citizen; a bid is the way to buy it.
+      const auctioned = auctionOf(citizenId);
+      if (auctioned) return fail(auctioned.auction.seller === me ? 'own-citizen' : 'in-auction');
+      if (citizen.frozen) return fail('in-auction');
+      if (priceProblem(amountLamports, state.market) || !OFFER_DAYS.includes(days)) return fail('invalid-price');
+      // An earlier offer comes back in the same step; a first one leaves the account's rent with the market until it closes.
+      const previous = market.offers.find((offer) => offer.asset === citizen.asset && offer.buyer === me);
+      const needed = amountLamports + NETWORK_FEE_LAMPORTS + (previous ? 0n : market.offerDepositLamports);
+      if (state.wallet.solLamports + (previous?.amountLamports ?? 0n) < needed) return fail('insufficient-sol');
+      return sendMarket(() => transactions.buildMakeOffer({ buyer: me, asset: citizen.asset, amountLamports, days }));
+    },
+
+    async withdrawOffer(citizenId: number) {
+      // Allowed while the market is paused, as in the program.
+      if (!market) return fail('market-closed');
+      if (!session) return fail('not-connected');
+      const me = session.address;
+      const citizen = bySerial().get(citizenId);
+      const offer = citizen ? market.offers.find((item) => item.asset === citizen.asset && item.buyer === me) : undefined;
+      if (!offer) return fail('offer-gone');
+      return sendMarket(() => transactions.buildWithdrawOffer({ buyer: me, asset: offer.asset }));
+    },
+
+    async acceptOffer(citizenId: number, offerId: string) {
+      if (!market || market.config.isPaused) return fail('market-closed');
+      if (auctionOf(citizenId)) return fail('in-auction');
+      const target = ownedAsset(citizenId);
+      if ('error' in target) return fail(target.error);
+      const offer = market.offers.find((item) => offerIdOf(item) === offerId && item.asset === target.asset);
+      if (!offer || offer.buyer === target.seller || Math.floor(clock() / 1000) >= offer.expiresAt) return fail('offer-gone');
+      if ((bySerial().get(citizenId) as ChainCitizen).frozen) return fail('in-auction');
+      // The owner's listing of this citizen closes in the same step; one left by a previous owner stays for anyone to close.
+      const found = listingOf(citizenId);
+      const listed = found !== undefined && found.listing.seller === target.seller;
+      const { config } = market;
+      return sendMarket(() =>
+        transactions.buildAcceptOffer({
+          owner: target.seller,
+          buyer: offer.buyer,
+          asset: target.asset,
+          amountLamports: offer.amountLamports,
+          listed,
+          config,
+        }),
+      );
+    },
+
     async buyCitizen(citizenId: number) {
       if (!market || market.config.isPaused) return fail('market-closed');
       if (!session) return fail('not-connected');
@@ -891,7 +1014,7 @@ export function createChainDataSource(options: ChainDataSourceOptions): ChainDat
       const found = listingOf(citizenId);
       if (!shown || !found || !current(found.listing, found.citizen) || found.citizen.frozen) return fail('listing-gone');
       if (found.citizen.owner === session.address) return fail('own-listing');
-      if (state.wallet.solLamports < shown.priceLamports) return fail('insufficient-sol');
+      if (state.wallet.solLamports < shown.priceLamports + NETWORK_FEE_LAMPORTS) return fail('insufficient-sol');
       const buyer = session.address;
       const { config } = market;
       // The price on screen is the most the buyer pays; a seller who raised it since makes the program refuse.

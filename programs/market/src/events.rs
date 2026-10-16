@@ -121,3 +121,35 @@ pub struct AuctionSettled {
     pub seller_lamports: u64,
     pub delivered: bool,
 }
+
+/// A new offer, or a replaced one: `previous_amount_lamports` (zero for a new
+/// one) went back to the buyer in the same instruction.
+#[event]
+pub struct OfferMade {
+    pub asset: Pubkey,
+    pub buyer: Pubkey,
+    pub amount_lamports: u64,
+    pub previous_amount_lamports: u64,
+    pub expires_at: i64,
+}
+
+/// An offer closed without a sale; its SOL went back to the buyer. `expired`
+/// is true when someone other than the buyer closed it after its end.
+#[event]
+pub struct OfferWithdrawn {
+    pub asset: Pubkey,
+    pub buyer: Pubkey,
+    pub amount_lamports: u64,
+    pub expired: bool,
+}
+
+#[event]
+pub struct OfferAccepted {
+    pub asset: Pubkey,
+    pub seller: Pubkey,
+    pub buyer: Pubkey,
+    pub price_lamports: u64,
+    pub royalty_lamports: u64,
+    pub fee_lamports: u64,
+    pub seller_lamports: u64,
+}

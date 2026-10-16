@@ -86,4 +86,19 @@ pub enum MarketError {
 
     #[msg("The market can no longer deliver this asset: the seller moved it or removed a delegate.")]
     AuctionUndeliverable,
+
+    #[msg("An offer stays open for 1, 3 or 7 days.")]
+    InvalidOfferLength,
+
+    #[msg("The citizen is at auction; bid on it instead.")]
+    AssetInAuction,
+
+    #[msg("The offer has expired.")]
+    OfferExpired,
+
+    #[msg("The offer is still open and can only be closed by its buyer.")]
+    OfferNotExpired,
+
+    #[msg("The offer changed since it was shown.")]
+    OfferChanged,
 }

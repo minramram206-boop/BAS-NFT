@@ -6,10 +6,10 @@ import { createPortal } from 'react-dom';
 import type { CitizenRecord } from '@bas/content';
 import { PixelMessageFrame } from '@/components/modal/PixelModal';
 import type { MarketNotice } from '@/lib/data/types';
-import { auctionNotices, formatSolExact, markNoticesSeen, unseenNotices } from '@/lib/data/market';
+import { auctionNotices, formatSolExact, markNoticesSeen, mergeSeen, unseenNotices } from '@/lib/data/market';
 import { useNow } from '@/lib/utils/useNow';
 import { MESSAGES, formatMessage } from '@/messages';
-import { useCitizens, useDataMode, useMarket, useWallet } from '@/stores/selectors';
+import { useCitizens, useDataMode, useMarket, useSeenNoticesPort, useWallet } from '@/stores/selectors';
 
 const copy = MESSAGES.market;
 /** Lines shown at once; the rest are counted. */
@@ -32,11 +32,17 @@ function noticeText(notice: MarketNotice, citizens: readonly CitizenRecord[]): s
       return formatMessage(copy.noticeClaim, { name, price: formatSolExact(notice.priceLamports) });
     case 'collect':
       return formatMessage(copy.noticeCollect, { name, price: formatSolExact(notice.priceLamports) });
+    case 'offer':
+      return formatMessage(copy.noticeOffer, { name, amount: formatSolExact(notice.amountLamports) });
+    case 'offer-accepted':
+      return formatMessage(copy.noticeOfferAccepted, { name, amount: formatSolExact(notice.amountLamports) });
   }
 }
 
+/** An ended auction that waits for the wallet to claim or collect. */
+const auctionWaits = (notice: MarketNotice) => notice.kind === 'claim' || notice.kind === 'collect';
 /** Notices that ask the wallet to act in the market, rather than tell it what happened. */
-const waitsOnWallet = (notice: MarketNotice) => notice.kind === 'claim' || notice.kind === 'collect';
+const waitsOnWallet = (notice: MarketNotice) => auctionWaits(notice) || notice.kind === 'offer';
 
 function readSeen(key: string): string[] {
   try {
@@ -51,8 +57,10 @@ function readSeen(key: string): string[] {
  * Tells the wallet what happened to it in the market while it was away: a
  * citizen sold, an auction won, a bid beaten. It also says when an auction the
  * wallet won or sold has ended and waits for it to claim the citizen or collect
- * the payment, with a way to the market. Each notice is shown once; this
- * browser remembers which ones per wallet. Without storage they show once per visit.
+ * the payment, with a way to the market. Each notice is shown once per
+ * wallet: this browser remembers which ones, and on chain the mission server
+ * does too, so another browser does not show them again (D-0096). Without
+ * either they show once per visit.
  */
 export const MarketNotices: React.FC = () => {
   const market = useMarket();
@@ -63,11 +71,31 @@ export const MarketNotices: React.FC = () => {
   const router = useRouter();
   const pathname = usePathname();
   const key = wallet.connected || mode === 'mock' ? `bas.market.seen.${mode}.${wallet.label}` : null;
+  const port = useSeenNoticesPort();
   const [seen, setSeen] = useState<{ key: string; ids: readonly string[] } | null>(null);
 
   useEffect(() => {
-    setSeen(key ? { key, ids: readSeen(key) } : null);
-  }, [key]);
+    if (!key) {
+      setSeen(null);
+      return;
+    }
+    const local = readSeen(key);
+    if (!port) {
+      setSeen({ key, ids: local });
+      return;
+    }
+    // Wait for the server's list, so a notice dismissed elsewhere does not flash up first.
+    let current = true;
+    void port.load().then((remote) => {
+      if (!current) return;
+      setSeen({ key, ids: mergeSeen(remote, local) });
+      // Dismissed here while the wallet was not signed in: hand them over now.
+      if (local.some((id) => !remote.includes(id))) void port.save(local);
+    });
+    return () => {
+      current = false;
+    };
+  }, [key, port]);
 
   if (!key || !seen || seen.key !== key) return null;
   const notices = [...auctionNotices(market.auctions, now), ...market.notices];
@@ -81,14 +109,15 @@ export const MarketNotices: React.FC = () => {
     try {
       window.localStorage.setItem(key, JSON.stringify(ids));
     } catch {
-      // Not saved; they stay dismissed for this visit.
+      // Not saved here; the server may still keep them.
     }
+    void port?.save(ids);
   };
 
   // Drawn on the page body, like the other dialogs, so no screen layer clips it.
   return createPortal(
     <PixelMessageFrame
-      title={fresh.every(waitsOnWallet) ? copy.noticeEndedTitle : copy.noticeTitle}
+      title={fresh.every(auctionWaits) ? copy.noticeEndedTitle : copy.noticeTitle}
       onClose={dismiss}
       {...(actionable && pathname !== '/market'
         ? {

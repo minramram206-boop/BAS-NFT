@@ -13,6 +13,9 @@ pub const LISTING_SEED: &[u8] = b"listing";
 /// PDA seed prefix of an `Auction`, followed by the Core asset address.
 pub const AUCTION_SEED: &[u8] = b"auction";
 
+/// PDA seed prefix of an `Offer`, followed by the Core asset and the buyer.
+pub const OFFER_SEED: &[u8] = b"offer";
+
 /// PDA seed of the authority that sellers name as their asset's transfer
 /// delegate, and that holds an asset while it is auctioned. It holds no data
 /// and signs only Core instructions.
@@ -21,9 +24,14 @@ pub const AUTHORITY_SEED: &[u8] = b"market-authority";
 pub const MARKET_CONFIG_VERSION: u8 = 1;
 pub const LISTING_VERSION: u8 = 1;
 pub const AUCTION_VERSION: u8 = 1;
+pub const OFFER_VERSION: u8 = 1;
 
 /// How long an auction may run, in hours. The seller picks one.
 pub const AUCTION_DURATIONS_HOURS: [u8; 3] = [24, 48, 72];
+
+/// How long an offer stays open, in days of 24 auction hours, so the devnet
+/// clock shortens offers too (a day is 4 minutes there). The buyer picks one.
+pub const OFFER_DAYS: [u8; 3] = [1, 3, 7];
 
 // The auction clock. A build with `--features devnet-clock` runs it 360 times
 // faster, so an auction on devnet can be followed to its end in minutes: an

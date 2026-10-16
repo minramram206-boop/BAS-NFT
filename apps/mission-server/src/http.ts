@@ -4,11 +4,15 @@ import type { StatName } from './catalog.js';
 import { Authenticator } from './auth.js';
 import { MissionError } from './errors.js';
 import type { MarketActivity } from './market.js';
+import { SEEN_NOTICES_LIMIT, type SeenStore } from './market-seen.js';
 import type { MintService } from './mint.js';
 import { parseProof } from './rules.js';
 import type { MissionService } from './service.js';
 
 const MAX_BODY_BYTES = 4_096;
+/** Room for a full list of seen notice ids, each a signature with a short prefix. */
+const MAX_SEEN_BODY_BYTES = 32_768;
+const WALLET = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const STATS: readonly string[] = ['intelligence', 'alignment', 'compute'];
 
 export interface HttpOptions {
@@ -18,6 +22,8 @@ export interface HttpOptions {
   readonly mint?: MintService;
   /** Sales and bids read from the market program. Without it `/market/activity` is empty. */
   readonly market?: { activity(): MarketActivity };
+  /** Market notices each wallet dismissed. Without it `/market/seen` keeps nothing. */
+  readonly seen?: SeenStore;
   /** Origins of the web app; requests from others get no CORS headers. */
   readonly allowedOrigins: readonly string[];
   /** Requests per minute per client address. */
@@ -27,8 +33,18 @@ export interface HttpOptions {
 
 type Body = Record<string, unknown>;
 
-const readBody = (request: IncomingMessage): Promise<Body> =>
-  readJsonBody(request, MAX_BODY_BYTES, (message) => new MissionError('bad-request', message));
+const readBody = (request: IncomingMessage, limit = MAX_BODY_BYTES): Promise<Body> =>
+  readJsonBody(request, limit, (message) => new MissionError('bad-request', message));
+
+/** Notice ids as the web app makes them: a signature, or a short kind, a dash and a signature. */
+function noticeIds(body: Body): string[] {
+  const ids = body.ids;
+  if (!Array.isArray(ids) || ids.length > SEEN_NOTICES_LIMIT) throw new MissionError('bad-request', 'ids must be a list');
+  return ids.map((id) => {
+    if (typeof id !== 'string' || !/^[A-Za-z0-9-]{1,120}$/.test(id)) throw new MissionError('bad-request', 'ids must be notice ids');
+    return id;
+  });
+}
 
 function text(body: Body, key: string): string {
   const value = body[key];
@@ -62,6 +78,21 @@ export function createMissionServer(options: HttpOptions): Server {
 
     if (method === 'GET' && path === '/market/activity') {
       return { status: 200, payload: options.market?.activity() ?? { sales: [], bids: [] } };
+    }
+
+    // Read without sign-in: the ids only name sales and bids that are public on chain.
+    if (method === 'GET' && path === '/market/seen') {
+      const wallet = url.searchParams.get('wallet') ?? '';
+      if (!WALLET.test(wallet)) throw new MissionError('bad-request', 'wallet is missing');
+      return { status: 200, payload: { ids: (await options.seen?.list(wallet)) ?? [] } };
+    }
+
+    // Written only by the wallet itself, so nobody hides another wallet's notices.
+    if (method === 'POST' && path === '/market/seen') {
+      const wallet = auth.wallet(bearer);
+      const ids = noticeIds(await readBody(request, MAX_SEEN_BODY_BYTES));
+      await options.seen?.add(wallet, ids, (options.clock ?? Date.now)());
+      return { status: 200, payload: { ids: (await options.seen?.list(wallet)) ?? [] } };
     }
 
     if (method === 'GET' && path === '/season/standings') {

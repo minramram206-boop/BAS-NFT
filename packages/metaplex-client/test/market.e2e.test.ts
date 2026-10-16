@@ -30,6 +30,12 @@ import {
   settleAuctionInstruction,
   startAuctionInstructions,
   auctionAddress,
+  acceptOfferInstruction,
+  closeExpiredOfferInstruction,
+  decodeOffer,
+  makeOfferInstruction,
+  offerAddress,
+  withdrawOfferInstruction,
   type CoreAssetMarketView,
 } from '@bas/chain-client';
 import {
@@ -570,6 +576,65 @@ describe('market client against the deployed programs', { skip }, () => {
     assert.equal(world.asset(asset).owner, world.seller.address);
     assert.equal(world.data(await auctionAddress(MARKET, asset)), null);
     await world.send(await list(asset, world.seller, 1n * SOL), [world.seller]);
+  });
+
+  it('holds an offer, replaces it, and the owner accepts it with the listing closing in the same step', async () => {
+    const asset = await world.mint(collection, world.seller.address, 14);
+    await world.send(await list(asset, world.seller, 2n * SOL), [world.seller]);
+    const offerKey = await offerAddress(MARKET, asset, world.buyer.address);
+    const make = (amountLamports: bigint, days: 1 | 3 | 7) =>
+      makeOfferInstruction({ programId: MARKET, buyer: world.buyer.address, asset, amountLamports, days });
+
+    const buyerBefore = world.balance(world.buyer.address);
+    await world.send([await make(300_000_000n, 3)], [world.buyer]);
+    const rent = world.balance(offerKey) - 300_000_000n;
+    let offer = decodeOffer(world.data(offerKey) ?? new Uint8Array());
+    assert.ok(offer);
+    assert.equal(offer.expiresAt - offer.madeAt, 3 * 24 * clock.hourSeconds);
+    const made = await world.send([await make(250_000_000n, 7)], [world.buyer]);
+    assert.equal(world.balance(offerKey), rent + 250_000_000n, 'the offer holds only the new amount');
+    const [event] = marketEventsFromLogs(made, MARKET);
+    assert.ok(event?.kind === 'offerMade' && event.previousAmountLamports === 300_000_000n);
+
+    const config = await marketConfig();
+    const accept = (amountLamports: bigint) =>
+      acceptOfferInstruction({ programId: MARKET, owner: world.seller.address, buyer: world.buyer.address, asset, amountLamports, listed: true, config });
+    const changed = await world.attempt([await accept(300_000_000n)], [world.seller]);
+    assert.ok(!changed.ok && changed.logs.some((line) => line.includes('OfferChanged')), 'the owner saw another amount');
+
+    const sellerBefore = world.balance(world.seller.address);
+    const accepted = await world.send([await accept(250_000_000n)], [world.seller]);
+    assert.equal(world.asset(asset).owner, world.buyer.address);
+    assert.equal(world.data(offerKey), null);
+    assert.equal(world.data(await listingAddress(MARKET, asset)), null, 'the listing closed with the sale');
+    const [sale] = marketEventsFromLogs(accepted, MARKET);
+    assert.ok(sale?.kind === 'offerAccepted' && sale.sellerLamports === 237_500_000n && sale.royaltyLamports === 12_500_000n);
+    // The seller paid this transaction's fee; the proceeds and the listing's rent came in.
+    assert.ok(world.balance(world.seller.address) > sellerBefore + 237_500_000n);
+    // Two transactions' fees aside, the buyer paid the offer and nothing more: the rent came back.
+    assert.equal(buyerBefore - world.balance(world.buyer.address), 250_000_000n + 2n * 5_000n);
+  });
+
+  it("pays an offer back to its buyer on withdrawal, and to anyone's call once it expired", async () => {
+    const asset = await world.mint(collection, world.seller.address, 15);
+    const offerKey = await offerAddress(MARKET, asset, world.buyer.address);
+    const make = await makeOfferInstruction({ programId: MARKET, buyer: world.buyer.address, asset, amountLamports: 100_000_000n, days: 1 });
+    await world.send([make], [world.buyer]);
+    await world.send([await withdrawOfferInstruction({ programId: MARKET, buyer: world.buyer.address, asset })], [world.buyer]);
+    assert.equal(world.data(offerKey), null);
+
+    await world.send([make], [world.buyer]);
+    const offer = decodeOffer(world.data(offerKey) ?? new Uint8Array());
+    assert.ok(offer);
+    const close = await closeExpiredOfferInstruction({ programId: MARKET, buyer: world.buyer.address, asset, caller: world.seller.address });
+    const early = await world.attempt([close], [world.seller]);
+    assert.ok(!early.ok && early.logs.some((line) => line.includes('OfferNotExpired')));
+    world.setTime(BigInt(offer.expiresAt));
+    const held = world.balance(offerKey);
+    const buyerBefore = world.balance(world.buyer.address);
+    await world.send([close], [world.seller]);
+    assert.equal(world.balance(world.buyer.address), buyerBefore + held, 'everything went back to the buyer');
+    assert.equal(world.data(offerKey), null);
   });
 
   it('runs the Core binary that is deployed on devnet', () => {

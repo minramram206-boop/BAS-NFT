@@ -5,7 +5,17 @@ import { ROLE_KEYS, ROLE_LABELS } from '@bas/content';
 import { ScreenColumns, ScreenShell } from '@/components/layout/ScreenShell';
 import { PanelTab } from '@/components/ui/PanelTab';
 import { ReceiptRow } from '@/components/ui/ReceiptRow';
-import { MARKET_SORTS, formatSolExact, shownAuctions, shownListings, shownSales, type MarketSort, type RoleFilter } from '@/lib/data/market';
+import {
+  MARKET_SORTS,
+  formatSolExact,
+  myOffer,
+  offersOn,
+  shownAuctions,
+  shownListings,
+  shownSales,
+  type MarketSort,
+  type RoleFilter,
+} from '@/lib/data/market';
 import { cn } from '@/lib/utils/cn';
 import { useNow } from '@/lib/utils/useNow';
 import { MESSAGES, formatMessage } from '@/messages';
@@ -17,11 +27,14 @@ import { BuyDialog } from './BuyDialog';
 import { ListingCard } from './ListingCard';
 import { SellDialog } from './SellDialog';
 import { FinishedSales } from './FinishedSales';
+import { OfferDialog } from './OfferDialog';
+import { OffersDialog, offersLineText } from './OffersDialog';
+import { OffersPanel } from './OffersPanel';
 
 const copy = MESSAGES.market;
 
-type DialogState = { kind: 'buy' | 'sell' | 'auction'; id: number } | null;
-type Tab = 'listings' | 'auctions' | 'finished';
+type DialogState = { kind: 'buy' | 'sell' | 'auction' | 'offer' | 'offers'; id: number } | null;
+type Tab = 'listings' | 'auctions' | 'offers' | 'finished';
 
 const Panel: React.FC<{ title: string; icon?: string; children: React.ReactNode }> = ({ title, icon, children }) => (
   <section className="bas-panel flex flex-col gap-2.5 p-3 md:p-4">
@@ -52,7 +65,12 @@ function statusOf(market: ReturnType<typeof useMarket>, id: number): { text: str
  * its listing or auction. A citizen the wallet put up for auction is held by
  * the market until the auction is over, but it is still listed here.
  */
-const YourCitizens: React.FC<{ onSell: (id: number) => void; onAuction: (id: number) => void }> = ({ onSell, onAuction }) => {
+const YourCitizens: React.FC<{
+  onSell: (id: number) => void;
+  onAuction: (id: number) => void;
+  onOffers: (id: number) => void;
+}> = ({ onSell, onAuction, onOffers }) => {
+  const now = useNow();
   const market = useMarket();
   const citizens = useCitizens();
   const owned = useOwnedIds();
@@ -77,6 +95,7 @@ const YourCitizens: React.FC<{ onSell: (id: number) => void; onAuction: (id: num
           {mine.map((citizen) => {
             const status = statusOf(market, citizen.id);
             const auction = market.auctions.some((item) => item.citizenId === citizen.id);
+            const offers = market.offersOpen ? offersOn(market.offers, citizen.id, now) : [];
             return (
               <li key={citizen.id} className="flex items-center gap-2 rounded-md bg-[#f2f6fa] p-2">
                 <img src={citizen.sprite} alt="" width={40} height={40} className="h-10 w-10 shrink-0" />
@@ -85,6 +104,15 @@ const YourCitizens: React.FC<{ onSell: (id: number) => void; onAuction: (id: num
                   <span className={cn('text-[13px]', status.active ? 'font-semibold text-[#1d6b34]' : 'text-[#33485c]')}>
                     {status.text}
                   </span>
+                  {offers.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => onOffers(citizen.id)}
+                      className="w-fit text-left text-[13px] font-semibold text-[#8a5a00] underline decoration-dotted underline-offset-2"
+                    >
+                      {offersLineText(offers, now)}
+                    </button>
+                  )}
                 </span>
                 <button
                   type="button"
@@ -104,11 +132,13 @@ const YourCitizens: React.FC<{ onSell: (id: number) => void; onAuction: (id: num
 };
 
 const HowSalesWork: React.FC = () => {
-  const { royaltyBps } = useMarket();
+  const { royaltyBps, offersOpen } = useMarket();
+  // Offers are explained only where they can be made.
+  const steps = offersOpen ? [...copy.how, copy.howOffer] : copy.how;
   return (
     <Panel title={copy.howTab}>
       <ol className="m-0 flex list-none flex-col gap-2 p-0">
-        {copy.how.map((step, index) => (
+        {steps.map((step, index) => (
           <li key={step.title} className="flex gap-2.5 rounded-md bg-[#f2f6fa] p-2.5">
             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded border-2 border-[#1b2a38] bg-[#f7d23d] font-heading text-[12px]">
               {index + 1}
@@ -213,6 +243,16 @@ export const MarketScreen: React.FC = () => {
   );
   const close = React.useCallback(() => setDialog(null), []);
   const openAuction = React.useCallback((id: number) => setDialog({ kind: 'auction', id }), []);
+  const openOffers = React.useCallback((id: number) => setDialog({ kind: 'offers', id }), []);
+  // The wallet's citizens, those the market holds for its auctions included, since their offers are still its to see.
+  const mine = useMemo(
+    () => [...owned, ...market.auctions.filter((auction) => auction.sellerIsMe).map((auction) => auction.citizenId)],
+    [owned, market.auctions],
+  );
+  const roleCitizens = useMemo(() => (role === 'all' ? citizens : citizens.filter((citizen) => citizen.roleKey === role)), [citizens, role]);
+  const offerCount =
+    new Set(market.offers.filter((offer) => mine.includes(offer.citizenId)).map((offer) => offer.citizenId)).size +
+    market.offers.filter((offer) => offer.mine).length;
 
   const count = market.listings.length;
   const auctionCount = market.auctions.length;
@@ -231,7 +271,7 @@ export const MarketScreen: React.FC = () => {
       <ScreenColumns
         side={
           <div className="flex flex-col gap-3 md:gap-4">
-            <YourCitizens onSell={(id) => setDialog({ kind: 'sell', id })} onAuction={openAuction} />
+            <YourCitizens onSell={(id) => setDialog({ kind: 'sell', id })} onAuction={openAuction} onOffers={openOffers} />
             <HowSalesWork />
           </div>
         }
@@ -250,6 +290,11 @@ export const MarketScreen: React.FC = () => {
               <TabButton active={tab === 'auctions'} onClick={() => setTab('auctions')}>
                 {copy.auctionsTab} · {auctionCount}
               </TabButton>
+              {market.offersOpen && (
+                <TabButton active={tab === 'offers'} onClick={() => setTab('offers')}>
+                  {copy.offersTab} · {offerCount}
+                </TabButton>
+              )}
               <TabButton active={tab === 'finished'} onClick={() => setTab('finished')}>
                 {copy.finishedTab} · {market.sales.length}
               </TabButton>
@@ -257,6 +302,17 @@ export const MarketScreen: React.FC = () => {
             <Filters role={role} sort={tab === 'listings' ? sort : null} onRole={setRole} onSort={setSort} />
             {tab === 'finished' ? (
               <FinishedSales sales={sales} all={market.sales} now={now} againOf={againOf} />
+            ) : tab === 'offers' && market.offersOpen ? (
+              <OffersPanel
+                offers={market.offers}
+                citizens={roleCitizens}
+                listings={market.listings}
+                mine={mine}
+                filtered={role !== 'all'}
+                now={now}
+                onReview={openOffers}
+                onChange={(id) => setDialog({ kind: 'offer', id })}
+              />
             ) : tab === 'auctions' ? (
               auctions.length === 0 ? (
                 <p className="m-0 rounded-md bg-[#f2f6fa] p-3 text-[15px]">
@@ -300,6 +356,8 @@ export const MarketScreen: React.FC = () => {
       {dialog?.kind === 'buy' && <BuyDialog citizenId={dialog.id} onClose={close} />}
       {dialog?.kind === 'sell' && <SellDialog citizenId={dialog.id} onClose={close} />}
       {dialog?.kind === 'auction' && <AuctionDialog citizenId={dialog.id} onClose={close} />}
+      {dialog?.kind === 'offer' && <OfferDialog citizenId={dialog.id} onClose={close} />}
+      {dialog?.kind === 'offers' && <OffersDialog citizenId={dialog.id} onClose={close} />}
     </ScreenShell>
   );
 };

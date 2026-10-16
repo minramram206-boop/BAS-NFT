@@ -58,6 +58,15 @@ import {
   initializeMarketConfigInstruction,
   programDataAddress,
   setMarketPausedInstruction,
+  OFFER_DAYS,
+  OFFER_DISCRIMINATOR,
+  OFFER_LAYOUT,
+  acceptOfferInstruction,
+  closeExpiredOfferInstruction,
+  decodeOffer,
+  makeOfferInstruction,
+  offerAddress,
+  withdrawOfferInstruction,
 } from '../dist/index.js';
 
 const source = (file: string): string => readFileSync(join(findRepoRoot(), 'programs/market/src', file), 'utf8');
@@ -81,7 +90,7 @@ function accountsStruct(file: string, struct: string): { names: string[]; writab
   const blocks = body.split(/\n\n/);
   const writable = names.map((name) => {
     const block = blocks.find((entry) => entry.includes(`pub ${name}:`)) ?? '';
-    return /#\[account\(\s*(mut|init)\b/.test(block);
+    return /#\[account\(\s*(mut|init|init_if_needed)\b/.test(block);
   });
   const signer = names.map((name) => body.includes(`pub ${name}: Signer`));
   return { names, writable, signer };
@@ -707,3 +716,109 @@ describe('auction account and events', () => {
   });
 });
 
+
+describe('offers', () => {
+  it('use the discriminators, constants and layout of the program', () => {
+    const names = { makeOffer: 'make_offer', withdrawOffer: 'withdraw_offer', closeExpiredOffer: 'close_expired_offer', acceptOffer: 'accept_offer' } as const;
+    for (const [field, name] of Object.entries(names)) {
+      assert.ok(source('lib.rs').includes(`pub fn ${name}(`), name);
+      assert.deepEqual([...MARKET_INSTRUCTION_DISCRIMINATORS[field as keyof typeof names]], hash8(`global:${name}`), name);
+    }
+    assert.deepEqual([...OFFER_DISCRIMINATOR], hash8('account:Offer'));
+    const constants = source('constants.rs');
+    assert.ok(constants.includes(`pub const OFFER_SEED: &[u8] = b"${MARKET_SEEDS.offer}";`));
+    assert.ok(constants.includes(`pub const OFFER_DAYS: [u8; 3] = [${OFFER_DAYS.join(', ')}];`));
+
+    const text = source('state/offer.rs');
+    const body = text.slice(text.indexOf('pub struct Offer {'), text.indexOf('\n}', text.indexOf('pub struct Offer {')));
+    const sizes: Record<string, number> = { u8: 1, u64: 8, i64: 8, Pubkey: 32 };
+    const offsets: Record<string, number> = {};
+    let offset = 8;
+    for (const [, name, type] of body.matchAll(/pub (\w+): (\w+),/g)) {
+      offsets[name as string] = offset;
+      offset += sizes[type as string] as number;
+    }
+    assert.deepEqual(OFFER_LAYOUT, {
+      versionOffset: offsets.version,
+      assetOffset: offsets.asset,
+      buyerOffset: offsets.buyer,
+      amountOffset: offsets.amount_lamports,
+      madeAtOffset: offsets.made_at,
+      expiresAtOffset: offsets.expires_at,
+      bumpOffset: offsets.bump,
+      length: offset,
+    });
+
+    const events = source('events.rs');
+    const fields = (name: string): string[] => {
+      const start = events.indexOf(`pub struct ${name} {`);
+      return [...events.slice(start, events.indexOf('\n}', start)).matchAll(/pub (\w+): (\w+),/g)].map(([, field, type]) => `${field}:${type}`);
+    };
+    assert.deepEqual(fields('OfferMade'), ['asset:Pubkey', 'buyer:Pubkey', 'amount_lamports:u64', 'previous_amount_lamports:u64', 'expires_at:i64']);
+    assert.deepEqual(fields('OfferWithdrawn'), ['asset:Pubkey', 'buyer:Pubkey', 'amount_lamports:u64', 'expired:bool']);
+    assert.deepEqual(fields('OfferAccepted'), [
+      'asset:Pubkey', 'seller:Pubkey', 'buyer:Pubkey', 'price_lamports:u64', 'royalty_lamports:u64', 'fee_lamports:u64', 'seller_lamports:u64',
+    ]);
+  });
+
+  it('follow the Accounts structs', async () => {
+    assertMatches(
+      await makeOfferInstruction({ programId: PROGRAM, buyer: BUYER, asset: ASSET, amountLamports: 1n, days: 3 }),
+      'make_offer.rs',
+      'MakeOffer',
+      ['config', 'offer', 'asset', 'buyer', 'market_authority', 'system_program'],
+    );
+    assertMatches(await withdrawOfferInstruction({ programId: PROGRAM, buyer: BUYER, asset: ASSET }), 'withdraw_offer.rs', 'WithdrawOffer', ['offer', 'buyer']);
+    assertMatches(
+      await closeExpiredOfferInstruction({ programId: PROGRAM, buyer: BUYER, asset: ASSET, caller: SELLER }),
+      'close_expired_offer.rs',
+      'CloseExpiredOffer',
+      ['offer', 'buyer', 'caller'],
+    );
+    assertMatches(
+      await acceptOfferInstruction({ programId: PROGRAM, owner: SELLER, buyer: BUYER, asset: ASSET, amountLamports: 1n, listed: true, config: CONFIG }),
+      'accept_offer.rs',
+      'AcceptOffer',
+      ['config', 'offer', 'asset', 'collection', 'owner', 'buyer', 'listing', 'royalty_recipient', 'fee_recipient', 'core_program', 'system_program'],
+    );
+  });
+
+  it('encode the arguments, the offer address and an absent listing', async () => {
+    const make = await makeOfferInstruction({ programId: PROGRAM, buyer: BUYER, asset: ASSET, amountLamports: 650_000_000n, days: 7 });
+    assert.deepEqual([...(make.data ?? [])], [...MARKET_INSTRUCTION_DISCRIMINATORS.makeOffer, 0x80, 0x36, 0xbe, 0x26, 0, 0, 0, 0, 7]);
+    const offer = await offerAddress(PROGRAM, ASSET, BUYER);
+    assert.equal(make.accounts?.[1]?.address, offer);
+    assert.notEqual(offer, await offerAddress(PROGRAM, ASSET, SELLER), 'one offer per buyer');
+
+    const unlisted = await acceptOfferInstruction({ programId: PROGRAM, owner: SELLER, buyer: BUYER, asset: ASSET, amountLamports: 5n, listed: false, config: CONFIG });
+    assert.deepEqual(unlisted.accounts?.[6], { address: PROGRAM, role: AccountRole.READONLY });
+    assert.equal(unlisted.accounts?.[1]?.address, offer);
+    const listed = await acceptOfferInstruction({ programId: PROGRAM, owner: SELLER, buyer: BUYER, asset: ASSET, amountLamports: 5n, listed: true, config: CONFIG });
+    assert.equal(listed.accounts?.[6]?.address, await listingAddress(PROGRAM, ASSET));
+  });
+
+  it('read an Offer and its events', () => {
+    const data = bytes(OFFER_DISCRIMINATOR, [1], key(ASSET), key(BUYER), u64(300_000_000n), u64(1_800_000_000n), u64(1_800_259_200n), [253]);
+    assert.deepEqual(decodeOffer(data), {
+      version: 1,
+      asset: ASSET,
+      buyer: BUYER,
+      amountLamports: 300_000_000n,
+      madeAt: 1_800_000_000,
+      expiresAt: 1_800_259_200,
+      bump: 253,
+    });
+    assert.equal(decodeOffer(data.subarray(0, 97)), undefined);
+    assert.equal(decodeOffer(bytes(AUCTION_DISCRIMINATOR, data.subarray(8))), undefined);
+
+    const made = bytes(MARKET_EVENT_DISCRIMINATORS.OfferMade, key(ASSET), key(BUYER), u64(3n), u64(2n), u64(99n));
+    assert.deepEqual(decodeMarketEvent(made), { kind: 'offerMade', asset: ASSET, buyer: BUYER, amountLamports: 3n, previousAmountLamports: 2n, expiresAt: 99 });
+    const withdrawn = bytes(MARKET_EVENT_DISCRIMINATORS.OfferWithdrawn, key(ASSET), key(BUYER), u64(3n), [1]);
+    assert.deepEqual(decodeMarketEvent(withdrawn), { kind: 'offerWithdrawn', asset: ASSET, buyer: BUYER, amountLamports: 3n, expired: true });
+    assert.equal(decodeMarketEvent(bytes(withdrawn.subarray(0, 80), [2])), undefined);
+    const accepted = bytes(MARKET_EVENT_DISCRIMINATORS.OfferAccepted, key(ASSET), key(SELLER), key(BUYER), u64(100n), u64(5n), u64(0n), u64(95n));
+    assert.deepEqual(decodeMarketEvent(accepted), {
+      kind: 'offerAccepted', asset: ASSET, seller: SELLER, buyer: BUYER, priceLamports: 100n, royaltyLamports: 5n, feeLamports: 0n, sellerLamports: 95n,
+    });
+  });
+});

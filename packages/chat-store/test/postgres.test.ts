@@ -13,7 +13,7 @@ describe('postgres stores', { skip }, () => {
   const pool = createPool(url ?? 'postgres://unused');
 
   before(async () => {
-    await pool.query('DROP TABLE IF EXISTS chat_quota, chat_spend, chat_private_memory, chat_public_memory, market_sales, market_bids, market_cursor, chat_migrations');
+    await pool.query('DROP TABLE IF EXISTS chat_quota, chat_spend, chat_private_memory, chat_public_memory, market_sales, market_bids, market_cursor, market_seen, chat_migrations');
     await migrate(pool);
   });
   after(() => pool.end());

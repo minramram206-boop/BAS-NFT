@@ -10,7 +10,7 @@ interface SaleRow {
   buyer: string;
   price_lamports: string;
   seller_lamports: string;
-  kind: 'fixed' | 'auction';
+  kind: 'fixed' | 'auction' | 'offer';
   at: string;
 }
 
@@ -108,25 +108,26 @@ export class PgMarketStore implements MarketStore {
 }
 
 /**
- * The Postgres store of the market history, or `undefined` when there is none.
- * The history then lives in this process, as before; missions and the market
- * do not depend on it, so a database that is not configured or not answering
- * must not keep the server from starting.
+ * The Postgres pool for the market history and the dismissed market notices,
+ * or `undefined` when there is none. Both then live in this process, as
+ * before; missions and the market do not depend on them, so a database that
+ * is not configured or not answering must not keep the server from starting.
  */
-export async function openMarketStore(
+export async function openMarketDatabase(
   url: string | undefined,
-  program: string,
   log: Pick<Console, 'log' | 'warn'> = console,
-): Promise<PgMarketStore | undefined> {
+): Promise<Pool | undefined> {
   if (!url) {
-    log.log('[mission-server] DATABASE_URL is not set: the market history is kept in this process only');
+    log.log('[mission-server] DATABASE_URL is not set: the market history and dismissed notices are kept in this process only');
     return undefined;
   }
   try {
-    return new PgMarketStore(await openDatabase(url), program);
+    return await openDatabase(url);
   } catch (error) {
     if (!(error instanceof ServiceUnreachableError)) throw error;
-    log.warn(`[mission-server] ${error.message} The market history is kept in this process only until the server is restarted.`);
+    log.warn(
+      `[mission-server] ${error.message} The market history and dismissed notices are kept in this process only until the server is restarted.`,
+    );
     return undefined;
   }
 }

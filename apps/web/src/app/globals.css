@@ -2,8 +2,34 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Pixelify Sans draws 5 so close to S, and 2 close to Z, that amounts misread
+ * at text sizes ("0.35" as "0.3S"). Its digits come from Silkscreen, the
+ * heading font, scaled down to sit with Pixelify's letters; everything else
+ * stays Pixelify.
+ */
+@font-face {
+  font-family: 'BAS Digits';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 500;
+  size-adjust: 88%;
+  unicode-range: U+0030-0039;
+  src: url('../../node_modules/@fontsource/silkscreen/files/silkscreen-latin-400-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'BAS Digits';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600 900;
+  size-adjust: 88%;
+  unicode-range: U+0030-0039;
+  src: url('../../node_modules/@fontsource/silkscreen/files/silkscreen-latin-700-normal.woff2') format('woff2');
+}
+
 :root {
-  --font-pixel: 'Pixelify Sans';
+  --font-pixel: 'BAS Digits', 'Pixelify Sans';
   --font-heading: 'Silkscreen';
 }
 

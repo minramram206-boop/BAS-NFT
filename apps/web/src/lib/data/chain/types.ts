@@ -4,6 +4,7 @@ import type {
   CorePluginAuthority,
   ListingOnChain,
   MarketConfigOnChain,
+  OfferOnChain,
 } from '@bas/chain-client/browser';
 import type { StatKey } from '@bas/content';
 import type { DistrictActionResult, DistrictDataSource, StepProof } from '../types';
@@ -55,6 +56,10 @@ export interface MarketReading {
   readonly authority: string;
   readonly listings: readonly ListingOnChain[];
   readonly auctions: readonly AuctionOnChain[];
+  /** Every open or expired offer the program holds; an offer closes when accepted or taken back. */
+  readonly offers: readonly OfferOnChain[];
+  /** Rent of a new offer account, which its buyer gets back when it closes. */
+  readonly offerDepositLamports: bigint;
 }
 
 /** Reads of the cluster. */
@@ -131,6 +136,20 @@ export interface DistrictTransactions {
   buildSettleAuction(input: {
     caller: string;
     auction: Pick<AuctionOnChain, 'asset' | 'seller' | 'highestBidder'>;
+    config: Pick<MarketConfigOnChain, 'collection' | 'royaltyRecipient' | 'feeRecipient'>;
+  }): Promise<Uint8Array>;
+  /** `make_offer`: a new offer, or one that replaces the buyer's earlier offer on this citizen. */
+  buildMakeOffer(input: { buyer: string; asset: string; amountLamports: bigint; days: number }): Promise<Uint8Array>;
+  /** `withdraw_offer`: the buyer takes the offer back, open or expired. */
+  buildWithdrawOffer(input: { buyer: string; asset: string }): Promise<Uint8Array>;
+  /** `accept_offer`, refused by the program if the offer is no longer `amountLamports`. */
+  buildAcceptOffer(input: {
+    owner: string;
+    buyer: string;
+    asset: string;
+    amountLamports: bigint;
+    /** The owner has the citizen listed; the listing closes with the sale. */
+    listed: boolean;
     config: Pick<MarketConfigOnChain, 'collection' | 'royaltyRecipient' | 'feeRecipient'>;
   }): Promise<Uint8Array>;
   /** Sends a signed transaction and resolves with its signature once it is confirmed. */

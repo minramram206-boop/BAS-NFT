@@ -1,14 +1,18 @@
 import {
+  acceptOfferInstruction,
   buyInstruction,
   cancelAuctionInstructions,
   cancelSaleInstructions,
   listForSaleInstructions,
+  makeOfferInstruction,
   marketErrorName,
   placeBidInstruction,
   settleAuctionInstruction,
   startAuctionInstructions,
   updatePriceInstruction,
+  withdrawOfferInstruction,
   type AuctionDurationHours,
+  type OfferDays,
   upgradeScoreInstruction,
   type MarketErrorName,
 } from '@bas/chain-client/browser';
@@ -266,6 +270,35 @@ export function createTransactions(options: TransactionsOptions): DistrictTransa
     async buildSettleAuction({ caller, auction, config }) {
       const { programId: marketId } = market();
       return unsigned(caller, settleAuctionInstruction({ programId: marketId, caller: address(caller), auction, config }).then((one) => [one]));
+    },
+
+    async buildMakeOffer({ buyer, asset, amountLamports, days }) {
+      const { programId: marketId } = market();
+      return unsigned(
+        buyer,
+        makeOfferInstruction({ programId: marketId, buyer: address(buyer), asset: address(asset), amountLamports, days: days as OfferDays }).then((one) => [one]),
+      );
+    },
+
+    async buildWithdrawOffer({ buyer, asset }) {
+      const { programId: marketId } = market();
+      return unsigned(buyer, withdrawOfferInstruction({ programId: marketId, buyer: address(buyer), asset: address(asset) }).then((one) => [one]));
+    },
+
+    async buildAcceptOffer({ owner, buyer, asset, amountLamports, listed, config }) {
+      const { programId: marketId } = market();
+      return unsigned(
+        owner,
+        acceptOfferInstruction({
+          programId: marketId,
+          owner: address(owner),
+          buyer: address(buyer),
+          asset: address(asset),
+          amountLamports,
+          listed,
+          config,
+        }).then((one) => [one]),
+      );
     },
 
     async send(signed) {

@@ -13,7 +13,7 @@ import { AuctionBids } from './BidHistory';
 
 const copy = MESSAGES.market;
 
-type Part = 'auction' | 'fixed';
+type Part = MarketSale['kind'];
 
 /** An address in a receipt row, or "You" in green for the wallet. */
 const Party: React.FC<{ address: string; me: boolean }> = ({ address, me }) => (
@@ -62,7 +62,11 @@ const FinishedRow: React.FC<{ sale: MarketSale; now: number | null; again: 'auct
         <ReceiptRow label={auction ? copy.rowWinner : copy.rowBuyer} value={<Party address={sale.buyer} me={sale.buyerIsMe} />} />
         <ReceiptRow label={copy.rowSeller} value={<Party address={sale.seller} me={sale.sellerIsMe} />} />
         {auction && <ReceiptRow label={copy.rowBids} value={bidCountText(sale.bids.length)} />}
-        <ReceiptRow label={auction ? copy.rowFinalPrice : copy.rowPrice} value={formatSolExact(sale.priceLamports)} strong />
+        <ReceiptRow
+          label={auction ? copy.rowFinalPrice : sale.kind === 'offer' ? copy.rowOffer : copy.rowPrice}
+          value={formatSolExact(sale.priceLamports)}
+          strong
+        />
       </div>
 
       {auction && sale.bids.length > 0 && (
@@ -95,6 +99,10 @@ export const FinishedSales: React.FC<{
   const parts: readonly { key: Part; label: string; count: number }[] = [
     { key: 'auction', label: copy.resultsTab, count: sales.filter((sale) => sale.kind === 'auction').length },
     { key: 'fixed', label: copy.fixedSalesTab, count: sales.filter((sale) => sale.kind === 'fixed').length },
+    // Accepted offers get their own part once there is one, so a market without offers keeps two.
+    ...(all.some((sale) => sale.kind === 'offer')
+      ? [{ key: 'offer' as const, label: copy.offerSalesTab, count: sales.filter((sale) => sale.kind === 'offer').length }]
+      : []),
   ];
 
   return (
@@ -117,7 +125,7 @@ export const FinishedSales: React.FC<{
       </div>
       {shown.length === 0 ? (
         <p className="m-0 rounded-md bg-[#f2f6fa] p-3 text-[15px]">
-          {total > 0 ? copy.emptyFinishedFilter : part === 'auction' ? copy.emptyResults : copy.emptyFixedSales}
+          {total > 0 ? copy.emptyFinishedFilter : part === 'auction' ? copy.emptyResults : part === 'offer' ? copy.emptyOfferSales : copy.emptyFixedSales}
         </p>
       ) : (
         <ul className="m-0 grid list-none items-start gap-3 p-0 xl:grid-cols-2">

@@ -70,8 +70,8 @@ The market trades this collection only. It is not a generic agent market
 | F3 | Auctions | SOL (the highest bid only), settled by anyone |
 
 F1 shipped first and was exercised on devnet. F3 came next at the owner's
-request (D-0087); F2 is still open. Until an external audit, every phase stays
-on devnet.
+request (D-0087), then F2: its screens in mock mode (D-0097), then its
+program (D-0098). Until an external audit, every phase stays on devnet.
 
 ## F1 design
 
@@ -205,7 +205,70 @@ auction on devnet, ending 2026-10-17 at 02:58 WIB, is one of these.
 `Auction::can_deliver` accepts either kind, and the integration tests build
 the older state directly to keep that path tested.
 
-### Events
+## F2 design: offers
+
+A buyer names a price for any citizen, listed or not, except one at auction
+(that one is bought by bidding). Settings chosen in D-0097, program in
+D-0098:
+
+- The SOL leaves the buyer's wallet when the offer is made and is held by the
+  market until the owner accepts or the buyer takes it back, in full, at any
+  time. One offer per buyer and citizen: a new one replaces the old one, and
+  the old SOL comes back in the same step.
+- An offer is open for 1, 3 or 7 days (on the devnet test clock a day is 24
+  of its hours, so 4, 12 or 28 minutes). After that the owner can no longer
+  accept it; the buyer takes the SOL back.
+- The owner sees every offer on a citizen, the highest open one first, and
+  accepts one: the citizen goes to that buyer and the owner is paid less the
+  royalty, as in `buy`, in one step. A listing of that citizen goes with it.
+  The other offers stay open for the new owner, and their buyers can still
+  take them back.
+- Same price limits as listings. Accepted offers are listed under FINISHED,
+  in their own part, ACCEPTED OFFERS.
+
+### Accounts
+
+- `Offer` (`["offer", asset, buyer]`, 98 bytes): asset, buyer, amount, made
+  at, expires at, bump. It holds the offered SOL in its own lamports on top
+  of its rent, which the buyer pays on a first offer and gets back when the
+  offer closes. The owner is not recorded: whoever holds the citizen when the
+  offer is accepted is paid.
+
+### Instructions
+
+- `make_offer(amount, days)`: buyer signs. `init_if_needed`, so the first
+  call opens the account and a later one replaces the amount and the end;
+  the old amount goes back to the buyer in the same instruction. Refused
+  while paused, outside the price limits, for a length other than 1, 3 or 7
+  days, for a citizen outside the collection, held by the market
+  (`AssetInAuction`), frozen, or the buyer's own. A day is 24 auction hours,
+  so the devnet clock shortens offers too.
+- `withdraw_offer`: buyer signs, open or expired, also while paused. The
+  account closes to the buyer: the offer and the rent come back.
+- `close_expired_offer`: anyone signs, from `expires_at` on. Pays everything
+  back to the buyer, so SOL is never held by an offer nobody can accept.
+- `accept_offer(amount)`: the owner signs, so Core's `TransferV1` runs with
+  the owner as its authority and no delegate is needed. `amount` is the offer
+  the owner saw; a different one is refused with `OfferChanged`, so a buyer
+  cannot lower the offer between the owner's read and signature. Refused
+  while paused, at or after `expires_at` (`OfferExpired`), for a frozen
+  citizen or one the signer does not own (a citizen at auction belongs to the
+  market). The offer is split as in `buy` (royalty, fee, owner) and the
+  account closes to the buyer. The owner's listing of the citizen, passed as
+  an optional account, closes in the same instruction with its rent to the
+  owner; a listing of anyone else is refused there, and one left out turns
+  stale (Core resets the delegate on the transfer) and anyone can close it.
+
+### Offer events
+
+`OfferMade` (with the replaced amount), `OfferWithdrawn` (and whether it had
+expired) and `OfferAccepted` (with the split). The mission server records an
+`OfferAccepted` as a sale of kind `offer` (`market_sales`, migration
+`0004-market-offer-sales`), so it is in FINISHED, in the citizen's public
+history and in the notices. Open offers are read from the `Offer` accounts
+themselves.
+
+### Auction events
 
 `AuctionCreated`, `BidPlaced` (with the bidder paid back and the new end),
 `AuctionCancelled` and `AuctionSettled` (winner, split, and whether the
@@ -216,12 +279,12 @@ citizen was delivered), next to F1's `Sold`. The mission server reads them.
 | Command | What runs |
 |---|---|
 | `pnpm market:test` | Unit tests: price limits, sale split, the Core reader on hand-built bytes, the `TransferV1` encoding |
-| `pnpm market:test-core` | 61 instruction tests in `programs/market/integration` (15 of them auctions, 3 of those for auctions started before D-0092), in `solana-program-test`, with the Metaplex Core program itself |
+| `pnpm market:test-core` | 72 instruction tests in `programs/market/integration` (15 of them auctions, 3 of those for auctions started before D-0092, and 11 offers), in `solana-program-test`, with the Metaplex Core program itself |
 | `pnpm market:build`, then `pnpm market:test-sbf` | The same tests with the market's SBF binary (WSL) |
 | `pnpm --filter @bas/chain-client test` | The TypeScript client against the Rust sources: discriminators, seeds, layouts, account order and flags of every instruction, error codes |
-| `pnpm --filter @bas/metaplex-client test` | The Core plugin instructions (TransferDelegate and FreezeDelegate) byte for byte against Core's own client, and `market.e2e.test.ts`: list, change price, buy, relist, cancel, a stale listing, a frozen citizen, a delegate held elsewhere, and an auction from start to settlement (with the seller's cancel refused after a bid) and to cancel, all through `@bas/chain-client` against `target/deploy/market.so` and the dumped `mpl_core.so` in LiteSVM |
+| `pnpm --filter @bas/metaplex-client test` | The Core plugin instructions (TransferDelegate and FreezeDelegate) byte for byte against Core's own client, and `market.e2e.test.ts`: list, change price, buy, relist, cancel, a stale listing, a frozen citizen, a delegate held elsewhere, and an auction from start to settlement (with the seller's cancel refused after a bid) and to cancel, and offers made, replaced, accepted (closing a listing), withdrawn and closed after expiry, all through `@bas/chain-client` against `target/deploy/market.so` and the dumped `mpl_core.so` in LiteSVM |
 | `pnpm --filter @bas/mission-server test` | Reading sales and bids out of the market's transaction logs, and the public history line of a sale |
-| `pnpm --filter @bas/web test` | The chain data source against an in-memory cluster that applies the market's rules, auctions included, and the mock auctions |
+| `pnpm --filter @bas/web test` | The chain data source against an in-memory cluster that applies the market's rules, auctions and offers included, and the mock auctions and offers |
 
 LiteSVM has no Windows build, so `market.e2e.test.ts` runs on Linux or macOS
 (WSL with its own `pnpm install`) and is skipped elsewhere, as it is when
@@ -253,7 +316,15 @@ the citizen back with the seller, no way for the seller to stop it after a
 bid, an auction without bids, the refund going only to the recorded bidder,
 and a paused market that takes no bids but still cancels and settles. Three
 more build an auction of the older kind and check that it still delivers,
-cancels, and pays the bid back when its seller revoked the delegate.
+cancels, and pays the bid back when its seller revoked the delegate. For
+offers: the SOL held and the rent paid on top, exact balances on acceptance,
+a replacement paying the old amount back, withdrawal also while paused,
+expiry (no acceptance, anyone closes it, everything back to the buyer), the
+price and length limits, no offer on a citizen at auction, frozen or the
+buyer's own, an offer made before an auction waiting through it, only the
+owner accepting and only at the amount shown, the owner's listing closed
+with the sale, the other offers left for the new owner, and a listing of
+someone else refused.
 
 ## Risks still open
 
@@ -268,7 +339,9 @@ cancels, and pays the bid back when its seller revoked the delegate.
   `create_auction` with Core's transfer used at most about 41,700,
   `place_bid` about 16,400, `cancel_auction` about 33,100 and
   `settle_auction` about 48,300 (the older kind, with Core's thaw and
-  transfer).
+  transfer). Offers (SBF run of 2026-10-16, 72 passed): `make_offer` about
+  24,600, `accept_offer` with Core's transfer about 30,900,
+  `close_expired_offer` about 6,500 and `withdraw_offer` about 4,400.
 - `emit!` events are decoded by `@bas/chain-client` and checked in the LiteSVM
   run (`Sold`); the mission server reads them from devnet logs. A busy program
   may need more than one page of `getSignaturesForAddress`, which the reader
@@ -362,6 +435,42 @@ cancels, and pays the bid back when its seller revoked the delegate.
   nobody, so bids of an earlier auction of the same citizen never mix in. The
   list holds what the mission server keeps: everything with Postgres, the
   newest 500 sales without it.
+- Offers (D-0097 for the screens, D-0098 on chain): an OFFERS tab
+  next to AUCTIONS with two parts, RECEIVED (one card per citizen of the
+  wallet with offers: how many, the best one and its buyer, REVIEW OFFERS)
+  and MADE (each offer of the wallet with the best offer, the listed price
+  and the time left, CHANGE OFFER). YOUR CITIZENS shows "3 offers · best
+  0.30 SOL" under a citizen, which opens the review; offers that ran out
+  are counted apart ("2 offers · best 0.30 SOL · 1 expired"). A profile has MAKE OFFER
+  (or CHANGE OFFER with the wallet's offer and its time left) for a citizen of
+  someone else, and REVIEW OFFERS for one of the wallet's. The review lists
+  every offer, the best open one marked BEST, expired ones struck through;
+  ACCEPT on one shows the offer, the royalty and what the owner receives
+  before ACCEPT OFFER. The wallet is told of a new offer on its citizen and
+  of its own offer accepted, like the other market notices. Mock previews:
+  another player offers, the owner accepts. On chain the offers are the
+  `Offer` accounts, read with `getProgramAccounts` next to the listings and
+  auctions; a first offer shows its account deposit ("Deposit, comes
+  back"), the cluster's rent for 98 bytes, read with
+  `getMinimumBalanceForRentExemption` rather than assumed. A new or changed
+  offer on the wallet's citizen is a notice (its id carries the time it was
+  made); an accepted one is the buyer's notice and the seller's "sold".
+- Digits: Pixelify Sans draws 5 almost as S and 2 almost as Z, so text in
+  that font takes its digits from Silkscreen, scaled to 88%
+  (`BAS Digits` in `globals.css`, `unicode-range` 0-9 only).
+- Network fee: the buy, bid and offer dialogs on chain show "Network fee
+  (about) 0.000005 SOL", Solana's base fee for one signature, and count it in
+  "SOL after" and in the check that the wallet holds enough (D-0096). A
+  wallet may add a priority fee, hence "about". Mock mode charges none.
+- Notices seen in another browser (D-0096): when a notice is dismissed, the
+  ids go to the mission server (`POST /market/seen`, with the wallet's
+  sign-in token) as well as to this browser. On load the page reads them
+  back (`GET /market/seen?wallet=…`, public: the ids only name sales and
+  bids that are public on chain) and waits for that list before showing
+  anything. Saving never opens the wallet: without a token held the ids stay
+  in this browser and go to the server with the next dismissal or page load
+  while signed in. The server keeps the newest 200 per wallet, in Postgres
+  (`market_seen`, migration `0003-market-seen`) or in memory without it.
 
 ## Devnet setup
 
@@ -426,6 +535,12 @@ must have run first.
     09:48:30 WIB: the seller got 0.038 SOL plus the rent, the royalty
     0.002 SOL. After a restart of `pnpm dev:all` the FINISHED tab still
     listed all four sales, read from Postgres (D-0093).
+14. The network fee in the buy and bid dialogs, and dismissed notices kept
+    per wallet on the mission server (D-0096).
+15. Offers (F2): screens and rules in mock mode (D-0097).
+16. Offers on chain (D-0098): the program, its client, the indexer and the
+    chain data source. Next: upgrade devnet and run an offer between two
+    wallets.
 
 ## The auction clock
 
@@ -448,7 +563,7 @@ accounts are the same in both builds; the seller still picks 24, 48 or 72.
   `create_auction`. `scripts/devnet/deploy.sh` looks for that text in the
   binary: it refuses a fast binary on any cluster whose genesis hash is not
   devnet's, and refuses a binary whose clock disagrees with the manifest.
-- The integration tests take the clock from the program crate, so all 61 run
+- The integration tests take the clock from the program crate, so all 72 run
   on either build: `pnpm market:test-core` and `pnpm market:test-sbf` on the
   real one, the same with `--features devnet-clock` (or
   `pnpm market:test-sbf-devnet`) on the fast one.
@@ -464,7 +579,12 @@ account from 507,904 to 518,144 bytes on 2026-10-16, which keeps 0.052 SOL more
 rent in it for good. The D-0092 build (514,784 bytes) fits in that account,
 so it needs no extension.
 The upgrade buffer needs about 2.58 SOL while the deploy runs and is refunded
-afterwards; the deployer held 3.53 SOL after the upgrade of 2026-10-16. In WSL:
+afterwards; the deployer held 3.53 SOL after the upgrade of 2026-10-16. The
+offers build (D-0098, 583,624 bytes with the devnet clock) needs 65,480 bytes
+more: the extension keeps about 0.33 SOL more rent for good and the buffer
+needs about 2.97 SOL during the deploy, at devnet's rate of 2026-10-16
+(5,080 lamports a byte, down from 6,960). The deployer held 3.48 SOL that
+day. In WSL:
 
 1. `cargo build-sbf --manifest-path programs/market/Cargo.toml --features devnet-clock`
    (the fast devnet build; without `--features devnet-clock` for the real one,

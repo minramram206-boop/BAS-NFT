@@ -12,7 +12,7 @@ import { SYSTEM_PROGRAM_ID } from './instructions.js';
 
 /**
  * Client for the `market` program (`programs/market`, docs/MARKET.md): its
- * addresses, its two account types, its instructions, and the Core plugin
+ * addresses, its account types, its instructions, and the Core plugin
  * instructions a listing needs around them.
  *
  * Layouts and account orders mirror the Rust sources; `test/market.test.ts`
@@ -31,6 +31,7 @@ export const MARKET_SEEDS = {
   config: 'market-config',
   listing: 'listing',
   auction: 'auction',
+  offer: 'offer',
   authority: 'market-authority',
 } as const;
 
@@ -38,6 +39,10 @@ export const MARKET_SEEDS = {
 export const AUCTION_DURATIONS_HOURS = [24, 48, 72] as const;
 export type AuctionDurationHours = (typeof AUCTION_DURATIONS_HOURS)[number];
 export const MIN_BID_INCREMENT_BPS = 500;
+
+/** How long an offer stays open, in days of 24 auction hours (`OFFER_DAYS`). */
+export const OFFER_DAYS = [1, 3, 7] as const;
+export type OfferDays = (typeof OFFER_DAYS)[number];
 
 /** How fast a deployed market runs its auctions. */
 export interface AuctionClock {
@@ -102,6 +107,10 @@ export const MARKET_INSTRUCTION_DISCRIMINATORS = {
   placeBid: Uint8Array.of(238, 77, 148, 91, 200, 151, 92, 146),
   cancelAuction: Uint8Array.of(156, 43, 197, 110, 218, 105, 143, 182),
   settleAuction: Uint8Array.of(246, 196, 183, 98, 222, 139, 46, 133),
+  makeOffer: Uint8Array.of(214, 98, 97, 35, 59, 12, 44, 178),
+  withdrawOffer: Uint8Array.of(203, 38, 131, 234, 204, 122, 53, 150),
+  closeExpiredOffer: Uint8Array.of(174, 202, 24, 79, 174, 99, 110, 236),
+  acceptOffer: Uint8Array.of(227, 82, 234, 131, 1, 18, 48, 2),
 } as const;
 
 /** First 8 bytes of `sha256("account:MarketConfig")`. */
@@ -110,6 +119,8 @@ export const MARKET_CONFIG_DISCRIMINATOR = Uint8Array.of(119, 255, 200, 88, 252,
 export const LISTING_DISCRIMINATOR = Uint8Array.of(218, 32, 50, 73, 43, 134, 26, 58);
 /** First 8 bytes of `sha256("account:Auction")`. */
 export const AUCTION_DISCRIMINATOR = Uint8Array.of(218, 94, 247, 242, 126, 233, 131, 81);
+/** First 8 bytes of `sha256("account:Offer")`. */
+export const OFFER_DISCRIMINATOR = Uint8Array.of(215, 88, 60, 71, 170, 162, 73, 229);
 
 /** Byte offsets of `MarketConfig` (`programs/market/src/state/config.rs`). */
 export const MARKET_CONFIG_LAYOUT = {
@@ -153,6 +164,18 @@ export const AUCTION_LAYOUT = {
   length: 142,
 } as const;
 
+/** Byte offsets of `Offer` (`programs/market/src/state/offer.rs`). */
+export const OFFER_LAYOUT = {
+  versionOffset: 8,
+  assetOffset: 9,
+  buyerOffset: 41,
+  amountOffset: 73,
+  madeAtOffset: 81,
+  expiresAtOffset: 89,
+  bumpOffset: 97,
+  length: 98,
+} as const;
+
 /**
  * `MarketError` codes. Anchor numbers them from 6000 in declaration order
  * (`programs/market/src/errors.rs`).
@@ -184,6 +207,11 @@ export const MARKET_ERRORS = [
   'AlreadyHighestBidder',
   'WrongBidder',
   'AuctionUndeliverable',
+  'InvalidOfferLength',
+  'AssetInAuction',
+  'OfferExpired',
+  'OfferNotExpired',
+  'OfferChanged',
 ] as const;
 export type MarketErrorName = (typeof MARKET_ERRORS)[number];
 
@@ -400,6 +428,34 @@ export function decodeCoreAssetForMarket(data: Uint8Array): CoreAssetMarketView 
   return { owner, collection, transferDelegate, freezeDelegate, frozen };
 }
 
+export interface OfferOnChain {
+  version: number;
+  asset: Address;
+  buyer: Address;
+  /** Held by the offer account on top of its rent. */
+  amountLamports: bigint;
+  /** Unix seconds of the latest `make_offer`. */
+  madeAt: number;
+  /** Unix seconds; from then on the offer can no longer be accepted. */
+  expiresAt: number;
+  bump: number;
+}
+
+export function decodeOffer(data: Uint8Array): OfferOnChain | undefined {
+  const layout = OFFER_LAYOUT;
+  if (data.length !== layout.length || !startsWith(data, OFFER_DISCRIMINATOR)) return undefined;
+  const bytes = view(data);
+  return {
+    version: bytes.getUint8(layout.versionOffset),
+    asset: key(data, layout.assetOffset),
+    buyer: key(data, layout.buyerOffset),
+    amountLamports: bytes.getBigUint64(layout.amountOffset, true),
+    madeAt: Number(bytes.getBigInt64(layout.madeAtOffset, true)),
+    expiresAt: Number(bytes.getBigInt64(layout.expiresAtOffset, true)),
+    bump: bytes.getUint8(layout.bumpOffset),
+  };
+}
+
 // --- addresses -------------------------------------------------------------------
 
 async function derive(programAddress: Address, seeds: Uint8Array[]): Promise<Address> {
@@ -415,6 +471,9 @@ export const listingAddress = (programId: Address, asset: Address): Promise<Addr
 
 export const auctionAddress = (programId: Address, asset: Address): Promise<Address> =>
   derive(programId, [text.encode(MARKET_SEEDS.auction), new Uint8Array(addressBytes.encode(asset))]);
+
+export const offerAddress = (programId: Address, asset: Address, buyer: Address): Promise<Address> =>
+  derive(programId, [text.encode(MARKET_SEEDS.offer), new Uint8Array(addressBytes.encode(asset)), new Uint8Array(addressBytes.encode(buyer))]);
 
 /** The PDA sellers name as their asset's transfer delegate. */
 export const marketAuthorityAddress = (programId: Address): Promise<Address> =>
@@ -883,6 +942,108 @@ export async function cancelAuctionInstructions(input: {
   return instructions;
 }
 
+// --- offers ----------------------------------------------------------------------------
+
+export interface MakeOfferInput {
+  programId: Address;
+  buyer: Address;
+  asset: Address;
+  amountLamports: bigint;
+  days: OfferDays;
+}
+
+/** A new offer, or one that replaces the buyer's earlier offer on this citizen and pays it back. */
+export async function makeOfferInstruction(input: MakeOfferInput): Promise<Instruction> {
+  const { programId, buyer, asset, amountLamports, days } = input;
+  const [config, offer, authority] = await Promise.all([
+    marketConfigAddress(programId),
+    offerAddress(programId, asset, buyer),
+    marketAuthorityAddress(programId),
+  ]);
+  return {
+    programAddress: programId,
+    accounts: [
+      { address: config, role: AccountRole.READONLY },
+      { address: offer, role: AccountRole.WRITABLE },
+      { address: asset, role: AccountRole.READONLY },
+      { address: buyer, role: AccountRole.WRITABLE_SIGNER },
+      { address: authority, role: AccountRole.READONLY },
+      { address: SYSTEM_PROGRAM_ID, role: AccountRole.READONLY },
+    ],
+    data: Uint8Array.from([...withU64(MARKET_INSTRUCTION_DISCRIMINATORS.makeOffer, amountLamports), days]),
+  };
+}
+
+export async function withdrawOfferInstruction(input: { programId: Address; buyer: Address; asset: Address }): Promise<Instruction> {
+  const { programId, buyer, asset } = input;
+  return {
+    programAddress: programId,
+    accounts: [
+      { address: await offerAddress(programId, asset, buyer), role: AccountRole.WRITABLE },
+      { address: buyer, role: AccountRole.WRITABLE_SIGNER },
+    ],
+    data: Uint8Array.from(MARKET_INSTRUCTION_DISCRIMINATORS.withdrawOffer),
+  };
+}
+
+/** After its end anyone may close an offer; everything goes back to its buyer. */
+export async function closeExpiredOfferInstruction(input: {
+  programId: Address;
+  buyer: Address;
+  asset: Address;
+  caller: Address;
+}): Promise<Instruction> {
+  const { programId, buyer, asset, caller } = input;
+  return {
+    programAddress: programId,
+    accounts: [
+      { address: await offerAddress(programId, asset, buyer), role: AccountRole.WRITABLE },
+      { address: buyer, role: AccountRole.WRITABLE },
+      { address: caller, role: AccountRole.READONLY_SIGNER },
+    ],
+    data: Uint8Array.from(MARKET_INSTRUCTION_DISCRIMINATORS.closeExpiredOffer),
+  };
+}
+
+export interface AcceptOfferInput {
+  programId: Address;
+  /** The citizen's owner; signs the transfer. */
+  owner: Address;
+  buyer: Address;
+  asset: Address;
+  /** The amount the owner saw. The program refuses the sale if the offer changed since. */
+  amountLamports: bigint;
+  /** True when the owner has this citizen listed; the listing closes with the sale. */
+  listed: boolean;
+  config: Pick<MarketConfigOnChain, 'collection' | 'royaltyRecipient' | 'feeRecipient'>;
+}
+
+export async function acceptOfferInstruction(input: AcceptOfferInput): Promise<Instruction> {
+  const { programId, owner, buyer, asset, amountLamports, listed, config } = input;
+  const [configAddress, offer, listing] = await Promise.all([
+    marketConfigAddress(programId),
+    offerAddress(programId, asset, buyer),
+    listingAddress(programId, asset),
+  ]);
+  return {
+    programAddress: programId,
+    accounts: [
+      { address: configAddress, role: AccountRole.READONLY },
+      { address: offer, role: AccountRole.WRITABLE },
+      { address: asset, role: AccountRole.WRITABLE },
+      { address: config.collection, role: AccountRole.READONLY },
+      { address: owner, role: AccountRole.WRITABLE_SIGNER },
+      { address: buyer, role: AccountRole.WRITABLE },
+      optional(programId, listed ? listing : null),
+      { address: config.royaltyRecipient, role: AccountRole.WRITABLE },
+      { address: config.feeRecipient, role: AccountRole.WRITABLE },
+      { address: CORE, role: AccountRole.READONLY },
+      { address: SYSTEM_PROGRAM_ID, role: AccountRole.READONLY },
+    ],
+    data: withU64(MARKET_INSTRUCTION_DISCRIMINATORS.acceptOffer, amountLamports),
+  };
+}
+
 // --- events ----------------------------------------------------------------------------
 
 /** First 8 bytes of `sha256("event:<Name>")`, the Anchor event discriminators. */
@@ -892,6 +1053,9 @@ export const MARKET_EVENT_DISCRIMINATORS = {
   BidPlaced: Uint8Array.of(135, 53, 176, 83, 193, 69, 108, 61),
   AuctionCreated: Uint8Array.of(133, 190, 194, 65, 172, 0, 70, 178),
   AuctionCancelled: Uint8Array.of(22, 32, 51, 83, 215, 194, 171, 209),
+  OfferMade: Uint8Array.of(11, 5, 86, 210, 3, 4, 25, 154),
+  OfferWithdrawn: Uint8Array.of(239, 29, 37, 199, 103, 204, 16, 102),
+  OfferAccepted: Uint8Array.of(81, 238, 238, 115, 140, 18, 8, 20),
 } as const;
 
 /** The events a sale history and its notices are built from (`programs/market/src/events.rs`). */
@@ -929,7 +1093,34 @@ export type MarketEvent =
       readonly endsAt: number;
     }
   | { readonly kind: 'auctionCreated'; readonly asset: Address; readonly seller: Address; readonly startPriceLamports: bigint; readonly endsAt: number }
-  | { readonly kind: 'auctionCancelled'; readonly asset: Address; readonly seller: Address };
+  | { readonly kind: 'auctionCancelled'; readonly asset: Address; readonly seller: Address }
+  | {
+      readonly kind: 'offerMade';
+      readonly asset: Address;
+      readonly buyer: Address;
+      readonly amountLamports: bigint;
+      /** Zero for a new offer; otherwise the replaced amount, paid back in the same step. */
+      readonly previousAmountLamports: bigint;
+      readonly expiresAt: number;
+    }
+  | {
+      readonly kind: 'offerWithdrawn';
+      readonly asset: Address;
+      readonly buyer: Address;
+      readonly amountLamports: bigint;
+      /** True when someone closed it after its end. */
+      readonly expired: boolean;
+    }
+  | {
+      readonly kind: 'offerAccepted';
+      readonly asset: Address;
+      readonly seller: Address;
+      readonly buyer: Address;
+      readonly priceLamports: bigint;
+      readonly royaltyLamports: bigint;
+      readonly feeLamports: bigint;
+      readonly sellerLamports: bigint;
+    };
 
 /** One event's borsh bytes, discriminator first. `undefined` for anything else. */
 export function decodeMarketEvent(data: Uint8Array): MarketEvent | undefined {
@@ -966,6 +1157,26 @@ export function decodeMarketEvent(data: Uint8Array): MarketEvent | undefined {
     return { kind: 'auctionCreated', asset: at(8), seller: at(40), startPriceLamports: u64(72), endsAt: i64(80) };
   }
   if (is('AuctionCancelled', 8 + 32 * 2)) return { kind: 'auctionCancelled', asset: at(8), seller: at(40) };
+  if (is('OfferMade', 8 + 32 * 2 + 8 * 3)) {
+    return { kind: 'offerMade', asset: at(8), buyer: at(40), amountLamports: u64(72), previousAmountLamports: u64(80), expiresAt: i64(88) };
+  }
+  if (is('OfferWithdrawn', 8 + 32 * 2 + 8 + 1)) {
+    const flag = data[80];
+    if (flag !== 0 && flag !== 1) return undefined;
+    return { kind: 'offerWithdrawn', asset: at(8), buyer: at(40), amountLamports: u64(72), expired: flag === 1 };
+  }
+  if (is('OfferAccepted', 8 + 32 * 3 + 8 * 4)) {
+    return {
+      kind: 'offerAccepted',
+      asset: at(8),
+      seller: at(40),
+      buyer: at(72),
+      priceLamports: u64(104),
+      royaltyLamports: u64(112),
+      feeLamports: u64(120),
+      sellerLamports: u64(128),
+    };
+  }
   return undefined;
 }
 

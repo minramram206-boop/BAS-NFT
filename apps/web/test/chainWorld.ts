@@ -11,6 +11,7 @@ import {
   ROLE_TEMPLATES,
   AUCTION_CLOCKS,
   AUCTION_DURATIONS_HOURS,
+  OFFER_DAYS,
   auctionAddress,
   marketAuthorityAddress,
   minNextBid,
@@ -21,6 +22,7 @@ import {
   type ListingOnChain,
   type MarketConfigOnChain,
   type MarketErrorName,
+  type OfferOnChain,
 } from '@bas/chain-client';
 import { address } from '@solana/kit';
 import type { CitizenRecord } from '@bas/content';
@@ -37,6 +39,8 @@ export const SEASON_START = 1_800_000_000;
 export const DAY = 86_400;
 export const BASE_COST = 100_000_000n;
 export const MARKET_ID = 'EVjdJiuyVfKUoQFirJDbCauvkHcVKZ38y9i2XAP1ypyP';
+/** Rent of an `Offer` account (98 bytes) at devnet's rate in October 2026. */
+export const OFFER_RENT_LAMPORTS = 1_148_080n;
 export const MARKET_AUTHORITY: string = await marketAuthorityAddress(address(MARKET_ID));
 export const COLLECTION = '7Cxz7FfrZ5cAeZruPU8wN9fdti4Y97DJgw3y3kXw4jDa';
 export const TREASURY = '9DfhjiWco7mDjyiwwSZo9UtyAYqYhjxSw3GyfTmCGEuK';
@@ -102,6 +106,8 @@ export class World implements ChainReader, DistrictReads {
   readonly listings = new Map<string, ListingOnChain>();
   /** Auctions by their account address. */
   readonly auctions = new Map<string, AuctionOnChain>();
+  /** Offers by their account address. */
+  readonly offers = new Map<string, OfferOnChain>();
   /** What the mission server's indexer would have read off the market program, newest first. */
   readonly activity: { sales: SaleRecord[]; bids: BidRecord[] } = { sales: [], bids: [] };
 
@@ -261,6 +267,8 @@ export class World implements ChainReader, DistrictReads {
       authority: MARKET_AUTHORITY,
       listings: [...this.listings.values()].map((item) => ({ ...item })),
       auctions: [...this.auctions.values()].map((item) => ({ ...item })),
+      offers: [...this.offers.values()].map((item) => ({ ...item })),
+      offerDepositLamports: OFFER_RENT_LAMPORTS,
     };
   }
 
@@ -408,6 +416,7 @@ export class World implements ChainReader, DistrictReads {
       assets: this.assets.map((item) => ({ ...item })),
       listings: new Map(this.listings),
       auctions: new Map(this.auctions),
+      offers: new Map(this.offers),
       sol: new Map(this.sol),
       sales: [...this.activity.sales],
       bids: [...this.activity.bids],
@@ -429,6 +438,7 @@ export class World implements ChainReader, DistrictReads {
       };
       restore(this.listings, saved.listings);
       restore(this.auctions, saved.auctions);
+      restore(this.offers, saved.offers);
       restore(this.sol, saved.sol);
       this.activity.sales = saved.sales;
       this.activity.bids = saved.bids;
@@ -700,6 +710,88 @@ export class World implements ChainReader, DistrictReads {
           moveTo(asset, auction.seller);
         }
         this.auctions.delete(key(1).pubkey.toBase58());
+        return;
+      }
+      case 'makeOffer': {
+        if (config.isPaused) throw marketError('MarketPaused');
+        const buyer = signer(3);
+        const amount = u64();
+        inRange(amount);
+        if (!OFFER_DAYS.includes(data[16] as (typeof OFFER_DAYS)[number])) throw marketError('InvalidOfferLength');
+        const asset = this.find(key(2).pubkey.toBase58());
+        if (heldByMarket(asset)) throw marketError('AssetInAuction');
+        if (asset.owner === buyer) throw marketError('BuyerIsSeller');
+        if (asset.frozen) throw marketError('AssetFrozen');
+        const at = key(1).pubkey.toBase58();
+        const previous = this.offers.get(at);
+        // A first offer also pays the account's rent, which comes back when it closes.
+        const cost = amount + (previous ? 0n : OFFER_RENT_LAMPORTS) - (previous?.amountLamports ?? 0n);
+        if ((this.sol.get(buyer) ?? 0n) < cost) throw new Error('insufficient lamports');
+        credit(buyer, -cost);
+        this.offers.set(at, {
+          version: 1,
+          asset: asset.asset,
+          buyer,
+          amountLamports: amount,
+          madeAt: now,
+          expiresAt: now + data[16]! * 24 * this.auctionClock.hourSeconds,
+          bump: 255,
+        } as OfferOnChain);
+        return;
+      }
+      case 'withdrawOffer':
+      case 'closeExpiredOffer': {
+        const at = key(0).pubkey.toBase58();
+        const offer = this.offers.get(at);
+        if (!offer) throw new Error('AccountNotInitialized: offer');
+        if (key(1).pubkey.toBase58() !== offer.buyer) throw marketError('Unauthorized');
+        if (kind === 'withdrawOffer') signer(1);
+        else {
+          signer(2);
+          if (now < offer.expiresAt) throw marketError('OfferNotExpired');
+        }
+        credit(offer.buyer, offer.amountLamports + OFFER_RENT_LAMPORTS);
+        this.offers.delete(at);
+        return;
+      }
+      case 'acceptOffer': {
+        if (config.isPaused) throw marketError('MarketPaused');
+        const at = key(1).pubkey.toBase58();
+        const offer = this.offers.get(at);
+        if (!offer) throw new Error('AccountNotInitialized: offer');
+        const asset = this.find(key(2).pubkey.toBase58());
+        const owner = signer(4);
+        const buyer = key(5).pubkey.toBase58();
+        if (offer.buyer !== buyer || offer.asset !== asset.asset) throw marketError('Unauthorized');
+        if (key(7).pubkey.toBase58() !== config.royaltyRecipient) throw marketError('InvalidConfig');
+        if (offer.amountLamports !== u64()) throw marketError('OfferChanged');
+        if (now >= offer.expiresAt) throw marketError('OfferExpired');
+        if (owner === buyer) throw marketError('BuyerIsSeller');
+        if (asset.owner !== owner) throw marketError('NotOwner');
+        if (asset.frozen) throw marketError('AssetFrozen');
+        const listingKey = key(6).pubkey.toBase58();
+        if (listingKey !== MARKET_ID) {
+          const listing = listingAt(6);
+          if (listing.seller !== owner) throw marketError('Unauthorized');
+          this.listings.delete(listingKey);
+        }
+        const price = offer.amountLamports;
+        const royalty = (price * BigInt(config.royaltyBps)) / 10_000n;
+        moveTo(asset, buyer);
+        credit(owner, price - royalty);
+        credit(config.royaltyRecipient, royalty);
+        credit(buyer, OFFER_RENT_LAMPORTS);
+        this.offers.delete(at);
+        this.activity.sales.unshift({
+          signature,
+          asset: asset.asset,
+          seller: owner,
+          buyer,
+          priceLamports: price.toString(),
+          sellerLamports: (price - royalty).toString(),
+          kind: 'offer',
+          at: now,
+        });
         return;
       }
       default:

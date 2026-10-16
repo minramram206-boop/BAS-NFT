@@ -40,6 +40,7 @@ export const useBusy = () => useSlice((state) => state.busy);
 export const useDataMode = () => useSlice((state) => state.source.mode);
 /** The chat port of the data source; absent in the mock preview. */
 export const useChatPort = () => useSlice((state) => state.source.chat);
+export const useSeenNoticesPort = () => useSlice((state) => state.source.seenNotices);
 export const useChatLog = (citizenId: number): readonly ChatLine[] => useSlice((state) => state.chatLogs[citizenId] ?? NO_LINES);
 export const useCitizenReaction = (citizenId: number): CitizenReaction | undefined => useSlice((state) => state.reactions[citizenId]);
 export const useChatLogActions = () => {
@@ -110,6 +111,11 @@ export const useCancelAuction = () => useSlice((state) => state.cancelAuction);
 export const useSettleAuction = () => useSlice((state) => state.settleAuction);
 export const useSimulateBid = () => useSlice((state) => state.simulateBid);
 export const useSimulateAuctionEnd = () => useSlice((state) => state.simulateAuctionEnd);
+export const useMakeOffer = () => useSlice((state) => state.makeOffer);
+export const useWithdrawOffer = () => useSlice((state) => state.withdrawOffer);
+export const useAcceptOffer = () => useSlice((state) => state.acceptOffer);
+export const useSimulateOffer = () => useSlice((state) => state.simulateOffer);
+export const useSimulateOfferAccepted = () => useSlice((state) => state.simulateOfferAccepted);
 export const useSetCityMode = () => useSlice((state) => state.setCityMode);
 export const useRequestZoom = () => useSlice((state) => state.requestZoom);
 export const useMissionPrompt = () => useSlice((state) => state.missionPrompt);

@@ -4,7 +4,7 @@ import { after, before, describe, it } from 'node:test';
 
 import { AUCTION_CLOCKS, type AuctionClock } from '@bas/chain-client/browser';
 import { loadCitizens } from '@bas/content/server';
-import { Authenticator, MemoryStore, MintService, MissionService, createMissionServer, findMission } from '@bas/mission-server';
+import { Authenticator, MemorySeenStore, MemoryStore, MintService, MissionService, createMissionServer, findMission } from '@bas/mission-server';
 import { Keypair } from '@solana/web3.js';
 
 import { createChainDataSource } from '../src/lib/data/chain/chainDataSource.ts';
@@ -19,6 +19,7 @@ import {
   DAY,
   MARKET_AUTHORITY,
   MARKET_ID,
+  OFFER_RENT_LAMPORTS,
   PROGRAM_ID,
   SEASON_START,
   TREASURY,
@@ -104,6 +105,7 @@ async function rig(options: RigOptions = {}): Promise<Rig> {
     allowedOrigins: [],
     rateLimit: 100_000,
     market: { activity: () => world.marketActivity() },
+    seen: new MemorySeenStore(),
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -1216,6 +1218,171 @@ describe('auctions on chain', () => {
       assert.deepEqual(sold?.kind === 'sold' && [sold.citizenId, sold.proceedsLamports, sold.viaAuction], [A, 475_000_000n, false]);
       ok(await r.source.setWallet(r.stranger));
       assert.deepEqual(r.source.snapshot().history[A]?.[0], { day: 1, kind: 'sale', priceLamports: START });
+    } finally {
+      await r.close();
+    }
+  });
+});
+
+describe('dismissed market notices on chain', () => {
+  it('are kept by the server for the wallet, so another browser does not show them again', async () => {
+    const r = await rig({ market: 'open' });
+    try {
+      const port = r.source.seenNotices;
+      assert.ok(port);
+      // A wallet without citizens is not signed in: nothing is saved, and no prompt is opened for it.
+      const visitor = testWallet();
+      ok(await r.source.setWallet(visitor));
+      assert.equal(await port.save(['won-abc']), false);
+      assert.equal(visitor.prompts.message, 0);
+      assert.deepEqual(await port.load(), []);
+
+      // The owner signs in to play missions; from then on a dismissal is kept.
+      ok(await r.source.setWallet(r.owner));
+      assert.equal(await port.save(['won-abc', 'claim-5-1000']), true);
+      ok(await r.source.setWallet(visitor));
+      ok(await r.source.setWallet(r.owner));
+      assert.deepEqual(await port.load(), ['won-abc', 'claim-5-1000'], 'read back after a fresh connection');
+    } finally {
+      await r.close();
+    }
+  });
+});
+
+describe('offers on chain', () => {
+  const OFFER = 300_000_000n;
+  const SOL = 2_000_000_000n;
+
+  /** A wallet with SOL and no citizen, connected. */
+  async function buyerOf(r: Rig, sol = SOL): Promise<TestWallet> {
+    const buyer = testWallet();
+    r.world.sol.set(buyer.address, sol);
+    ok(await r.source.setWallet(buyer));
+    return buyer;
+  }
+
+  it('holds the SOL until the owner accepts: the citizen moves and the owner is paid less 5%', async () => {
+    const r = await rig({ market: 'open' });
+    try {
+      const buyer = await buyerOf(r);
+      const before = r.source.snapshot().market;
+      assert.deepEqual([before.offersOpen, before.offerDays], [true, [1, 3, 7]]);
+      ok(await r.source.makeOffer(A, OFFER, 3));
+      assert.equal(buyer.prompts.transaction, 1);
+      assert.equal(r.world.sol.get(buyer.address), SOL - OFFER - OFFER_RENT_LAMPORTS, 'the offer and the account deposit');
+      const [made] = r.source.snapshot().market.offers;
+      assert.deepEqual(
+        made && [made.citizenId, made.amountLamports, made.mine, made.expiresAt - made.madeAt],
+        [A, OFFER, true, 3 * DAY],
+      );
+      assert.equal(r.world.find(r.asset.a).owner, r.owner.address, 'the citizen stays with its owner');
+
+      const owner = ok(await r.source.setWallet(r.owner));
+      const [offer] = owner.market.offers;
+      assert.equal(offer?.mine, false);
+      const notice = owner.market.notices.find((item) => item.kind === 'offer');
+      assert.deepEqual(notice?.kind === 'offer' && [notice.citizenId, notice.amountLamports], [A, OFFER]);
+
+      ok(await r.source.acceptOffer(A, offer!.id));
+      assert.equal(r.world.find(r.asset.a).owner, buyer.address);
+      assert.equal(r.world.sol.get(r.owner.address), 3_000_000_000n + OFFER - OFFER / 20n);
+      assert.equal(r.world.sol.get(buyer.address), SOL - OFFER, 'the deposit came back');
+      const after = r.source.snapshot();
+      assert.deepEqual(after.market.offers, []);
+      assert.ok(!after.owned.includes(A));
+      assert.deepEqual(after.market.sales[0] && [after.market.sales[0].kind, after.market.sales[0].sellerIsMe], ['offer', true]);
+
+      const bought = ok(await r.source.setWallet(buyer));
+      assert.ok(bought.owned.includes(A));
+      const accepted = bought.market.notices.find((item) => item.kind === 'offer-accepted');
+      assert.deepEqual(accepted?.kind === 'offer-accepted' && [accepted.citizenId, accepted.amountLamports], [A, OFFER]);
+      assert.deepEqual(bought.history[A]?.[0], { day: 1, kind: 'sale', priceLamports: OFFER });
+    } finally {
+      await r.close();
+    }
+  });
+
+  it('replaces an offer in one step and takes it back in full, also while the market is paused', async () => {
+    const r = await rig({ market: 'open' });
+    try {
+      const buyer = await buyerOf(r);
+      ok(await r.source.makeOffer(B, OFFER, 3));
+      ok(await r.source.makeOffer(B, OFFER / 2n, 7));
+      assert.equal(r.world.sol.get(buyer.address), SOL - OFFER / 2n - OFFER_RENT_LAMPORTS, 'the first offer came back');
+      const offers = r.source.snapshot().market.offers;
+      assert.equal(offers.length, 1);
+      assert.equal(offers[0]?.amountLamports, OFFER / 2n);
+      assert.equal(offers[0]!.expiresAt - offers[0]!.madeAt, 7 * DAY);
+
+      r.world.marketConfig = { ...r.world.marketConfig!, isPaused: true };
+      ok(await r.source.refresh());
+      ok(await r.source.withdrawOffer(B));
+      assert.equal(r.world.sol.get(buyer.address), SOL, 'everything is back');
+      assert.deepEqual(r.source.snapshot().market.offers, []);
+      assert.equal(refused(await r.source.withdrawOffer(B)), 'offer-gone');
+      assert.equal(buyer.prompts.transaction, 3);
+    } finally {
+      await r.close();
+    }
+  });
+
+  it('refuses before the wallet is asked when a rule is already broken', async () => {
+    const r = await rig({ market: 'open' });
+    try {
+      ok(await r.source.setWallet(r.owner));
+      assert.equal(refused(await r.source.makeOffer(A, OFFER, 3)), 'own-citizen');
+      ok(await r.source.auctionCitizen(C, 100_000_000n, 24));
+      const buyer = await buyerOf(r, 200_000_000n);
+      assert.equal(refused(await r.source.makeOffer(C, OFFER, 3)), 'in-auction');
+      assert.equal(refused(await r.source.makeOffer(A, 1_000n, 3)), 'invalid-price');
+      assert.equal(refused(await r.source.makeOffer(A, OFFER, 2)), 'invalid-price');
+      // 0.2 SOL covers the offer but not the deposit and the fee as well.
+      assert.equal(refused(await r.source.makeOffer(A, 200_000_000n, 3)), 'insufficient-sol');
+      assert.equal(refused(await r.source.acceptOffer(A, 'not-an-offer')), 'not-owner');
+      assert.equal(buyer.prompts.transaction, 0);
+    } finally {
+      await r.close();
+    }
+  });
+
+  it('cannot accept an expired offer, and closes the listing with the sale', async () => {
+    const r = await rig({ market: 'open' });
+    try {
+      ok(await r.source.setWallet(r.owner));
+      ok(await r.source.listCitizen(A, 1_000_000_000n));
+      const buyer = await buyerOf(r);
+      ok(await r.source.makeOffer(A, OFFER, 1));
+      r.clock.advance(DAY);
+      const owner = ok(await r.source.setWallet(r.owner));
+      const [expired] = owner.market.offers;
+      const prompts = r.owner.prompts.transaction;
+      assert.equal(refused(await r.source.acceptOffer(A, expired!.id)), 'offer-gone');
+      assert.equal(r.owner.prompts.transaction, prompts, 'refused before the wallet was asked');
+      assert.equal(owner.market.notices.some((item) => item.kind === 'offer'), false, 'an expired offer is not news');
+
+      ok(await r.source.setWallet(buyer));
+      ok(await r.source.makeOffer(A, 400_000_000n, 3));
+      assert.equal(r.world.sol.get(buyer.address), SOL - 400_000_000n - OFFER_RENT_LAMPORTS, 'the expired offer was replaced, not added');
+      const again = ok(await r.source.setWallet(r.owner));
+      ok(await r.source.acceptOffer(A, again.market.offers[0]!.id));
+      assert.equal(r.world.listings.size, 0, 'the listing closed with the sale');
+      assert.equal(r.world.find(r.asset.a).owner, buyer.address);
+    } finally {
+      await r.close();
+    }
+  });
+
+  it('refuses an offer the buyer changed after the owner read it', async () => {
+    const r = await rig({ market: 'open' });
+    try {
+      await buyerOf(r);
+      ok(await r.source.makeOffer(A, OFFER, 3));
+      const owner = ok(await r.source.setWallet(r.owner));
+      const [key, offer] = [...r.world.offers.entries()][0]!;
+      r.world.offers.set(key, { ...offer, amountLamports: OFFER / 3n });
+      assert.equal(refused(await r.source.acceptOffer(A, owner.market.offers[0]!.id)), 'price-changed');
+      assert.equal(r.world.find(r.asset.a).owner, r.owner.address);
+      assert.equal(r.source.snapshot().market.offers[0]?.amountLamports, OFFER / 3n, 'read again, with the new amount');
     } finally {
       await r.close();
     }

@@ -74,6 +74,7 @@ Nama model tidak ditulis di kode; semuanya dari `CHAT_MODEL_PRIMARY` dan `CHAT_M
 | Kunci percakapan | Redis `SET NX PX` + pelepasan Lua | Per aset dan pemilik |
 | Antrean | Redis, BullMQ `bas-chat-upkeep` | `jobId` untuk dedupe |
 | Riwayat market | Postgres `market_sales`, `market_bids`, `market_cursor` | Ditulis mission server; per program, idempoten per tanda tangan |
+| Notifikasi market yang sudah ditutup | Postgres `market_seen` | Ditulis mission server lewat `POST /market/seen` (token wallet); 200 id terbaru per wallet |
 
 Migrasi berjalan saat server, worker, dan mission server mulai (`chat_migrations`, dengan advisory lock). Tanpa `DATABASE_URL`/`REDIS_URL`, chat server memakai penyimpanan dalam memori untuk pengembangan lokal; di mainnet kedua variabel wajib dan server menolak mulai tanpa keduanya.
 

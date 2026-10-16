@@ -12,6 +12,7 @@ import {
   TOKEN_2022_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
   AUCTION_DISCRIMINATOR,
+  OFFER_DISCRIMINATOR,
   LISTING_DISCRIMINATOR,
   MARKET_CONFIG_DISCRIMINATOR,
   associatedTokenAddress,
@@ -90,6 +91,10 @@ class FakeRpc implements ReadRpc {
 
   async balance(addr: string) {
     return this.lamports.get(addr) ?? 0n;
+  }
+
+  async rentExempt(bytes: number) {
+    return BigInt(128 + bytes) * 5_080n;
   }
 }
 
@@ -283,6 +288,31 @@ describe('reading the market', () => {
     assert.deepEqual(
       reading.listings.map((item) => [item.asset, item.seller, item.priceLamports, item.listedAt]),
       [[asset, seller, 650_000_000n, 1_800_000_000]],
+    );
+    assert.equal(reading.offerDepositLamports, (128n + 98n) * 5_080n, 'the cluster\'s rent for a 98-byte offer account');
+  });
+
+  it('reads offers, open or expired', async () => {
+    const rpc = new FakeRpc();
+    const configAt = await marketConfigAddress(address(MARKET));
+    rpc.accounts.set(configAt, { owner: MARKET, data: marketConfig(COLLECTION, false) });
+    const [asset, buyer] = [key(), key()];
+    const offer = new Uint8Array(98);
+    offer.set(OFFER_DISCRIMINATOR, 0);
+    offer[8] = 1;
+    offer.set(bytesOf(asset), 9);
+    offer.set(bytesOf(buyer), 41);
+    const view = new DataView(offer.buffer);
+    view.setBigUint64(73, 300_000_000n, true);
+    view.setBigInt64(81, 1_800_000_000n, true);
+    view.setBigInt64(89, 1_800_259_200n, true);
+    rpc.accounts.set(key(), { owner: MARKET, data: offer });
+    rpc.accounts.set(key(), { owner: PROGRAM, data: offer });
+    const reading = await createReads({ rpc, programId: PROGRAM, collection: COLLECTION, utilityMint: MINT, marketProgramId: MARKET }).market();
+    assert.deepEqual(
+      reading?.offers.map((item) => [item.asset, item.buyer, item.amountLamports, item.madeAt, item.expiresAt]),
+      [[asset, buyer, 300_000_000n, 1_800_000_000, 1_800_259_200]],
+      'only the market program\'s own offer',
     );
   });
 

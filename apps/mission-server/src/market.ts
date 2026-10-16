@@ -6,7 +6,8 @@ import type { SeasonConfig } from './service.js';
 
 /**
  * What happened in the market, read from the market program's transactions:
- * sales (a fixed-price `buy` or an auction that delivered) and bids. The
+ * sales (a fixed-price `buy`, an auction that delivered, or an accepted
+ * offer) and bids. The
  * chain is the record; this is a reading of it. With a `MarketStore` the
  * reading is kept in full and a restart goes on from the last transaction
  * read; without one it lives in this process and is rebuilt on every start.
@@ -21,7 +22,7 @@ export interface SaleRecord {
   readonly priceLamports: string;
   /** What reached the seller after the royalty and fee. */
   readonly sellerLamports: string;
-  readonly kind: 'fixed' | 'auction';
+  readonly kind: 'fixed' | 'auction' | 'offer';
   /** Unix seconds of the block. */
   readonly at: number;
 }
@@ -84,7 +85,7 @@ export function describeSale(sale: SaleRecord, season: SeasonConfig): HistoryEve
   const day = Math.floor((sale.at - season.startsAt) / 86_400) + 1;
   const when =
     day >= 1 && day <= season.days ? `on day ${day} of season ${season.id}` : `on ${new Date(sale.at * 1000).toISOString().slice(0, 10)}`;
-  const how = sale.kind === 'auction' ? 'Won at auction' : 'Bought';
+  const how = sale.kind === 'auction' ? 'Won at auction' : sale.kind === 'offer' ? 'Sold on an accepted offer' : 'Bought';
   return {
     asset: sale.asset,
     eventKey: `sale-${sale.signature}`.slice(0, 80),
@@ -174,15 +175,15 @@ export class MarketIndexer {
       const sales: SaleRecord[] = [];
       const bids: BidRecord[] = [];
       for (const event of marketEventsFromLogs(tx.logs, this.program)) {
-        if (event.kind === 'sold' || (event.kind === 'auctionSettled' && event.delivered && event.winner)) {
+        if (event.kind === 'sold' || event.kind === 'offerAccepted' || (event.kind === 'auctionSettled' && event.delivered && event.winner)) {
           sales.push({
             signature,
             asset: event.asset,
             seller: event.seller,
-            buyer: event.kind === 'sold' ? event.buyer : (event.winner as string),
+            buyer: event.kind === 'auctionSettled' ? (event.winner as string) : event.buyer,
             priceLamports: event.priceLamports.toString(),
             sellerLamports: event.sellerLamports.toString(),
-            kind: event.kind === 'sold' ? 'fixed' : 'auction',
+            kind: event.kind === 'sold' ? 'fixed' : event.kind === 'offerAccepted' ? 'offer' : 'auction',
             at,
           });
         } else if (event.kind === 'bidPlaced') {

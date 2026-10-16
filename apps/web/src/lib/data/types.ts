@@ -186,12 +186,31 @@ export interface MarketAuction {
   readonly deliverable: boolean;
 }
 
-/** A finished sale: a fixed-price buy, or an auction that delivered its citizen. */
+/**
+ * An offer on a citizen (F2, D-0097): a price a buyer names for a citizen that
+ * is not necessarily for sale. The SOL is held by the market until the owner
+ * accepts or the buyer takes it back; every offer is public, as on chain.
+ */
+export interface MarketOffer {
+  readonly id: string;
+  readonly citizenId: number;
+  /** Shortened address of the buyer. */
+  readonly buyer: string;
+  readonly amountLamports: bigint;
+  /** Unix seconds. */
+  readonly madeAt: number;
+  /** Unix seconds; after it the owner can no longer accept, and the buyer takes the SOL back. */
+  readonly expiresAt: number;
+  /** Made by the connected wallet. */
+  readonly mine: boolean;
+}
+
+/** A finished sale: a fixed-price buy, an auction that delivered its citizen, or an accepted offer. */
 export interface MarketSale {
   /** The signature of the transaction that completed it. */
   readonly id: string;
   readonly citizenId: number;
-  readonly kind: 'fixed' | 'auction';
+  readonly kind: 'fixed' | 'auction' | 'offer';
   readonly priceLamports: bigint;
   /** Shortened addresses. */
   readonly seller: string;
@@ -226,7 +245,11 @@ export type MarketNotice =
   /** An auction the wallet won has ended and waits for it to claim the citizen. */
   | { readonly id: string; readonly kind: 'claim'; readonly citizenId: number; readonly priceLamports: bigint }
   /** An auction the wallet ran has ended with a winner and waits for it to collect the payment. */
-  | { readonly id: string; readonly kind: 'collect'; readonly citizenId: number; readonly priceLamports: bigint };
+  | { readonly id: string; readonly kind: 'collect'; readonly citizenId: number; readonly priceLamports: bigint }
+  /** Someone made an offer on one of the wallet's citizens. */
+  | { readonly id: string; readonly kind: 'offer'; readonly citizenId: number; readonly amountLamports: bigint }
+  /** The owner accepted the wallet's offer: the citizen is the wallet's now. */
+  | { readonly id: string; readonly kind: 'offer-accepted'; readonly citizenId: number; readonly amountLamports: bigint };
 
 /** The fixed-price market (D-0082): the listings and the rules every sale follows. */
 export interface MarketSnapshot {
@@ -251,6 +274,21 @@ export interface MarketSnapshot {
   readonly auctionClock: AuctionClock;
   /** For the connected wallet, newest first. The screens show each one once. */
   readonly notices: readonly MarketNotice[];
+  /**
+   * False where the offers program is not deployed yet (on chain until it is
+   * written, D-0097); the screens then show no way to make or accept one.
+   */
+  readonly offersOpen: boolean;
+  /** Every open offer, expired ones included until their buyer takes the SOL back. */
+  readonly offers: readonly MarketOffer[];
+  /** The lengths an offer may stay open, in days of `auctionClock` (24 of its hours each). */
+  readonly offerDays: readonly number[];
+  /**
+   * What a first offer on a citizen leaves with the market besides the
+   * offered SOL: the rent of its account, returned when the offer closes.
+   * Zero in mock mode.
+   */
+  readonly offerDepositLamports: bigint;
 }
 
 export interface DistrictSnapshot {
@@ -305,7 +343,10 @@ export type DistrictActionError =
   | 'already-highest'
   | 'auction-ended'
   | 'auction-live'
-  | 'auction-has-bids';
+  | 'auction-has-bids'
+  | 'offers-closed'
+  | 'offer-gone'
+  | 'own-citizen';
 
 export type DistrictActionResult =
   | { readonly ok: true; readonly snapshot: DistrictSnapshot }
@@ -355,6 +396,20 @@ export interface DistrictDataSource {
   cancelAuction(citizenId: number): Promise<DistrictActionResult>;
   /** Anyone finishes an ended auction: the citizen goes to the highest bidder and the seller is paid. */
   settleAuction(citizenId: number): Promise<DistrictActionResult>;
+  /**
+   * Offer `amountLamports` for a citizen the wallet does not own, open for
+   * `days`. The SOL leaves the wallet now; an earlier offer of the wallet on
+   * the same citizen is replaced and its SOL comes back in the same step.
+   */
+  makeOffer(citizenId: number, amountLamports: bigint, days: number): Promise<DistrictActionResult>;
+  /** The wallet takes its offer on a citizen back, with all its SOL, at any time. */
+  withdrawOffer(citizenId: number): Promise<DistrictActionResult>;
+  /** The owner sells to one offer: the citizen goes to its buyer and the owner is paid, less the royalty. */
+  acceptOffer(citizenId: number, offerId: string): Promise<DistrictActionResult>;
+  /** Mock only: another player makes an offer on one of the wallet's citizens. */
+  simulateOffer?(citizenId: number): Promise<DistrictActionResult>;
+  /** Mock only: the owner accepts the wallet's offer on a citizen. */
+  simulateOfferAccepted?(citizenId: number): Promise<DistrictActionResult>;
   /** Mock only: another player bids the least the auction takes. */
   simulateBid?(citizenId: number): Promise<DistrictActionResult>;
   /** Mock only: jump to the end of an auction. */
@@ -367,4 +422,17 @@ export interface DistrictDataSource {
   refresh?(): Promise<DistrictActionResult>;
   /** Chain only: talk to the citizens the connected wallet owns. */
   readonly chat?: CitizenChatPort;
+  /** Chain only: the market notices the connected wallet dismissed, kept by the server for every browser. */
+  readonly seenNotices?: SeenNoticesPort;
+}
+
+/**
+ * Where dismissed market notices are kept beyond this browser (D-0096).
+ * Reading needs no sign-in; saving happens only while the wallet is signed in,
+ * so a dismissal never opens the wallet.
+ */
+export interface SeenNoticesPort {
+  load(): Promise<readonly string[]>;
+  /** `false` when nothing was saved, because the wallet is not signed in or the server did not answer. */
+  save(ids: readonly string[]): Promise<boolean>;
 }

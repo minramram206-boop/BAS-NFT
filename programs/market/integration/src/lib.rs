@@ -19,7 +19,7 @@ use market::{
     core_asset::MPL_CORE_PROGRAM_ID,
     errors::MarketError,
     pda,
-    state::{Auction, Listing, MarketConfig},
+    state::{Auction, Listing, MarketConfig, Offer},
     InitializeConfigArgs,
 };
 use mpl_core::{
@@ -884,6 +884,110 @@ impl World {
             .freeze_delegate
             .map(|plugin| (plugin.base.authority.address, plugin.freeze_delegate.frozen))
     }
+}
+
+// --- offers ---------------------------------------------------------------------
+
+impl World {
+    pub fn offer_key(&self, asset: &Pubkey, buyer: &Pubkey) -> Pubkey {
+        pda::offer_address(asset, buyer).0
+    }
+
+    pub async fn offer(&mut self, asset: &Pubkey, buyer: &Pubkey) -> Option<Offer> {
+        let key = self.offer_key(asset, buyer);
+        let account = self.account(&key).await?;
+        Some(Offer::try_deserialize(&mut account.data.as_slice()).expect("an offer"))
+    }
+
+    pub fn make_offer_ix(&self, asset: &Pubkey, buyer: &Pubkey, amount_lamports: u64, days: u8) -> Instruction {
+        Instruction {
+            program_id: market::ID,
+            accounts: market::accounts::MakeOffer {
+                config: self.config_key(),
+                offer: self.offer_key(asset, buyer),
+                asset: *asset,
+                buyer: *buyer,
+                market_authority: self.authority_key(),
+                system_program: system_program::ID,
+            }
+            .to_account_metas(None),
+            data: market::instruction::MakeOffer { amount_lamports, days }.data(),
+        }
+    }
+
+    pub async fn make_offer(&mut self, asset: &Pubkey, buyer: &Keypair, amount_lamports: u64, days: u8) -> SendResult {
+        let instruction = self.make_offer_ix(asset, &buyer.pubkey(), amount_lamports, days);
+        self.send(&[instruction], &[buyer]).await
+    }
+
+    pub async fn withdraw_offer(&mut self, asset: &Pubkey, buyer: &Keypair) -> SendResult {
+        let instruction = Instruction {
+            program_id: market::ID,
+            accounts: market::accounts::WithdrawOffer {
+                offer: self.offer_key(asset, &buyer.pubkey()),
+                buyer: buyer.pubkey(),
+            }
+            .to_account_metas(None),
+            data: market::instruction::WithdrawOffer {}.data(),
+        };
+        self.send(&[instruction], &[buyer]).await
+    }
+
+    pub async fn close_expired_offer(&mut self, asset: &Pubkey, buyer: &Pubkey, caller: &Keypair) -> SendResult {
+        let instruction = Instruction {
+            program_id: market::ID,
+            accounts: market::accounts::CloseExpiredOffer {
+                offer: self.offer_key(asset, buyer),
+                buyer: *buyer,
+                caller: caller.pubkey(),
+            }
+            .to_account_metas(None),
+            data: market::instruction::CloseExpiredOffer {}.data(),
+        };
+        self.send(&[instruction], &[caller]).await
+    }
+
+    pub fn accept_offer_ix(
+        &self,
+        asset: &Pubkey,
+        owner: &Pubkey,
+        buyer: &Pubkey,
+        amount_lamports: u64,
+        listing: Option<Pubkey>,
+    ) -> Instruction {
+        Instruction {
+            program_id: market::ID,
+            accounts: market::accounts::AcceptOffer {
+                config: self.config_key(),
+                offer: self.offer_key(asset, buyer),
+                asset: *asset,
+                collection: self.collection,
+                owner: *owner,
+                buyer: *buyer,
+                listing,
+                royalty_recipient: self.treasury.pubkey(),
+                fee_recipient: self.fee_recipient.pubkey(),
+                core_program: MPL_CORE_PROGRAM_ID,
+                system_program: system_program::ID,
+            }
+            .to_account_metas(None),
+            data: market::instruction::AcceptOffer { amount_lamports }.data(),
+        }
+    }
+
+    /// `accept_offer` as the client sends it: with the owner's listing when there is one.
+    pub async fn accept_offer(&mut self, asset: &Pubkey, owner: &Keypair, buyer: &Pubkey, amount_lamports: u64) -> SendResult {
+        let listing = match self.listing(asset).await {
+            Some(listing) if listing.seller == owner.pubkey() => Some(self.listing_key(asset)),
+            _ => None,
+        };
+        let instruction = self.accept_offer_ix(asset, &owner.pubkey(), buyer, amount_lamports, listing);
+        self.send(&[instruction], &[owner]).await
+    }
+}
+
+pub fn offer_rent() -> u64 {
+    Rent::default().minimum_balance(Offer::LEN)
 }
 
 pub fn auction_rent() -> u64 {

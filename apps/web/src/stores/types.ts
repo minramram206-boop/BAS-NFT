@@ -90,6 +90,15 @@ export interface DistrictSlice extends Omit<DistrictSnapshot, 'citizens'> {
   simulateBid: (citizenId: number) => Promise<void>;
   /** Mock only: jump to the end of an auction. */
   simulateAuctionEnd: (citizenId: number) => Promise<void>;
+  /** Offer on a citizen the wallet does not own, open for `days`; replaces the wallet's earlier offer on it. */
+  makeOffer: (citizenId: number, amountLamports: bigint, days: number) => Promise<boolean>;
+  withdrawOffer: (citizenId: number) => Promise<boolean>;
+  /** Sell an owned citizen to one offer; resolves to whether the sale went through. */
+  acceptOffer: (citizenId: number, offerId: string) => Promise<boolean>;
+  /** Mock only: another player makes an offer on one of the wallet's citizens. */
+  simulateOffer: (citizenId: number) => Promise<void>;
+  /** Mock only: the owner accepts the wallet's offer. */
+  simulateOfferAccepted: (citizenId: number) => Promise<void>;
   clearError: () => void;
 }
 

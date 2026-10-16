@@ -1,11 +1,12 @@
 import type { CitizenRecord, StatKey } from '@bas/content';
 import { MAX_STAT_SCORE } from '@bas/content';
 import { trainingCostAtoms } from '@bas/chain-client/stats';
-import { AUCTION_HOURS, endAfterBid, minNextBid, priceProblem, splitSale, suggestedBid } from '../market';
+import { AUCTION_HOURS, bestOffer, endAfterBid, minNextBid, myOffer, offerExpired, offerSeconds, priceProblem, splitSale, suggestedBid } from '../market';
 import { MISSION_POINTS, startBlocker } from '../missions';
 import type {
   DistrictActionError,
   MarketAuction,
+  MarketOffer,
   MarketSale,
   DistrictActionResult,
   DistrictDataSource,
@@ -72,6 +73,7 @@ export function createMockDataSource(options: MockDataSourceOptions): DistrictDa
   const random = options.random ?? Math.random;
   let noticeId = 0;
   let saleId = 0;
+  let offerId = 0;
   const today = () => state.season.day;
 
   const fail = (error: DistrictActionError) => ({ ok: false, error }) as const;
@@ -104,6 +106,13 @@ export function createMockDataSource(options: MockDataSourceOptions): DistrictDa
       ...state.market.sales,
     ];
   };
+  const withoutOffer = (id: string) => state.market.offers.filter((offer) => offer.id !== id);
+  /** The citizen left the wallet: no listing stays behind, and no mission of the old owner. */
+  const handedOver = (citizenId: number) => ({
+    owned: state.owned.filter((id) => id !== citizenId),
+    missionProgress: Object.fromEntries(Object.entries(state.missionProgress).filter(([, progress]) => progress.citizenId !== citizenId)),
+    listings: state.market.listings.filter((listing) => listing.citizenId !== citizenId),
+  });
   /** A citizen that changed hands keeps its registration in its public history, then gains the sale. */
   const soldHistory = (citizenId: number, priceLamports: bigint) => ({
     ...state.history,
@@ -373,6 +382,113 @@ export function createMockDataSource(options: MockDataSourceOptions): DistrictDa
       }
       // Another player won; the citizen moves between two other wallets.
       return commit({ ...state, history: soldHistory(citizenId, price), market });
+    },
+
+    async makeOffer(citizenId: number, amountLamports: bigint, days: number) {
+      if (!state.market.open || !state.market.offersOpen) return fail('offers-closed');
+      if (!state.citizens.some((citizen) => citizen.id === citizenId)) return fail('listing-gone');
+      const auction = auctionOf(citizenId);
+      if (state.owned.includes(citizenId) || auction?.sellerIsMe) return fail('own-citizen');
+      // The market holds an auctioned citizen; a bid is the way to buy it.
+      if (auction) return fail('in-auction');
+      if (priceProblem(amountLamports, state.market) || !state.market.offerDays.includes(days)) return fail('invalid-price');
+      const previous = myOffer(state.market.offers, citizenId);
+      // A new offer replaces the wallet's earlier one, whose SOL comes back in the same step.
+      const refund = previous?.amountLamports ?? 0n;
+      if (state.wallet.solLamports + refund < amountLamports) return fail('insufficient-sol');
+      offerId += 1;
+      const offer: MarketOffer = {
+        id: `mock-offer-own-${offerId}`,
+        citizenId,
+        buyer: state.wallet.label,
+        amountLamports,
+        madeAt: now(),
+        expiresAt: now() + offerSeconds(days, state.market.auctionClock),
+        mine: true,
+      };
+      return commit({
+        ...state,
+        wallet: { ...state.wallet, solLamports: state.wallet.solLamports + refund - amountLamports },
+        market: { ...state.market, offers: [offer, ...(previous ? withoutOffer(previous.id) : state.market.offers)] },
+      });
+    },
+
+    async withdrawOffer(citizenId: number) {
+      const offer = myOffer(state.market.offers, citizenId);
+      if (!offer) return fail('offer-gone');
+      return commit({
+        ...state,
+        wallet: { ...state.wallet, solLamports: state.wallet.solLamports + offer.amountLamports },
+        market: { ...state.market, offers: withoutOffer(offer.id) },
+      });
+    },
+
+    async acceptOffer(citizenId: number, id: string) {
+      if (!state.market.open || !state.market.offersOpen) return fail('offers-closed');
+      if (!state.owned.includes(citizenId)) return fail('not-owner');
+      const offer = state.market.offers.find((item) => item.id === id && item.citizenId === citizenId);
+      if (!offer || offer.mine || offerExpired(offer, now())) return fail('offer-gone');
+      const { proceedsLamports } = splitSale(offer.amountLamports, state.market.royaltyBps);
+      const { listings, ...left } = handedOver(citizenId);
+      return commit({
+        ...state,
+        ...left,
+        wallet: { ...state.wallet, solLamports: state.wallet.solLamports + proceedsLamports },
+        history: soldHistory(citizenId, offer.amountLamports),
+        market: {
+          ...state.market,
+          listings,
+          offers: withoutOffer(offer.id),
+          sales: withSale({ citizenId, kind: 'offer', priceLamports: offer.amountLamports, seller: state.wallet.label, buyer: offer.buyer, bids: [] }),
+        },
+      });
+    },
+
+    async simulateOffer(citizenId: number) {
+      if (!state.owned.includes(citizenId)) return fail('not-owner');
+      const best = bestOffer(state.market.offers, citizenId, now());
+      // A little over the best offer, or the lowest price when there is none, in whole hundredths of a SOL.
+      const step = 10_000_000n;
+      const amount = best ? ((best.amountLamports * 11n) / 10n / step + 1n) * step : state.market.minPriceLamports * 5n;
+      noticeId += 1;
+      const buyer = OTHER_BIDDERS[noticeId % OTHER_BIDDERS.length] ?? 'Kx3p…9Qe';
+      const offer: MarketOffer = {
+        id: `mock-offer-other-${noticeId}`,
+        citizenId,
+        buyer,
+        amountLamports: amount,
+        madeAt: now(),
+        expiresAt: now() + offerSeconds(3, state.market.auctionClock),
+        mine: false,
+      };
+      return commit({
+        ...state,
+        market: {
+          ...state.market,
+          offers: [offer, ...state.market.offers.filter((item) => !(item.citizenId === citizenId && item.buyer === buyer))],
+          notices: withNotice({ id: `mock-offer-notice-${noticeId}`, kind: 'offer', citizenId, amountLamports: amount }),
+        },
+      });
+    },
+
+    async simulateOfferAccepted(citizenId: number) {
+      const offer = myOffer(state.market.offers, citizenId);
+      if (!offer || offerExpired(offer, now())) return fail('offer-gone');
+      const seller = listingOf(citizenId)?.seller ?? 'Fz8e…M7c';
+      noticeId += 1;
+      return commit({
+        ...state,
+        // The SOL left the wallet when the offer was made; now the citizen arrives.
+        owned: [...state.owned, citizenId],
+        history: soldHistory(citizenId, offer.amountLamports),
+        market: {
+          ...state.market,
+          listings: state.market.listings.filter((listing) => listing.citizenId !== citizenId),
+          offers: withoutOffer(offer.id),
+          sales: withSale({ citizenId, kind: 'offer', priceLamports: offer.amountLamports, seller, buyer: state.wallet.label, bids: [] }),
+          notices: withNotice({ id: `mock-offer-accepted-${noticeId}`, kind: 'offer-accepted', citizenId, amountLamports: offer.amountLamports }),
+        },
+      });
     },
 
     async simulateBid(citizenId: number) {

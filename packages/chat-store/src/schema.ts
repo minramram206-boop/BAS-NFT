@@ -69,6 +69,26 @@ export const MIGRATIONS: readonly { readonly id: string; readonly sql: string }[
       );
     `,
   },
+  {
+    // Market notices a wallet has dismissed, so another browser does not show them again (D-0096).
+    id: '0003-market-seen',
+    sql: `
+      CREATE TABLE market_seen (
+        wallet text NOT NULL,
+        notice_id text NOT NULL,
+        seen_at bigint NOT NULL,
+        PRIMARY KEY (wallet, notice_id)
+      );
+    `,
+  },
+  {
+    // Sales on an accepted offer (D-0098).
+    id: '0004-market-offer-sales',
+    sql: `
+      ALTER TABLE market_sales DROP CONSTRAINT market_sales_kind_check;
+      ALTER TABLE market_sales ADD CONSTRAINT market_sales_kind_check CHECK (kind IN ('fixed', 'auction', 'offer'));
+    `,
+  },
 ];
 
 /** Arbitrary but fixed, so two servers starting together take turns instead of racing. */
