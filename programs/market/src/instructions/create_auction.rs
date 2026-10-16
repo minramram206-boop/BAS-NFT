@@ -1,10 +1,9 @@
 use anchor_lang::prelude::*;
 
 use crate::constants::{AUCTION_SEED, AUCTION_VERSION, AUTHORITY_SEED, CONFIG_SEED, LISTING_SEED};
-use crate::core_asset::{self, FreezeAccounts, MPL_CORE_PROGRAM_ID};
+use crate::core_asset::{self, TransferAccounts, MPL_CORE_PROGRAM_ID};
 use crate::errors::MarketError;
 use crate::events::AuctionCreated;
-use crate::instructions::create_listing::require_listable;
 use crate::sale::{auction_seconds, price_in_range};
 use crate::state::{Auction, MarketConfig};
 
@@ -31,7 +30,7 @@ pub struct CreateAuction<'info> {
     #[account(mut)]
     pub asset: UncheckedAccount<'info>,
 
-    /// CHECK: Core requires the asset's collection to update a plugin.
+    /// CHECK: Core requires the asset's collection to transfer it.
     #[account(mut, address = config.collection @ MarketError::WrongCollection)]
     pub collection: UncheckedAccount<'info>,
 
@@ -39,7 +38,7 @@ pub struct CreateAuction<'info> {
     #[account(mut)]
     pub seller: Signer<'info>,
 
-    /// CHECK: PDA with no data; the asset's transfer and freeze delegate.
+    /// CHECK: PDA with no data; holds the asset until the auction is finished.
     #[account(seeds = [AUTHORITY_SEED], bump = config.authority_bump)]
     pub market_authority: UncheckedAccount<'info>,
 
@@ -51,11 +50,11 @@ pub struct CreateAuction<'info> {
 }
 
 impl<'info> CreateAuction<'info> {
-    /// The client sends Core's plugin instructions earlier in the same
-    /// transaction, so the market holds both the TransferDelegate and an
-    /// unfrozen FreezeDelegate when this runs. This instruction then freezes
-    /// the asset: from here until the end, neither the seller nor anyone else
-    /// can move or burn it.
+    /// The seller hands the asset to the market authority, which holds it
+    /// until the auction is cancelled (only before the first bid) or finished.
+    /// Holding it is what makes an auction with bids impossible to stop: a
+    /// seller who kept the asset could always take back a delegate, since Core
+    /// lets an owner revoke its TransferDelegate even while the asset is frozen.
     pub fn process(ctx: Context<Self>, start_price_lamports: u64, duration_hours: u8) -> Result<()> {
         let accounts = &ctx.accounts;
         let config = &accounts.config;
@@ -66,27 +65,21 @@ impl<'info> CreateAuction<'info> {
 
         let seller = accounts.seller.key();
         let asset = core_asset::load_core_asset(&accounts.asset)?;
-        require_listable(&asset, config, &seller)?;
+        require_keys_eq!(asset.collection, config.collection, MarketError::WrongCollection);
+        require_keys_eq!(asset.owner, seller, MarketError::NotOwner);
         require!(!asset.is_frozen(), MarketError::AssetFrozen);
-        require!(
-            asset.freeze_held_by(accounts.market_authority.key),
-            MarketError::FreezeMissing
-        );
 
-        core_asset::set_frozen(
-            FreezeAccounts {
-                core_program: &accounts.core_program,
-                asset: &accounts.asset,
-                collection: &accounts.collection,
-                payer: &accounts.seller,
-                authority: &accounts.market_authority,
-                system_program: &accounts.system_program,
-            },
-            true,
-            &[AUTHORITY_SEED, &[config.authority_bump]],
-        )?;
-        let frozen = core_asset::load_core_asset(&accounts.asset)?;
-        require!(frozen.is_frozen(), MarketError::FreezeMissing);
+        core_asset::transfer_by_signer(TransferAccounts {
+            core_program: &accounts.core_program,
+            asset: &accounts.asset,
+            collection: &accounts.collection,
+            payer: &accounts.seller,
+            authority: &accounts.seller,
+            new_owner: &accounts.market_authority,
+            system_program: &accounts.system_program,
+        })?;
+        let held = core_asset::load_core_asset(&accounts.asset)?;
+        require_keys_eq!(held.owner, accounts.market_authority.key(), MarketError::NotOwner);
 
         // Says in every transaction log that this binary runs the fast clock;
         // the deploy script also looks for this text in the binary.

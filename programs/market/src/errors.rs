@@ -58,6 +58,8 @@ pub enum MarketError {
     #[msg("An auction runs for 24, 48 or 72 hours.")]
     InvalidDuration,
 
+    /// Raised by auctions that froze the asset in the seller's wallet, which
+    /// are no longer created (D-0092). Kept so the codes after it stay put.
     #[msg("The market does not hold the asset's freeze delegate.")]
     FreezeMissing,
 

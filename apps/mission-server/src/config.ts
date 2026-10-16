@@ -18,6 +18,8 @@ export interface ServerConfig {
   readonly allowedOrigins: readonly string[];
   /** Redis of the chat upkeep queue. Without it, confirmed missions leave no line in a citizen's public history. */
   readonly redisUrl?: string;
+  /** Postgres that keeps the market history between starts. Without it the history lives in this process. */
+  readonly databaseUrl?: string;
   /** The public sale, when `MINT_SIGNER_KEYPAIR_FILE` is set. */
   readonly mint?: {
     readonly signer: Keypair;
@@ -103,6 +105,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     port: integer(env, 'PORT', 8787),
     allowedOrigins: (env.ALLOWED_ORIGINS ?? 'http://localhost:3000').split(',').map((origin) => origin.trim()),
     ...(env.REDIS_URL?.trim() ? { redisUrl: env.REDIS_URL.trim() } : {}),
+    ...(env.DATABASE_URL?.trim() ? { databaseUrl: env.DATABASE_URL.trim() } : {}),
     ...(mint ? { mint } : {}),
   };
 }

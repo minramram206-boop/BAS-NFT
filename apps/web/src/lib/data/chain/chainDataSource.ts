@@ -216,9 +216,14 @@ export function createChainDataSource(options: ChainDataSourceOptions): ChainDat
   const heldByMarket = (authority: ChainCitizen['transferDelegate']): boolean =>
     authority?.kind === 'address' && authority.address === market?.authority;
 
-  /** Mirrors `Auction::can_deliver`: the seller holds the citizen, frozen by the market, and the market may move it. */
+  /**
+   * Mirrors `Auction::can_deliver`: the market holds the citizen, or, for an
+   * auction from before it did, the seller holds it frozen by the market and
+   * the market may still move it.
+   */
   const deliverable = (auction: MarketReading['auctions'][number], citizen: ChainCitizen): boolean =>
-    citizen.owner === auction.seller && citizen.frozen && heldByMarket(citizen.freezeDelegate) && heldByMarket(citizen.transferDelegate);
+    citizen.owner === market?.authority ||
+    (citizen.owner === auction.seller && citizen.frozen && heldByMarket(citizen.freezeDelegate) && heldByMarket(citizen.transferDelegate));
 
   /** Season day of a Unix time, kept inside the season. */
   const dayOf = (seconds: number): number => {
@@ -273,6 +278,7 @@ export function createChainDataSource(options: ChainDataSourceOptions): ChainDat
         endsAt: auction.endsAt,
         minBidLamports: minNextBid(auction.startPriceLamports, highest),
         leading: session !== null && auction.highestBidder === session.address,
+        sellerIsMe: session !== null && auction.seller === session.address,
         deliverable: deliverable(auction, citizen),
       });
     }
@@ -762,13 +768,15 @@ export function createChainDataSource(options: ChainDataSourceOptions): ChainDat
 
     async listCitizen(citizenId: number, priceLamports: bigint) {
       if (!market || market.config.isPaused) return fail('market-closed');
+      // Checked first: the market holds an auctioned citizen, so it is not the wallet's meanwhile.
+      if (auctionOf(citizenId)) return fail('in-auction');
       const target = ownedAsset(citizenId);
       if ('error' in target) return fail(target.error);
       const found = listingOf(citizenId);
       const citizen = bySerial().get(citizenId) as ChainCitizen;
       // A listing of this owner that the market can still act on; anything else left on the asset is closed first.
       if (found && current(found.listing, citizen)) return fail('already-listed');
-      if (auctionOf(citizenId) || citizen.frozen) return fail('in-auction');
+      if (citizen.frozen) return fail('in-auction');
       if (priceProblem(priceLamports, state.market)) return fail('invalid-price');
       return sendMarket(() =>
         transactions.buildListCitizen({
@@ -806,12 +814,13 @@ export function createChainDataSource(options: ChainDataSourceOptions): ChainDat
 
     async auctionCitizen(citizenId: number, startPriceLamports: bigint, durationHours: number) {
       if (!market || market.config.isPaused) return fail('market-closed');
+      if (auctionOf(citizenId)) return fail('in-auction');
       const target = ownedAsset(citizenId);
       if ('error' in target) return fail(target.error);
       const citizen = bySerial().get(citizenId) as ChainCitizen;
       const found = listingOf(citizenId);
       if (found && current(found.listing, citizen)) return fail('already-listed');
-      if (auctionOf(citizenId) || citizen.frozen) return fail('in-auction');
+      if (citizen.frozen) return fail('in-auction');
       if (priceProblem(startPriceLamports, state.market) || !AUCTION_HOURS.includes(durationHours)) return fail('invalid-price');
       return sendMarket(() =>
         transactions.buildStartAuction({
@@ -819,8 +828,6 @@ export function createChainDataSource(options: ChainDataSourceOptions): ChainDat
           asset: target.asset,
           startPriceLamports,
           durationHours,
-          transferDelegate: citizen.transferDelegate,
-          freezeDelegate: citizen.freezeDelegate,
           staleListingSeller: found ? found.listing.seller : null,
         }),
       );

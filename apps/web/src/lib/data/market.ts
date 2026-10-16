@@ -233,7 +233,8 @@ export const SEEN_NOTICES_LIMIT = 200;
  */
 export type AuctionStage = 'live' | 'claim' | 'collect' | 'take-back' | 'refund' | 'close' | 'waiting';
 
-export function auctionStage(auction: MarketAuction, mine: boolean, now: number | null): AuctionStage {
+export function auctionStage(auction: MarketAuction, now: number | null): AuctionStage {
+  const mine = auction.sellerIsMe;
   const stopped = !auction.deliverable && auction.bidCount > 0;
   const ended = now !== null && now >= auction.endsAt;
   if (stopped) return auction.leading ? 'refund' : mine ? 'close' : 'waiting';
@@ -246,16 +247,12 @@ export function auctionStage(auction: MarketAuction, mine: boolean, now: number 
  * Notices for ended auctions that wait on the wallet: one it won and one it
  * sold. The id holds the end time, which no longer moves once the auction is over.
  */
-export function auctionNotices(
-  auctions: readonly MarketAuction[],
-  owned: readonly number[],
-  now: number | null,
-): MarketNotice[] {
+export function auctionNotices(auctions: readonly MarketAuction[], now: number | null): MarketNotice[] {
   const notices: MarketNotice[] = [];
   for (const auction of auctions) {
     const price = auction.highestBidLamports;
     if (price === null) continue;
-    const stage = auctionStage(auction, owned.includes(auction.citizenId), now);
+    const stage = auctionStage(auction, now);
     if (stage === 'claim' || stage === 'collect') {
       notices.push({ id: `${stage}-${auction.citizenId}-${auction.endsAt}`, kind: stage, citizenId: auction.citizenId, priceLamports: price });
     }

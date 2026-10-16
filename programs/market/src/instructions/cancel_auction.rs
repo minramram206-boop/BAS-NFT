@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 
 use crate::constants::{AUCTION_SEED, AUTHORITY_SEED, CONFIG_SEED};
-use crate::core_asset::{self, FreezeAccounts, MPL_CORE_PROGRAM_ID};
+use crate::core_asset::{self, FreezeAccounts, TransferAccounts, MPL_CORE_PROGRAM_ID};
 use crate::errors::MarketError;
 use crate::events::AuctionCancelled;
 use crate::state::{Auction, MarketConfig};
@@ -20,7 +20,7 @@ pub struct CancelAuction<'info> {
     )]
     pub auction: Account<'info, Auction>,
 
-    /// CHECK: the auction's asset; thawed by Core here.
+    /// CHECK: the auction's asset; handed back, or thawed, by Core here.
     #[account(mut, address = auction.asset @ MarketError::InvalidAsset)]
     pub asset: UncheckedAccount<'info>,
 
@@ -31,7 +31,7 @@ pub struct CancelAuction<'info> {
     #[account(mut)]
     pub seller: Signer<'info>,
 
-    /// CHECK: PDA with no data; the asset's freeze delegate.
+    /// CHECK: PDA with no data; holds the asset (or, for an older auction, freezes it).
     #[account(seeds = [AUTHORITY_SEED], bump = config.authority_bump)]
     pub market_authority: UncheckedAccount<'info>,
 
@@ -44,13 +44,29 @@ pub struct CancelAuction<'info> {
 
 impl<'info> CancelAuction<'info> {
     /// Only before the first bid, and also while the market is paused. The
-    /// client revokes the market's delegates in the same transaction.
+    /// market hands the asset back to the seller. An auction started before
+    /// the market held its asset is thawed instead, and the client revokes
+    /// the market's delegates in the same transaction.
     pub fn process(ctx: Context<Self>) -> Result<()> {
         let accounts = &ctx.accounts;
         require!(!accounts.auction.has_bids(), MarketError::AuctionHasBids);
+        let seeds: &[&[u8]] = &[AUTHORITY_SEED, &[accounts.config.authority_bump]];
 
         let asset = core_asset::load_core_asset(&accounts.asset)?;
-        if asset.is_frozen() && asset.freeze_held_by(accounts.market_authority.key) {
+        if Auction::held_by_market(&asset, accounts.market_authority.key) {
+            core_asset::transfer(
+                TransferAccounts {
+                    core_program: &accounts.core_program,
+                    asset: &accounts.asset,
+                    collection: &accounts.collection,
+                    payer: &accounts.seller,
+                    authority: &accounts.market_authority,
+                    new_owner: &accounts.seller,
+                    system_program: &accounts.system_program,
+                },
+                seeds,
+            )?;
+        } else if asset.is_frozen() && asset.freeze_held_by(accounts.market_authority.key) {
             core_asset::set_frozen(
                 FreezeAccounts {
                     core_program: &accounts.core_program,
@@ -61,7 +77,7 @@ impl<'info> CancelAuction<'info> {
                     system_program: &accounts.system_program,
                 },
                 false,
-                &[AUTHORITY_SEED, &[accounts.config.authority_bump]],
+                seeds,
             )?;
         }
 

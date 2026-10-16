@@ -357,6 +357,7 @@ describe('auction rules', () => {
       endsAt: 9_000,
       minBidLamports: 1n,
       leading: false,
+      sellerIsMe: false,
       deliverable: true,
     });
     const feed = bidFeed(
@@ -395,10 +396,12 @@ describe('auction rules', () => {
       endsAt: 1_000,
       minBidLamports: SOL / 10n,
       leading: false,
+      sellerIsMe: false,
       deliverable: true,
       ...over,
     });
-    const stage = (over: Partial<MarketAuction>, mine: boolean, now: number | null) => auctionStage(auction(over), mine, now);
+    const stage = (over: Partial<MarketAuction>, mine: boolean, now: number | null) =>
+      auctionStage(auction({ ...over, sellerIsMe: mine }), now);
     // Still running, or the clock is not known yet.
     assert.equal(stage({}, false, 999), 'live');
     assert.equal(stage({ leading: true }, false, null), 'live');
@@ -415,8 +418,12 @@ describe('auction rules', () => {
     assert.equal(stage({ deliverable: false }, false, 10), 'waiting');
 
     const notices = auctionNotices(
-      [auction({ citizenId: 5, leading: true }), auction({ citizenId: 6 }), auction({ citizenId: 7 }), auction({ citizenId: 8, endsAt: 5_000, leading: true })],
-      [6],
+      [
+        auction({ citizenId: 5, leading: true }),
+        auction({ citizenId: 6, sellerIsMe: true }),
+        auction({ citizenId: 7 }),
+        auction({ citizenId: 8, endsAt: 5_000, leading: true }),
+      ],
       1_000,
     );
     assert.deepEqual(
@@ -427,7 +434,7 @@ describe('auction rules', () => {
       ],
       'nothing for an auction the wallet has no part in, or one still running',
     );
-    assert.deepEqual(auctionNotices([auction({ leading: true })], [], null), [], 'no notice before the clock is known');
+    assert.deepEqual(auctionNotices([auction({ leading: true })], null), [], 'no notice before the clock is known');
   });
 
   it('shows the finished sales of a role, newest first as they came', () => {
@@ -490,7 +497,8 @@ describe('auctions in the preview', () => {
     const auction = auctionOf(data, FARMER);
     assert.equal(auction?.endsAt, START + 48 * 3_600);
     assert.equal(auction?.minBidLamports, SOL);
-    assert.ok(data.snapshot().owned.includes(FARMER), 'the citizen stays in the wallet');
+    assert.equal(auction?.sellerIsMe, true);
+    assert.ok(!data.snapshot().owned.includes(FARMER), 'the market holds the citizen');
     assert.deepEqual(await data.listCitizen(FARMER, SOL), { ok: false, error: 'in-auction' });
     assert.deepEqual(await data.auctionCitizen(FARMER, SOL, 24), { ok: false, error: 'in-auction' });
     await data.listCitizen(2, SOL);
@@ -503,6 +511,7 @@ describe('auctions in the preview', () => {
     await data.auctionCitizen(FARMER, SOL, 24);
     assert.ok((await data.cancelAuction(FARMER)).ok);
     assert.equal(auctionOf(data, FARMER), undefined);
+    assert.ok(data.snapshot().owned.includes(FARMER), 'cancelling hands the citizen back');
     await data.auctionCitizen(FARMER, SOL, 24);
     assert.ok(data.simulateBid && (await data.simulateBid(FARMER)).ok);
     assert.deepEqual(await data.cancelAuction(FARMER), { ok: false, error: 'auction-has-bids' });
@@ -559,7 +568,7 @@ describe('auctions in the preview', () => {
     pass(auction.endsAt - START);
     const won = auctionOf(data, id);
     assert.ok(won);
-    assert.equal(auctionStage(won, false, auction.endsAt), 'claim', 'the winner is offered the claim');
+    assert.equal(auctionStage(won, auction.endsAt), 'claim', 'the winner is offered the claim');
     assert.ok((await data.settleAuction(id)).ok);
     assert.ok(data.snapshot().owned.includes(id));
     const [sale] = data.snapshot().market.sales;
@@ -573,7 +582,7 @@ describe('auctions in the preview', () => {
     pass(24 * 3_600);
     const sold = auctionOf(data, FARMER);
     assert.ok(sold);
-    assert.equal(auctionStage(sold, true, sold.endsAt), 'collect', 'the seller is offered the payment');
+    assert.equal(auctionStage(sold, sold.endsAt), 'collect', 'the seller is offered the payment');
     assert.ok((await data.settleAuction(FARMER)).ok);
     assert.ok(!data.snapshot().owned.includes(FARMER));
     assert.equal(data.snapshot().wallet.solLamports, sol + splitSale(SOL, ROYALTY_BPS).proceedsLamports);

@@ -9,7 +9,7 @@ import type { MarketNotice } from '@/lib/data/types';
 import { auctionNotices, formatSolExact, markNoticesSeen, unseenNotices } from '@/lib/data/market';
 import { useNow } from '@/lib/utils/useNow';
 import { MESSAGES, formatMessage } from '@/messages';
-import { useCitizens, useDataMode, useMarket, useOwnedIds, useWallet } from '@/stores/selectors';
+import { useCitizens, useDataMode, useMarket, useWallet } from '@/stores/selectors';
 
 const copy = MESSAGES.market;
 /** Lines shown at once; the rest are counted. */
@@ -56,7 +56,6 @@ function readSeen(key: string): string[] {
  */
 export const MarketNotices: React.FC = () => {
   const market = useMarket();
-  const owned = useOwnedIds();
   const now = useNow();
   const wallet = useWallet();
   const mode = useDataMode();
@@ -71,7 +70,7 @@ export const MarketNotices: React.FC = () => {
   }, [key]);
 
   if (!key || !seen || seen.key !== key) return null;
-  const notices = [...auctionNotices(market.auctions, owned, now), ...market.notices];
+  const notices = [...auctionNotices(market.auctions, now), ...market.notices];
   const fresh = unseenNotices(notices, seen.ids);
   if (fresh.length === 0) return null;
   const actionable = fresh.some(waitsOnWallet);

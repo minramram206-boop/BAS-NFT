@@ -46,7 +46,7 @@ impl<'info> CreateListing<'info> {
         let seller = ctx.accounts.seller.key();
         let asset = core_asset::load_core_asset(&ctx.accounts.asset)?;
         require_listable(&asset, config, &seller)?;
-        // A frozen asset cannot be sold; an auctioned one is frozen until it ends.
+        // A frozen asset cannot be sold.
         require!(!asset.is_frozen(), MarketError::AssetFrozen);
 
         let listing = &mut ctx.accounts.listing;

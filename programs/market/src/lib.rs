@@ -1,12 +1,14 @@
 //! BAS market: fixed-price sales (phase F1, D-0082) and English auctions
 //! (phase F3, D-0087) of district citizens for SOL. See docs/MARKET.md.
 //!
-//! The citizen never leaves the seller's wallet while it is listed or
-//! auctioned. The seller names this program's authority PDA as the asset's
-//! Core transfer delegate, and `buy` or `settle_auction` moves the asset as
-//! that delegate in the same instruction that pays the seller and the
-//! royalty. An auctioned asset is also frozen by the market until it ends.
-//! The program holds SOL only for an auction's highest bid.
+//! A listed citizen never leaves the seller's wallet: the seller names this
+//! program's authority PDA as the asset's Core transfer delegate, and `buy`
+//! moves the asset as that delegate in the same instruction that pays the
+//! seller and the royalty. An auctioned citizen is handed to the authority
+//! PDA when the auction starts (D-0092), so the seller cannot take it back
+//! once someone has bid; `settle_auction` hands it to the winner, or back to
+//! the seller without a bid. The program holds SOL only for an auction's
+//! highest bid.
 //!
 //! Each instruction lives in `instructions/<name>.rs` next to its accounts.
 //! This file only wires them into the Anchor program.

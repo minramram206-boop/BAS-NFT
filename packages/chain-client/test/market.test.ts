@@ -619,8 +619,7 @@ describe('auction instructions', () => {
     assert.deepEqual(shape({ kind: 'address', address: BUYER }, 'transferDelegate'), [[10, 3], [8, 3, 3]]);
   });
 
-  it('start an auction in one transaction and cancel it with both delegates back', async () => {
-    const authority = await marketAuthorityAddress(PROGRAM);
+  it('start an auction with create_auction alone, after any stale listing', async () => {
     const start = await startAuctionInstructions({
       programId: PROGRAM,
       seller: SELLER,
@@ -628,18 +627,25 @@ describe('auction instructions', () => {
       collection: COLLECTION,
       startPriceLamports: 10_000_000n,
       durationHours: 24,
-      transferDelegate: null,
-      freezeDelegate: null,
       staleListingSeller: BUYER,
     });
+    const tag = (name: keyof typeof MARKET_INSTRUCTION_DISCRIMINATORS) =>
+      `market:${MARKET_INSTRUCTION_DISCRIMINATORS[name][0]}:${MARKET_INSTRUCTION_DISCRIMINATORS[name][1]}`;
     assert.deepEqual(
       start.map((instruction) => `${instruction.programAddress === PROGRAM ? 'market' : 'core'}:${instruction.data?.[0]}:${instruction.data?.[1]}`),
-      [`market:${MARKET_INSTRUCTION_DISCRIMINATORS.closeStaleListing[0]}:${MARKET_INSTRUCTION_DISCRIMINATORS.closeStaleListing[1]}`, 'core:2:3', 'core:2:1', `market:${MARKET_INSTRUCTION_DISCRIMINATORS.createAuction[0]}:${MARKET_INSTRUCTION_DISCRIMINATORS.createAuction[1]}`],
+      [tag('closeStaleListing'), tag('createAuction')],
     );
+  });
+
+  it('cancel an auction, revoking only delegates an older auction left with the market', async () => {
+    const authority = await marketAuthorityAddress(PROGRAM);
+    const input = { programId: PROGRAM, seller: SELLER, asset: ASSET, collection: COLLECTION };
+    const escrowed = await cancelAuctionInstructions({ ...input, transferDelegate: { kind: 'owner' }, freezeDelegate: null });
+    assert.equal(escrowed.length, 1, 'the market hands the citizen back; nothing to revoke');
     const held = { kind: 'address' as const, address: authority };
-    const cancel = await cancelAuctionInstructions({ programId: PROGRAM, seller: SELLER, asset: ASSET, collection: COLLECTION, transferDelegate: held, freezeDelegate: held });
-    assert.deepEqual(cancel.slice(1).map((instruction) => [...(instruction.data ?? [])]), [[10, 1], [10, 3]]);
-    const revoked = await cancelAuctionInstructions({ programId: PROGRAM, seller: SELLER, asset: ASSET, collection: COLLECTION, transferDelegate: { kind: 'owner' }, freezeDelegate: held });
+    const older = await cancelAuctionInstructions({ ...input, transferDelegate: held, freezeDelegate: held });
+    assert.deepEqual(older.slice(1).map((instruction) => [...(instruction.data ?? [])]), [[10, 1], [10, 3]]);
+    const revoked = await cancelAuctionInstructions({ ...input, transferDelegate: { kind: 'owner' }, freezeDelegate: held });
     assert.equal(revoked.length, 2, 'a delegate the seller already took back is not revoked again');
   });
 });

@@ -841,34 +841,29 @@ export async function settleAuctionInstruction(input: SettleAuctionInput): Promi
 }
 
 export interface StartAuctionInput extends CreateAuctionInput {
-  transferDelegate: CorePluginAuthority | null;
-  freezeDelegate: CorePluginAuthority | null;
   /** The seller of a listing a previous owner left on this asset, if any. It is closed first. */
   staleListingSeller?: Address | null;
 }
 
 /**
  * Everything one auction needs, in one transaction: closing a previous
- * owner's leftover listing, making the market both transfer and freeze
- * delegate, and `create_auction`, which freezes the citizen.
+ * owner's leftover listing, then `create_auction`, which hands the citizen
+ * to the market until the auction is cancelled or finished (D-0092).
  */
 export async function startAuctionInstructions(input: StartAuctionInput): Promise<Instruction[]> {
-  const { programId, seller, asset, collection, transferDelegate, freezeDelegate, staleListingSeller } = input;
-  const authority = await marketAuthorityAddress(programId);
+  const { programId, seller, asset, staleListingSeller } = input;
   const instructions: Instruction[] = [];
   if (staleListingSeller) {
     instructions.push(await closeStaleListingInstruction({ programId, asset, seller: staleListingSeller, caller: seller }));
   }
-  const core = { asset, collection, owner: seller, delegate: authority };
-  instructions.push(...pointPluginInstructions({ ...core, plugin: 'transferDelegate', current: transferDelegate }));
-  instructions.push(...pointPluginInstructions({ ...core, plugin: 'freezeDelegate', current: freezeDelegate }));
   instructions.push(await createAuctionInstruction(input));
   return instructions;
 }
 
 /**
- * `cancel_auction` (it thaws the citizen), then both delegates back to the
- * seller while the market holds them.
+ * `cancel_auction`, which hands the citizen back. An auction from before the
+ * market held its citizen thaws it in the seller's wallet instead, and the
+ * delegates the market still holds then go back to the seller as well.
  */
 export async function cancelAuctionInstructions(input: {
   programId: Address;

@@ -11,6 +11,7 @@ import {
   ROLE_TEMPLATES,
   AUCTION_CLOCKS,
   AUCTION_DURATIONS_HOURS,
+  auctionAddress,
   marketAuthorityAddress,
   minNextBid,
   type AuctionClock,
@@ -142,6 +143,30 @@ export class World implements ChainReader, DistrictReads {
 
   auctionOf(asset: string): AuctionOnChain | undefined {
     return [...this.auctions.values()].find((auction) => auction.asset === asset);
+  }
+
+  /**
+   * An auction as the program made them before it held the citizen: frozen in
+   * the seller's wallet with both delegates held by the market. The program
+   * no longer creates these, but the ones still open must settle.
+   */
+  async legacyAuction(asset: string, startPriceLamports: bigint, hours: number): Promise<void> {
+    const found = this.find(asset);
+    const held = { kind: 'address' as const, address: MARKET_AUTHORITY };
+    Object.assign(found, { delegate: held, freeze: held, frozen: true });
+    const now = this.nowSeconds();
+    this.auctions.set(await auctionAddress(address(MARKET_ID), address(asset)), {
+      version: 1,
+      asset,
+      seller: found.owner,
+      startPriceLamports,
+      highestBidLamports: 0n,
+      highestBidder: null,
+      startedAt: now,
+      endsAt: now + hours * this.auctionClock.hourSeconds,
+      bidCount: 0,
+      bump: 255,
+    } as AuctionOnChain);
   }
 
   /** Sets the market up as `market-setup.mjs` does. */
@@ -475,8 +500,16 @@ export class World implements ChainReader, DistrictReads {
       if (!auction) throw new Error('AccountNotInitialized: auction');
       return auction;
     };
+    const heldByMarket = (asset: FakeAsset) => asset.owner === MARKET_AUTHORITY;
     const canDeliver = (auction: AuctionOnChain, asset: FakeAsset) =>
-      asset.owner === auction.seller && asset.frozen && freezeHeld(asset) && delegated(asset);
+      heldByMarket(asset) || (asset.owner === auction.seller && asset.frozen && freezeHeld(asset) && delegated(asset));
+    /** A Core transfer: owner-managed plugins go back to the new owner. */
+    const moveTo = (asset: FakeAsset, owner: string): FakeAsset =>
+      change(asset, {
+        owner,
+        delegate: asset.delegate ? { kind: 'owner' } : null,
+        freeze: asset.freeze ? { kind: 'owner' } : null,
+      });
     const now = this.nowSeconds();
     const stale = (listing: ListingOnChain) => {
       const asset = this.find(listing.asset);
@@ -572,12 +605,10 @@ export class World implements ChainReader, DistrictReads {
         if (this.listings.has(key(2).pubkey.toBase58())) throw marketError('ListingExists');
         const asset = this.find(key(3).pubkey.toBase58());
         if (asset.owner !== seller) throw marketError('NotOwner');
-        if (!delegated(asset)) throw marketError('DelegateMissing');
         if (asset.frozen) throw marketError('AssetFrozen');
-        if (!freezeHeld(asset)) throw marketError('FreezeMissing');
         const at = key(1).pubkey.toBase58();
         if (this.auctions.has(at)) throw new Error('Allocate: account already in use');
-        change(asset, { frozen: true });
+        moveTo(asset, MARKET_AUTHORITY);
         this.auctions.set(at, {
           version: 1,
           asset: asset.asset,
@@ -632,7 +663,8 @@ export class World implements ChainReader, DistrictReads {
         const asset = this.find(key(2).pubkey.toBase58());
         if (signer(4) !== auction.seller) throw marketError('Unauthorized');
         if (auction.bidCount > 0) throw marketError('AuctionHasBids');
-        if (asset.frozen && freezeHeld(asset)) change(asset, { frozen: false });
+        if (heldByMarket(asset)) moveTo(asset, auction.seller);
+        else if (asset.frozen && freezeHeld(asset)) change(asset, { frozen: false });
         this.auctions.delete(key(1).pubkey.toBase58());
         return;
       }
@@ -649,7 +681,7 @@ export class World implements ChainReader, DistrictReads {
         const price = auction.highestBidLamports;
         if (hasBids && deliverable) {
           const royalty = (price * BigInt(config.royaltyBps)) / 10_000n;
-          change(asset, { owner: winner, delegate: { kind: 'owner' }, freeze: { kind: 'owner' } });
+          moveTo(asset, winner);
           credit(auction.seller, price - royalty);
           credit(config.royaltyRecipient, royalty);
           this.activity.sales.unshift({
@@ -664,6 +696,8 @@ export class World implements ChainReader, DistrictReads {
           });
         } else if (hasBids) {
           credit(winner, price);
+        } else if (heldByMarket(asset)) {
+          moveTo(asset, auction.seller);
         }
         this.auctions.delete(key(1).pubkey.toBase58());
         return;

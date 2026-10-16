@@ -1,6 +1,10 @@
-//! Auctions against the Core program: the citizen stays in the seller's wallet,
-//! frozen by the market, bids are held by the auction and paid back when
-//! outbid, and settling moves the citizen and the money in one instruction.
+//! Auctions against the Core program: the market holds the citizen from the
+//! start, bids are held by the auction and paid back when outbid, and
+//! settling moves the citizen and the money in one instruction. The seller
+//! may take the citizen back only before the first bid.
+//!
+//! The last tests cover auctions started before the market held the citizen
+//! (frozen in the seller's wallet), which must still settle.
 
 use market::constants::{AUCTION_EXTENSION_SECONDS, AUCTION_HOUR_SECONDS};
 use market::errors::MarketError;
@@ -18,30 +22,50 @@ async fn auctioned() -> (World, Pubkey) {
     (world, asset)
 }
 
+async fn legacy_auctioned() -> (World, Pubkey) {
+    let (mut world, asset) = market_with_citizen().await;
+    let seller = world.seller.insecure_clone();
+    world.legacy_auction(&asset, &seller, START, 24).await;
+    (world, asset)
+}
+
 #[tokio::test]
-async fn an_auction_freezes_the_citizen_in_the_sellers_wallet() {
+async fn the_market_holds_the_citizen_while_it_is_auctioned() {
     let (mut world, asset) = auctioned().await;
     let authority = world.authority_key();
     let seller = world.seller.insecure_clone();
 
-    assert_eq!(world.owner_of(&asset).await, seller.pubkey());
-    assert_eq!(world.freeze_state(&asset).await, Some((Some(authority), true)));
+    assert_eq!(world.owner_of(&asset).await, authority);
+    assert_eq!(world.freeze_state(&asset).await, None, "nothing is frozen");
     let auction = world.auction(&asset).await.expect("auction");
     assert_eq!(auction.seller, seller.pubkey());
     assert_eq!(auction.start_price_lamports, START);
     assert_eq!(auction.bid_count, 0);
     assert_eq!(auction.ends_at - auction.started_at, 24 * AUCTION_HOUR_SECONDS);
 
-    // Frozen: the seller can neither move nor burn it, nor take the freeze back.
+    // The seller no longer owns it: no transfer, no burn, no listing, no revoke.
     let stranger = world.stranger.pubkey();
     assert!(world.core_transfer(&asset, &seller, &stranger).await.is_err());
     assert!(world.core_burn(&asset, &seller).await.is_err());
-    let revoke_freeze = world.revoke_ix(&asset, &seller.pubkey(), PluginType::FreezeDelegate);
-    assert!(world.send(&[revoke_freeze], &[&seller]).await.is_err());
-
-    // And it cannot also be listed for a fixed price.
+    let revoke = world.revoke_ix(&asset, &seller.pubkey(), PluginType::TransferDelegate);
+    assert!(world.send(&[revoke], &[&seller]).await.is_err());
     let listing = world.create_listing_ix(&asset, &seller.pubkey(), SOL);
-    expect_market_error(world.send(&[listing], &[&seller]).await, MarketError::AssetFrozen);
+    expect_market_error(world.send(&[listing], &[&seller]).await, MarketError::NotOwner);
+}
+
+#[tokio::test]
+async fn a_frozen_citizen_cannot_be_auctioned() {
+    let (mut world, asset) = market_with_citizen().await;
+    let seller = world.seller.insecure_clone();
+    world.core_freeze(&asset, &seller).await.expect("freeze");
+    expect_market_error(world.start_auction(&asset, &seller, START, 24).await, MarketError::AssetFrozen);
+}
+
+#[tokio::test]
+async fn only_the_owner_can_auction_a_citizen() {
+    let (mut world, asset) = market_with_citizen().await;
+    let stranger = world.stranger.insecure_clone();
+    expect_market_error(world.start_auction(&asset, &stranger, START, 24).await, MarketError::NotOwner);
 }
 
 #[tokio::test]
@@ -93,12 +117,7 @@ async fn bids_are_held_and_paid_back_and_the_winner_gets_the_citizen() {
         "the price less the royalty, plus the auction's rent"
     );
     assert!(world.account(&auction_key).await.is_none(), "the auction is closed");
-    // Thawed, and Core handed both delegates back to the new owner.
-    let core = world.core_asset(&asset).await;
-    let freeze = core.plugin_list.freeze_delegate.expect("freeze plugin");
-    assert!(!freeze.freeze_delegate.frozen);
-    assert_eq!(freeze.base.authority.address, None);
-    assert_eq!(core.plugin_list.transfer_delegate.expect("transfer plugin").base.authority.address, None);
+    world.core_transfer(&asset, &buyer, &stranger.pubkey()).await.expect("the winner owns it outright");
 }
 
 #[tokio::test]
@@ -137,64 +156,47 @@ async fn the_seller_cancels_before_the_first_bid_and_gets_the_citizen_back() {
     let cancel = world.cancel_auction_ix(&asset, &seller.pubkey());
     world.send(&[cancel], &[&seller]).await.expect("cancel");
     assert!(world.auction(&asset).await.is_none());
+    assert_eq!(world.owner_of(&asset).await, seller.pubkey());
     assert_eq!(world.balance(&seller.pubkey()).await - seller_before, auction_rent());
-    assert_eq!(world.freeze_state(&asset).await.map(|(_, frozen)| frozen), Some(false), "thawed");
-
-    // The client takes both delegates back in the same transaction; done
-    // separately here so the auction rent above is measured alone. Core
-    // shrinks the asset for each and returns that rent too.
-    let revoke_freeze = world.revoke_ix(&asset, &seller.pubkey(), PluginType::FreezeDelegate);
-    let revoke_transfer = world.revoke_ix(&asset, &seller.pubkey(), PluginType::TransferDelegate);
-    world.send(&[revoke_freeze, revoke_transfer], &[&seller]).await.expect("revoke");
-    assert_eq!(world.freeze_state(&asset).await, Some((None, false)));
     world.core_transfer(&asset, &seller, &stranger.pubkey()).await.expect("free to move again");
 }
 
 #[tokio::test]
-async fn no_cancel_once_someone_has_bid() {
+async fn once_someone_has_bid_the_seller_cannot_stop_the_auction() {
     let (mut world, asset) = auctioned().await;
     let seller = world.seller.insecure_clone();
     let buyer = world.buyer.insecure_clone();
+    let stranger = world.stranger.insecure_clone();
     world.bid(&asset, &buyer, START).await.expect("bid");
+
     let cancel = world.cancel_auction_ix(&asset, &seller.pubkey());
     expect_market_error(world.send(&[cancel], &[&seller]).await, MarketError::AuctionHasBids);
+    // The old way out, revoking the delegate, does not exist: the seller owns nothing.
+    let revoke = world.revoke_ix(&asset, &seller.pubkey(), PluginType::TransferDelegate);
+    assert!(world.send(&[revoke], &[&seller]).await.is_err());
+    // Nor can anyone settle early.
+    expect_market_error(world.settle(&asset, &stranger).await, MarketError::AuctionNotEnded);
+
+    let ends_at = world.auction(&asset).await.expect("auction").ends_at;
+    world.set_time(ends_at).await;
+    world.settle(&asset, &stranger).await.expect("settle");
+    assert_eq!(world.owner_of(&asset).await, buyer.pubkey());
 }
 
 #[tokio::test]
-async fn an_auction_without_bids_ends_with_the_citizen_thawed_at_home() {
+async fn an_auction_without_bids_ends_with_the_citizen_back_home() {
     let (mut world, asset) = auctioned().await;
     let seller = world.seller.insecure_clone();
     let stranger = world.stranger.insecure_clone();
     let ends_at = world.auction(&asset).await.expect("auction").ends_at;
     let seller_before = world.balance(&seller.pubkey()).await;
 
+    world.set_time(ends_at - 1).await;
+    expect_market_error(world.settle(&asset, &stranger).await, MarketError::AuctionNotEnded);
     world.set_time(ends_at).await;
     world.settle(&asset, &stranger).await.expect("settle without bids");
     assert_eq!(world.owner_of(&asset).await, seller.pubkey());
-    assert_eq!(world.freeze_state(&asset).await.map(|(_, frozen)| frozen), Some(false));
     assert_eq!(world.balance(&seller.pubkey()).await - seller_before, auction_rent());
-    assert!(world.auction(&asset).await.is_none());
-}
-
-#[tokio::test]
-async fn a_seller_who_revokes_the_transfer_delegate_stops_the_auction_and_the_bid_comes_back_at_once() {
-    let (mut world, asset) = auctioned().await;
-    let seller = world.seller.insecure_clone();
-    let buyer = world.buyer.insecure_clone();
-    let stranger = world.stranger.insecure_clone();
-    let buyer_before = world.balance(&buyer.pubkey()).await;
-    world.bid(&asset, &buyer, START).await.expect("bid");
-
-    // Core lets an owner revoke the TransferDelegate even while the asset is frozen.
-    let revoke = world.revoke_ix(&asset, &seller.pubkey(), PluginType::TransferDelegate);
-    world.send(&[revoke], &[&seller]).await.expect("Core allows this revoke");
-
-    expect_market_error(world.bid(&asset, &stranger, 2 * START).await, MarketError::AuctionUndeliverable);
-    // No waiting for the end: the bid is paid back now and the citizen thawed.
-    world.settle(&asset, &stranger).await.expect("settle early");
-    assert_eq!(world.balance(&buyer.pubkey()).await, buyer_before);
-    assert_eq!(world.owner_of(&asset).await, seller.pubkey());
-    assert_eq!(world.freeze_state(&asset).await.map(|(_, frozen)| frozen), Some(false));
     assert!(world.auction(&asset).await.is_none());
 }
 
@@ -247,16 +249,23 @@ async fn auctions_follow_the_market_rules() {
 }
 
 #[tokio::test]
-async fn a_paused_market_takes_no_bids_but_still_settles() {
+async fn a_paused_market_takes_no_bids_but_still_settles_and_cancels() {
     let (mut world, asset) = auctioned().await;
+    let seller = world.seller.insecure_clone();
     let buyer = world.buyer.insecure_clone();
     let stranger = world.stranger.insecure_clone();
     let admin = world.admin.insecure_clone();
+    let quiet = world.mint_into(world.collection, &seller.pubkey(), 14).await;
+    world.start_auction(&quiet, &seller, START, 24).await.expect("a second auction");
     world.bid(&asset, &buyer, START).await.expect("bid");
 
     let pause = world.set_paused_ix(&admin.pubkey(), true);
     world.send(&[pause], &[&admin]).await.expect("pause");
     expect_market_error(world.bid(&asset, &stranger, 2 * START).await, MarketError::MarketPaused);
+
+    let cancel = world.cancel_auction_ix(&quiet, &seller.pubkey());
+    world.send(&[cancel], &[&seller]).await.expect("cancel while paused");
+    assert_eq!(world.owner_of(&quiet).await, seller.pubkey());
 
     let ends_at = world.auction(&asset).await.expect("auction").ends_at;
     world.set_time(ends_at).await;
@@ -274,14 +283,80 @@ async fn the_winner_can_sell_again_by_listing_or_by_auction() {
     world.set_time(ends_at).await;
     world.settle(&asset, &stranger).await.expect("settle");
 
-    // Both plugins are back with the owner, so the client re-points them.
     world.start_auction(&asset, &buyer, START, 24).await.expect("auction it again");
     let authority = world.authority_key();
-    assert_eq!(world.freeze_state(&asset).await, Some((Some(authority), true)));
+    assert_eq!(world.owner_of(&asset).await, authority);
     let cancel = world.cancel_auction_ix(&asset, &buyer.pubkey());
     world.send(&[cancel], &[&buyer]).await.expect("cancel");
 
-    world.list(&asset, &buyer, SOL).await.expect("then list it, thawed");
+    world.list(&asset, &buyer, SOL).await.expect("then list it");
     world.buy(&asset, &stranger, SOL).await.expect("and sell it");
     assert_eq!(world.owner_of(&asset).await, stranger.pubkey());
+}
+
+// --- auctions started before the market held the citizen ----------------------
+
+#[tokio::test]
+async fn an_older_auction_still_takes_bids_and_delivers_to_the_winner() {
+    let (mut world, asset) = legacy_auctioned().await;
+    let authority = world.authority_key();
+    let seller = world.seller.insecure_clone();
+    let buyer = world.buyer.insecure_clone();
+    let stranger = world.stranger.insecure_clone();
+    assert_eq!(world.owner_of(&asset).await, seller.pubkey());
+    assert_eq!(world.freeze_state(&asset).await, Some((Some(authority), true)));
+
+    world.bid(&asset, &buyer, START).await.expect("first bid");
+    world.bid(&asset, &stranger, 2 * START).await.expect("outbid");
+    let ends_at = world.auction(&asset).await.expect("auction").ends_at;
+    world.set_time(ends_at).await;
+    let seller_before = world.balance(&seller.pubkey()).await;
+    world.settle(&asset, &buyer).await.expect("settle");
+
+    assert_eq!(world.owner_of(&asset).await, stranger.pubkey());
+    let royalty = 2 * START / 20;
+    assert_eq!(world.balance(&seller.pubkey()).await - seller_before, 2 * START - royalty + auction_rent());
+    // Thawed, and Core handed both delegates back to the new owner.
+    let core = world.core_asset(&asset).await;
+    let freeze = core.plugin_list.freeze_delegate.expect("freeze plugin");
+    assert!(!freeze.freeze_delegate.frozen);
+    assert_eq!(freeze.base.authority.address, None);
+    assert_eq!(core.plugin_list.transfer_delegate.expect("transfer plugin").base.authority.address, None);
+}
+
+#[tokio::test]
+async fn an_older_auction_cancelled_before_a_bid_is_thawed_in_place() {
+    let (mut world, asset) = legacy_auctioned().await;
+    let seller = world.seller.insecure_clone();
+    let stranger = world.stranger.insecure_clone();
+
+    let cancel = world.cancel_auction_ix(&asset, &seller.pubkey());
+    let revoke_freeze = world.revoke_ix(&asset, &seller.pubkey(), PluginType::FreezeDelegate);
+    let revoke_transfer = world.revoke_ix(&asset, &seller.pubkey(), PluginType::TransferDelegate);
+    world.send(&[cancel, revoke_freeze, revoke_transfer], &[&seller]).await.expect("cancel and revoke");
+    assert!(world.auction(&asset).await.is_none());
+    assert_eq!(world.freeze_state(&asset).await, Some((None, false)));
+    world.core_transfer(&asset, &seller, &stranger.pubkey()).await.expect("free to move again");
+}
+
+#[tokio::test]
+async fn an_older_auction_whose_seller_revoked_the_delegate_pays_the_bid_back_at_once() {
+    let (mut world, asset) = legacy_auctioned().await;
+    let seller = world.seller.insecure_clone();
+    let buyer = world.buyer.insecure_clone();
+    let stranger = world.stranger.insecure_clone();
+    let buyer_before = world.balance(&buyer.pubkey()).await;
+    world.bid(&asset, &buyer, START).await.expect("bid");
+
+    // Core lets an owner revoke the TransferDelegate even while the asset is frozen.
+    let revoke = world.revoke_ix(&asset, &seller.pubkey(), PluginType::TransferDelegate);
+    world.send(&[revoke], &[&seller]).await.expect("Core allows this revoke");
+
+    expect_market_error(world.bid(&asset, &stranger, 2 * START).await, MarketError::AuctionUndeliverable);
+    // No waiting for the end: the bid is paid back now and the citizen thawed.
+    world.settle(&asset, &stranger).await.expect("settle early");
+    assert_eq!(world.balance(&buyer.pubkey()).await, buyer_before);
+    assert_eq!(world.owner_of(&asset).await, seller.pubkey());
+    assert_eq!(world.freeze_state(&asset).await.map(|(_, frozen)| frozen), Some(false));
+    assert!(world.auction(&asset).await.is_none());
 }

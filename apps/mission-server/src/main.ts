@@ -4,6 +4,7 @@ import { RpcChainReader } from './chain.js';
 import { loadConfig } from './config.js';
 import { createMissionServer } from './http.js';
 import { MarketIndexer, describeSale, rpcMarketSource } from './market.js';
+import { openMarketStore } from './market-store.js';
 import { MintService } from './mint.js';
 import { MissionService } from './service.js';
 import { FileStore } from './store.js';
@@ -50,10 +51,12 @@ const sale = mint
   : undefined;
 
 // Sales and bids of the market program: a line in the citizen's public history, and the feed of /market/activity.
+const marketStore = network.marketProgramId ? await openMarketStore(config.databaseUrl, network.marketProgramId) : undefined;
 const market = network.marketProgramId
   ? new MarketIndexer({
       source: rpcMarketSource(network.rpcUrl),
       programId: network.marketProgramId,
+      ...(marketStore ? { store: marketStore } : {}),
       ...(upkeep
         ? {
             onSale: (record) =>

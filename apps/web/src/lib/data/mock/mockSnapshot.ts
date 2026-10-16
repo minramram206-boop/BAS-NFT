@@ -120,6 +120,7 @@ function mockAuctions(nowSeconds: number): MarketAuction[] {
       endsAt: nowSeconds + Math.round(hours * 3_600),
       minBidLamports: minNextBid(start, highest),
       leading: false,
+      sellerIsMe: false,
       deliverable: true,
     };
   };

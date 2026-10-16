@@ -4,10 +4,10 @@ use crate::core_asset::CoreAsset;
 
 /// An English auction for one citizen, at PDA `["auction", asset]`.
 ///
-/// The asset stays in the seller's wallet, frozen by the market, until the
-/// auction is settled or cancelled. The highest bid is held in this account's
-/// own lamports, on top of its rent; a higher bid pays the previous one back
-/// in the same instruction.
+/// The market's authority PDA holds the asset until the auction is settled
+/// or cancelled (D-0092); older auctions froze it in the seller's wallet.
+/// The highest bid is held in this account's own lamports, on top of its
+/// rent; a higher bid pays the previous one back in the same instruction.
 #[account]
 pub struct Auction {
     pub version: u8,
@@ -43,15 +43,25 @@ impl Auction {
         self.bid_count > 0
     }
 
-    /// The market can still hand `asset` to a winner: the seller holds it, it
-    /// is frozen by the market, and the market may transfer it. Core lets an
-    /// owner revoke the TransferDelegate even while frozen, so this can turn
-    /// false during an auction; bids stop then and settling pays them back.
+    /// The market holds the asset itself, as every auction started since the
+    /// asset began to be handed over at the start (D-0092) does. Nobody can
+    /// take it back then, so the auction always delivers.
+    pub fn held_by_market(asset: &CoreAsset, authority: &Pubkey) -> bool {
+        asset.owner == *authority
+    }
+
+    /// The market can still hand `asset` to a winner: it holds the asset, or,
+    /// for an auction started before that (the asset frozen in the seller's
+    /// wallet), the seller still holds it, frozen by the market, and the
+    /// market may still transfer it. Core lets an owner revoke the
+    /// TransferDelegate even while frozen, so only that older kind can turn
+    /// undeliverable; bids stop then and settling pays them back.
     pub fn can_deliver(&self, asset: &CoreAsset, authority: &Pubkey) -> bool {
-        asset.owner == self.seller
-            && asset.is_frozen()
-            && asset.freeze_held_by(authority)
-            && asset.delegates_transfer_to(authority)
+        Self::held_by_market(asset, authority)
+            || (asset.owner == self.seller
+                && asset.is_frozen()
+                && asset.freeze_held_by(authority)
+                && asset.delegates_transfer_to(authority))
     }
 }
 

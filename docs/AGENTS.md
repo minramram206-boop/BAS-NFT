@@ -73,8 +73,9 @@ Nama model tidak ditulis di kode; semuanya dari `CHAT_MODEL_PRIMARY` dan `CHAT_M
 | Percakapan | Redis, TTL 30 menit | Dipegang server; klien tidak bisa menyisipkan giliran |
 | Kunci percakapan | Redis `SET NX PX` + pelepasan Lua | Per aset dan pemilik |
 | Antrean | Redis, BullMQ `bas-chat-upkeep` | `jobId` untuk dedupe |
+| Riwayat market | Postgres `market_sales`, `market_bids`, `market_cursor` | Ditulis mission server; per program, idempoten per tanda tangan |
 
-Migrasi berjalan saat server dan worker mulai (`chat_migrations`, dengan advisory lock). Tanpa `DATABASE_URL`/`REDIS_URL`, chat server memakai penyimpanan dalam memori untuk pengembangan lokal; di mainnet kedua variabel wajib dan server menolak mulai tanpa keduanya.
+Migrasi berjalan saat server, worker, dan mission server mulai (`chat_migrations`, dengan advisory lock). Tanpa `DATABASE_URL`/`REDIS_URL`, chat server memakai penyimpanan dalam memori untuk pengembangan lokal; di mainnet kedua variabel wajib dan server menolak mulai tanpa keduanya.
 
 ## 4. Menjalankan lokal
 
@@ -98,9 +99,9 @@ pnpm --filter @bas/worker start
 
 Empat proses di atas (mission server, chat server, worker, web) bisa dijalankan sekaligus dengan satu perintah: `pnpm dev:all`. Perintah ini menyalakan Postgres dan Redis, membangun paket, lalu menjalankan keempatnya di satu terminal dengan log berwarna per layanan. `Ctrl+C` mematikan semuanya, dan bila salah satu berhenti karena galat, yang lain ikut dimatikan. Untuk mencari galat satu layanan, jalankan layanan itu sendirian di jendela terpisah seperti di atas.
 
-`REDIS_URL` juga dibaca mission server: bila diisi, misi yang terkonfirmasi diantrekan sebagai baris riwayat publik untuk dikerjakan worker. Bila Redis tidak menjawab saat mission server mulai, server tetap jalan dan baris riwayat tidak diantrekan sampai server dimulai ulang. Chat server dan worker menolak mulai bila Postgres atau Redis yang dikonfigurasi tidak terjangkau, dengan pesan yang menyebut alamatnya.
+`REDIS_URL` juga dibaca mission server: bila diisi, misi yang terkonfirmasi diantrekan sebagai baris riwayat publik untuk dikerjakan worker. Bila Redis tidak menjawab saat mission server mulai, server tetap jalan dan baris riwayat tidak diantrekan sampai server dimulai ulang. `DATABASE_URL` juga dibaca mission server untuk menyimpan riwayat market (penjualan dan tawaran) di Postgres; bila tidak diisi atau Postgres tidak menjawab saat mulai, riwayat itu disimpan di memori proses (500 terbaru) sampai server dimulai ulang. Chat server dan worker menolak mulai bila Postgres atau Redis yang dikonfigurasi tidak terjangkau, dengan pesan yang menyebut alamatnya.
 
-Tes yang memakai Postgres dan Redis nyata dilewati bila `BAS_TEST_DATABASE_URL` dan `BAS_TEST_REDIS_URL` tidak diisi. Tes Postgres menghapus tabel chat di database itu, jadi jangan arahkan ke database `bas` yang berisi data sungguhan; buat database terpisah (misalnya `bas_test`).
+Tes yang memakai Postgres dan Redis nyata dilewati bila `BAS_TEST_DATABASE_URL` dan `BAS_TEST_REDIS_URL` tidak diisi. Tes Postgres menghapus tabel chat dan market di database itu, jadi jangan arahkan ke database `bas` yang berisi data sungguhan; buat database terpisah (misalnya `bas_test`).
 
 ## 5. Menguji dengan model dan chain sungguhan
 

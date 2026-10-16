@@ -23,7 +23,6 @@ import {
   useCancelAuction,
   useCitizen,
   useDataMode,
-  useIsOwned,
   useMarket,
   useOpenWallet,
   usePlaceBid,
@@ -52,7 +51,6 @@ const Note: React.FC<{ children: React.ReactNode; strong?: boolean }> = ({ child
 export const AuctionDialog: React.FC<{ citizenId: number; onClose: () => void }> = ({ citizenId, onClose }) => {
   const citizen = useCitizen(citizenId);
   const auction = useAuction(citizenId);
-  const mine = useIsOwned(citizenId);
   const market = useMarket();
   const wallet = useWallet();
   const mode = useDataMode();
@@ -73,7 +71,8 @@ export const AuctionDialog: React.FC<{ citizenId: number; onClose: () => void }>
   if (!citizen || !auction) return null;
 
   const ended = now !== null && now >= auction.endsAt;
-  const stage = auctionStage(auction, mine, now);
+  const mine = auction.sellerIsMe;
+  const stage = auctionStage(auction, now);
   const finishable = stage !== 'live';
   const biddable = !finishable && !mine && !auction.leading && auction.deliverable;
   const finalPrice = auction.highestBidLamports ?? auction.startPriceLamports;

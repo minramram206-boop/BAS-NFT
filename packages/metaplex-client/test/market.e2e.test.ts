@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { before, describe, it } from 'node:test';
 
 import { findRepoRoot } from '@bas/config';
 import {
+  AUCTION_CLOCKS,
   MARKET_ERRORS,
   MPL_CORE_PROGRAM_ID,
   buyInstruction,
@@ -88,6 +89,8 @@ else {
     skip = `LiteSVM has no build for ${process.platform}-${process.arch}; run this suite in WSL`;
   }
 }
+/** The clock the binary was built with: the `devnet-clock` build carries this text in its logs. */
+const clock = existsSync(MARKET_SO) && readFileSync(MARKET_SO).includes('BAS devnet auction clock') ? AUCTION_CLOCKS['devnet-fast'] : AUCTION_CLOCKS.real;
 
 const roleOf = (key: UmiInstruction['keys'][number]): AccountRole =>
   key.isSigner
@@ -447,9 +450,8 @@ describe('market client against the deployed programs', { skip }, () => {
     assert.deepEqual(world.asset(asset).transferDelegate, { kind: 'address', address: authority });
   });
 
-  it('runs an auction: frozen at home, bids paid back when outbid, a late bid extends it, and settling pays everyone', async () => {
+  it('runs an auction: held by the market, bids paid back when outbid, a late bid extends it, and settling pays everyone', async () => {
     const asset = await world.mint(collection, world.seller.address, 12);
-    const view = world.asset(asset);
     const start = await startAuctionInstructions({
       programId: MARKET,
       seller: world.seller.address,
@@ -457,15 +459,12 @@ describe('market client against the deployed programs', { skip }, () => {
       collection,
       startPriceLamports: 100_000_000n,
       durationHours: 24,
-      transferDelegate: view.transferDelegate,
-      freezeDelegate: view.freezeDelegate,
     });
-    assert.equal(start.length, 3, 'two AddPluginV1 and create_auction');
+    assert.equal(start.length, 1, 'create_auction alone');
     const created = await world.send(start, [world.seller]);
     assert.deepEqual(marketEventsFromLogs(created, MARKET).map((event) => event.kind), ['auctionCreated']);
-    assert.equal(world.asset(asset).owner, world.seller.address, 'the citizen stays home');
-    assert.equal(world.asset(asset).frozen, true);
-    assert.deepEqual(world.asset(asset).freezeDelegate, { kind: 'address', address: authority });
+    assert.equal(world.asset(asset).owner, authority, 'the market holds the citizen');
+    assert.equal(world.asset(asset).frozen, false);
 
     const auctionKey = await auctionAddress(MARKET, asset);
     const auction = () => {
@@ -499,10 +498,27 @@ describe('market client against the deployed programs', { skip }, () => {
     // The outbid bidder is back to where they were, less two network fees.
     assert.ok(buyerBefore - world.balance(world.buyer.address) < 20_000n);
 
+    // With a bid in, the seller can no longer take the citizen back.
+    const view = world.asset(asset);
+    const cancel = await world.attempt(
+      await cancelAuctionInstructions({
+        programId: MARKET,
+        seller: world.seller.address,
+        asset,
+        collection,
+        transferDelegate: view.transferDelegate,
+        freezeDelegate: view.freezeDelegate,
+      }),
+      [world.seller],
+    );
+    assert.equal(cancel.ok, false);
+    assert.ok(cancel.logs.some((line) => line.includes(`Error Number: ${6000 + MARKET_ERRORS.indexOf('AuctionHasBids')}`)));
+    assert.equal(world.asset(asset).owner, authority);
+
     const endsAt = BigInt(auction().endsAt);
     world.setTime(endsAt - 30n);
     assert.ok((await bid(world.buyer, 200_000_000n)).ok);
-    assert.equal(BigInt(auction().endsAt), endsAt - 30n + 600n, 'ten more minutes');
+    assert.equal(BigInt(auction().endsAt), endsAt - 30n + BigInt(clock.extensionSeconds), 'the late-bid window again');
 
     const early = await world.attempt(
       [await settleAuctionInstruction({ programId: MARKET, caller: third.address, auction: auction(), config: (await marketConfig()) })],
@@ -519,7 +535,6 @@ describe('market client against the deployed programs', { skip }, () => {
       [third],
     );
     assert.equal(world.asset(asset).owner, world.buyer.address);
-    assert.equal(world.asset(asset).frozen, false);
     assert.equal(world.balance(world.treasury.address) - treasuryBefore, 10_000_000n);
     assert.equal(world.balance(world.seller.address) - sellerBefore, 190_000_000n + rent);
     assert.equal(world.data(auctionKey), null);
@@ -528,7 +543,7 @@ describe('market client against the deployed programs', { skip }, () => {
     assert.ok(event?.kind === 'auctionSettled' && event.delivered && event.winner === world.buyer.address && event.sellerLamports === 190_000_000n);
   });
 
-  it('cancels an auction nobody bid on and gives both delegates back', async () => {
+  it('cancels an auction nobody bid on and hands the citizen back', async () => {
     const asset = await world.mint(collection, world.seller.address, 13);
     await world.send(
       await startAuctionInstructions({
@@ -538,8 +553,6 @@ describe('market client against the deployed programs', { skip }, () => {
         collection,
         startPriceLamports: 100_000_000n,
         durationHours: 72,
-        transferDelegate: null,
-        freezeDelegate: null,
       }),
       [world.seller],
     );
@@ -552,11 +565,11 @@ describe('market client against the deployed programs', { skip }, () => {
       transferDelegate: view.transferDelegate,
       freezeDelegate: view.freezeDelegate,
     });
-    assert.equal(cancel.length, 3);
+    assert.equal(cancel.length, 1, 'cancel_auction alone');
     await world.send(cancel, [world.seller]);
-    const after = world.asset(asset);
-    assert.deepEqual([after.frozen, after.freezeDelegate, after.transferDelegate], [false, { kind: 'owner' }, { kind: 'owner' }]);
+    assert.equal(world.asset(asset).owner, world.seller.address);
     assert.equal(world.data(await auctionAddress(MARKET, asset)), null);
+    await world.send(await list(asset, world.seller, 1n * SOL), [world.seller]);
   });
 
   it('runs the Core binary that is deployed on devnet', () => {

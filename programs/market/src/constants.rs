@@ -14,8 +14,8 @@ pub const LISTING_SEED: &[u8] = b"listing";
 pub const AUCTION_SEED: &[u8] = b"auction";
 
 /// PDA seed of the authority that sellers name as their asset's transfer
-/// delegate (and, for an auction, freeze delegate). It holds no data and
-/// signs only Core instructions.
+/// delegate, and that holds an asset while it is auctioned. It holds no data
+/// and signs only Core instructions.
 pub const AUTHORITY_SEED: &[u8] = b"market-authority";
 
 pub const MARKET_CONFIG_VERSION: u8 = 1;

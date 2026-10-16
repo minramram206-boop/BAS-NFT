@@ -10,3 +10,4 @@ export * from './service.js';
 export * from './store.js';
 export * from './upkeep.js';
 export * from './market.js';
+export * from './market-store.js';

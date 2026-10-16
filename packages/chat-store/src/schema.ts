@@ -33,6 +33,42 @@ export const MIGRATIONS: readonly { readonly id: string; readonly sql: string }[
       );
     `,
   },
+  {
+    // The market history the mission server reads from the market program (D-0093).
+    // `id` keeps the order in which it was read, oldest first.
+    id: '0002-market',
+    sql: `
+      CREATE TABLE market_sales (
+        id bigserial PRIMARY KEY,
+        program text NOT NULL,
+        signature text NOT NULL,
+        asset text NOT NULL,
+        seller text NOT NULL,
+        buyer text NOT NULL,
+        price_lamports numeric(20, 0) NOT NULL,
+        seller_lamports numeric(20, 0) NOT NULL,
+        kind text NOT NULL CHECK (kind IN ('fixed', 'auction')),
+        at bigint NOT NULL,
+        UNIQUE (program, signature, asset)
+      );
+      CREATE TABLE market_bids (
+        id bigserial PRIMARY KEY,
+        program text NOT NULL,
+        signature text NOT NULL,
+        asset text NOT NULL,
+        bidder text NOT NULL,
+        amount_lamports numeric(20, 0) NOT NULL,
+        previous_bidder text,
+        at bigint NOT NULL,
+        UNIQUE (program, signature, asset, bidder)
+      );
+      CREATE TABLE market_cursor (
+        program text PRIMARY KEY,
+        signature text NOT NULL,
+        updated_at timestamptz NOT NULL DEFAULT now()
+      );
+    `,
+  },
 ];
 
 /** Arbitrary but fixed, so two servers starting together take turns instead of racing. */

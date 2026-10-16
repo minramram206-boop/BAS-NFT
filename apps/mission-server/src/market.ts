@@ -7,7 +7,9 @@ import type { SeasonConfig } from './service.js';
 /**
  * What happened in the market, read from the market program's transactions:
  * sales (a fixed-price `buy` or an auction that delivered) and bids. The
- * chain is the record; this is a reading of it, rebuilt on every start.
+ * chain is the record; this is a reading of it. With a `MarketStore` the
+ * reading is kept in full and a restart goes on from the last transaction
+ * read; without one it lives in this process and is rebuilt on every start.
  */
 
 /** One sale, as the web app and the public history use it. Lamports are decimal strings. */
@@ -37,6 +39,18 @@ export interface BidRecord {
 export interface MarketActivity {
   readonly sales: readonly SaleRecord[];
   readonly bids: readonly BidRecord[];
+}
+
+/**
+ * Where the reading is kept between starts. `record` takes the sales and bids
+ * of one transaction and moves the cursor to it in the same step, so a crash
+ * never leaves records without the cursor or the other way round. Recording a
+ * transaction again changes nothing.
+ */
+export interface MarketStore {
+  /** Everything kept, newest first, and the newest transaction read. */
+  load(): Promise<{ sales: SaleRecord[]; bids: BidRecord[]; cursor: string | null }>;
+  record(signature: string, sales: readonly SaleRecord[], bids: readonly BidRecord[]): Promise<void>;
 }
 
 /** The RPC calls the reader needs, behind an interface so tests can replace them. */
@@ -81,11 +95,16 @@ export function describeSale(sale: SaleRecord, season: SeasonConfig): HistoryEve
 export interface MarketIndexerOptions {
   readonly source: MarketSource;
   readonly programId: string;
-  /** Called once per sale this process has not seen before. Failures are the caller's to log. */
+  /** Called once per sale not read before, by this process or, with a store, any earlier one. Failures are the caller's to log. */
   readonly onSale?: (sale: SaleRecord) => void;
-  /** Most entries of each kind kept in memory. */
+  /** Keeps the reading between starts; then nothing is dropped. */
+  readonly store?: MarketStore;
+  /** Most entries of each kind kept without a store. */
   readonly limit?: number;
 }
+
+const saleKey = (sale: SaleRecord) => `${sale.signature}:${sale.asset}`;
+const bidKey = (bid: BidRecord) => `${bid.signature}:${bid.asset}:${bid.bidder}`;
 
 export class MarketIndexer {
   private readonly seen = new Set<string>();
@@ -94,10 +113,15 @@ export class MarketIndexer {
   /** Newest signature read, so the next sync stops there. */
   private newest: string | undefined;
   private running: Promise<void> | undefined;
+  private loaded = false;
+  /** Keys of the records held, so a transaction read twice is not listed twice. */
+  private readonly held = new Set<string>();
   private readonly program: Address;
+  private readonly limit: number;
 
   constructor(private readonly options: MarketIndexerOptions) {
     this.program = options.programId as Address;
+    this.limit = options.store ? Number.POSITIVE_INFINITY : (options.limit ?? 500);
   }
 
   activity(): MarketActivity {
@@ -112,7 +136,22 @@ export class MarketIndexer {
     return this.running;
   }
 
+  /** What the store kept, once, before the first read of the chain. */
+  private async load(): Promise<void> {
+    if (this.loaded) return;
+    if (this.options.store) {
+      const kept = await this.options.store.load();
+      this.sales = kept.sales;
+      this.bids = kept.bids;
+      this.newest = kept.cursor ?? undefined;
+      for (const sale of kept.sales) this.held.add(saleKey(sale));
+      for (const bid of kept.bids) this.held.add(bidKey(bid));
+    }
+    this.loaded = true;
+  }
+
   private async read(): Promise<void> {
+    await this.load();
     const fresh: string[] = [];
     let before: string | undefined;
     pages: for (;;) {
@@ -131,11 +170,12 @@ export class MarketIndexer {
     for (const signature of fresh.reverse()) {
       const tx = await this.options.source.transaction(signature);
       if (!tx) return; // the node is behind; try again on the next sync
-      this.seen.add(signature);
       const at = tx.blockTime ?? Math.floor(Date.now() / 1000);
+      const sales: SaleRecord[] = [];
+      const bids: BidRecord[] = [];
       for (const event of marketEventsFromLogs(tx.logs, this.program)) {
         if (event.kind === 'sold' || (event.kind === 'auctionSettled' && event.delivered && event.winner)) {
-          const sale: SaleRecord = {
+          sales.push({
             signature,
             asset: event.asset,
             seller: event.seller,
@@ -144,22 +184,33 @@ export class MarketIndexer {
             sellerLamports: event.sellerLamports.toString(),
             kind: event.kind === 'sold' ? 'fixed' : 'auction',
             at,
-          };
-          this.sales = [sale, ...this.sales].slice(0, this.options.limit ?? 500);
-          this.options.onSale?.(sale);
+          });
         } else if (event.kind === 'bidPlaced') {
-          const bid: BidRecord = {
+          bids.push({
             signature,
             asset: event.asset,
             bidder: event.bidder,
             amountLamports: event.amountLamports.toString(),
             previousBidder: event.previousBidder,
             at,
-          };
-          this.bids = [bid, ...this.bids].slice(0, this.options.limit ?? 500);
+          });
         }
       }
+      // Kept first: if that fails, this transaction is read again on the next sync.
+      await this.options.store?.record(signature, sales, bids);
+      this.seen.add(signature);
       this.newest = signature;
+      for (const sale of sales) {
+        if (this.held.has(saleKey(sale))) continue;
+        this.held.add(saleKey(sale));
+        this.sales = [sale, ...this.sales].slice(0, this.limit);
+        this.options.onSale?.(sale);
+      }
+      for (const bid of bids) {
+        if (this.held.has(bidKey(bid))) continue;
+        this.held.add(bidKey(bid));
+        this.bids = [bid, ...this.bids].slice(0, this.limit);
+      }
     }
   }
 

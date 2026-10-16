@@ -44,7 +44,10 @@ COLLECT PAYMENT at 06:58:35: the seller got 0.0285 SOL plus the rent, the
 royalty 0.0015 SOL, and the winner the citizen, in that one transaction.
 Finished auctions and sales are listed in the FINISHED tab (D-0091). Sales on
 chain appear in each citizen's public history, and a seller is told when a
-citizen sold. The decision records are D-0082 to D-0090 in `DECISIONS.md`.
+citizen sold. From the next upgrade the market holds an auctioned citizen
+itself (D-0092), so a seller can stop an auction only before the first bid;
+Ivy's auction, started before that, still finishes the old way. The decision
+records are D-0082 to D-0092 in `DECISIONS.md`.
 
 ## Goal
 
@@ -141,10 +144,13 @@ affect plain wallet transfers.
 
 ## F3 design: auctions
 
-The citizen stays in the seller's wallet, frozen, as in F1 it stays there
-listed. Settings chosen by the owner (D-0087): the NFT is frozen in place, the
-seller picks 24, 48 or 72 hours, a bid in the last 10 minutes moves the end to
-10 minutes after it, and the seller may cancel only before the first bid.
+The market's authority PDA holds the citizen from the start of the auction
+until it is cancelled or finished (D-0092). Settings chosen by the owner
+(D-0087): the seller picks 24, 48 or 72 hours, a bid in the last 10 minutes
+moves the end to 10 minutes after it, and the seller may cancel only before
+the first bid. D-0087 first kept the citizen frozen in the seller's wallet;
+that left the seller a way to stop an auction with bids (see "Auctions
+started before D-0092"), so the market now takes it.
 
 ### Accounts
 
@@ -152,18 +158,17 @@ seller picks 24, 48 or 72 hours, a bid in the last 10 minutes moves the end to
   highest bid, highest bidder, start and end time, bid count, bump. It holds
   the highest bid in its own lamports and nothing else; there is no vault.
 - One citizen is either listed or auctioned. `create_auction` needs the
-  asset's listing address to be empty, and `create_listing` and `buy` refuse
-  a frozen asset.
+  asset's listing address to be empty, and a citizen held by the market has
+  no owner who could list it.
 
 ### Instructions
 
 - `create_auction(start_price, duration_hours)`: seller signs. The asset must
-  be in the collection, owned by the seller, unfrozen, and name the authority
-  PDA as both its TransferDelegate and its FreezeDelegate; the client sends
-  the Core plugin instructions earlier in the same transaction. The program
-  then freezes the asset through `UpdatePluginV1`. From here until the end
-  nobody can move or burn it, and Core keeps the seller from revoking the
-  FreezeDelegate. Refused while paused.
+  be in the collection, owned by the seller and unfrozen. The program moves
+  it to the authority PDA with Core's `TransferV1`, signed by the seller, and
+  checks that the PDA owns it afterwards. No plugin is needed, and Core hands
+  any delegate the seller had set back to the new owner, the PDA. From here
+  until the end only this program can move it. Refused while paused.
 - `place_bid(amount)`: bidder signs. Refused while paused, after the end, for
   the seller, for the current highest bidder, below the minimum (the start
   price, then 5% over the highest bid rounded up, at least one lamport), or
@@ -172,22 +177,31 @@ seller picks 24, 48 or 72 hours, a bid in the last 10 minutes moves the end to
   instruction, so the auction never holds more than one bid.
   `ends_at = max(ends_at, now + 600)`.
 - `cancel_auction`: seller signs, only with no bids, also while paused. The
-  asset is thawed and the rent returned; the client revokes both delegates in
-  the same transaction.
-- `settle_auction`: anyone signs, after the end. The asset is thawed; with
-  bids, Core transfers it to the highest bidder as the market's delegate and
-  the bid is split as in `buy` (royalty, fee, seller); without bids it stays
-  with the seller. Core hands both delegates back to the new owner on the
-  transfer. The account closes to the seller.
+  PDA transfers the asset back to the seller and the rent is returned.
+- `settle_auction`: anyone signs, after the end. With bids, the PDA transfers
+  the asset to the highest bidder and the bid is split as in `buy` (royalty,
+  fee, seller); without bids it goes back to the seller. The account closes
+  to the seller.
 
-### A seller who takes the delegate back
+Once someone has bid, nothing stops the auction: the seller owns nothing they
+could revoke, and `cancel_auction` refuses with `AuctionHasBids`.
 
-While frozen, Core still lets the owner revoke the TransferDelegate. The
-auction then cannot deliver: `place_bid` refuses with `AuctionUndeliverable`,
-and `settle_auction` may run at once instead of waiting for the end, paying
-the highest bid back in full and thawing the citizen. Nobody loses SOL, but a
-seller can end an auction they do not like this way. A seller bond would make
-that cost something; it is not built.
+### Auctions started before D-0092
+
+Until the upgrade after 2026-10-16 the citizen stayed in the seller's wallet,
+frozen, with the PDA as its TransferDelegate and FreezeDelegate. While
+frozen, Core still lets the owner revoke the TransferDelegate, and the
+auction then cannot deliver: `place_bid` refuses with `AuctionUndeliverable`
+and `settle_auction` may run at once, paying the highest bid back in full.
+Nobody lost SOL, but a seller could stop an auction with bids this way.
+
+The program no longer creates such auctions, but finishes the ones still
+open: `cancel_auction` thaws the citizen (the client revokes the market's
+delegates in the same transaction), and `settle_auction` thaws it and
+transfers it as the delegate, or pays the bid back when it cannot. Ivy's
+auction on devnet, ending 2026-10-17 at 02:58 WIB, is one of these.
+`Auction::can_deliver` accepts either kind, and the integration tests build
+the older state directly to keep that path tested.
 
 ### Events
 
@@ -200,10 +214,10 @@ citizen was delivered), next to F1's `Sold`. The mission server reads them.
 | Command | What runs |
 |---|---|
 | `pnpm market:test` | Unit tests: price limits, sale split, the Core reader on hand-built bytes, the `TransferV1` encoding |
-| `pnpm market:test-core` | 57 instruction tests in `programs/market/integration` (11 of them auctions), in `solana-program-test`, with the Metaplex Core program itself |
+| `pnpm market:test-core` | 61 instruction tests in `programs/market/integration` (15 of them auctions, 3 of those for auctions started before D-0092), in `solana-program-test`, with the Metaplex Core program itself |
 | `pnpm market:build`, then `pnpm market:test-sbf` | The same tests with the market's SBF binary (WSL) |
 | `pnpm --filter @bas/chain-client test` | The TypeScript client against the Rust sources: discriminators, seeds, layouts, account order and flags of every instruction, error codes |
-| `pnpm --filter @bas/metaplex-client test` | The Core plugin instructions (TransferDelegate and FreezeDelegate) byte for byte against Core's own client, and `market.e2e.test.ts`: list, change price, buy, relist, cancel, a stale listing, a frozen citizen, a delegate held elsewhere, and an auction from start to settlement and to cancel, all through `@bas/chain-client` against `target/deploy/market.so` and the dumped `mpl_core.so` in LiteSVM |
+| `pnpm --filter @bas/metaplex-client test` | The Core plugin instructions (TransferDelegate and FreezeDelegate) byte for byte against Core's own client, and `market.e2e.test.ts`: list, change price, buy, relist, cancel, a stale listing, a frozen citizen, a delegate held elsewhere, and an auction from start to settlement (with the seller's cancel refused after a bid) and to cancel, all through `@bas/chain-client` against `target/deploy/market.so` and the dumped `mpl_core.so` in LiteSVM |
 | `pnpm --filter @bas/mission-server test` | Reading sales and bids out of the market's transaction logs, and the public history line of a sale |
 | `pnpm --filter @bas/web test` | The chain data source against an in-memory cluster that applies the market's rules, auctions included, and the mock auctions |
 
@@ -229,11 +243,15 @@ on every transfer; a sale refused, with nothing moved, after the seller moved
 the citizen, sent it away and back, revoked the delegate, froze it, or raised
 the price; substituted accounts; a second buyer of the same listing; reselling
 with the royalty paid again; and the reader agreeing with Core's own client on
-assets with several plugins. For auctions: the freeze, held bids paid back
-when outbid, the 5% step, the extension, settlement with exact balances and
-both delegates back with the winner, cancel only before a bid, an auction
-without bids, the seller revoking the delegate, the refund going only to the
-recorded bidder, and a paused market that takes no bids but still settles.
+assets with several plugins. For auctions: the market holding the citizen
+(the seller can no longer move, burn, list or revoke anything), a frozen
+citizen or a stranger refused, held bids paid back when outbid, the 5% step,
+the extension, settlement with exact balances, cancel only before a bid and
+the citizen back with the seller, no way for the seller to stop it after a
+bid, an auction without bids, the refund going only to the recorded bidder,
+and a paused market that takes no bids but still cancels and settles. Three
+more build an auction of the older kind and check that it still delivers,
+cancels, and pays the bid back when its seller revoked the delegate.
 
 ## Risks still open
 
@@ -244,17 +262,19 @@ recorded bidder, and a paused market that takes no bids but still settles.
 - The SBF build reported no stack frame warnings. In the SBF test run a whole
   `buy`, including Core's transfer, used at most about 36,000 compute units,
   and `create_listing` about 24,000, both well under the 200,000 default.
-  In the owner's SBF run of the auction build (2026-10-15, 57 passed),
-  `create_auction` with Core's freeze used at most about 46,500,
-  `place_bid` about 17,000, `cancel_auction` about 30,000 and
-  `settle_auction` with Core's thaw and transfer about 48,300.
+  With the market holding the citizen (SBF run of 2026-10-16, 61 passed),
+  `create_auction` with Core's transfer used at most about 41,700,
+  `place_bid` about 16,400, `cancel_auction` about 33,100 and
+  `settle_auction` about 48,300 (the older kind, with Core's thaw and
+  transfer).
 - `emit!` events are decoded by `@bas/chain-client` and checked in the LiteSVM
   run (`Sold`); the mission server reads them from devnet logs. A busy program
   may need more than one page of `getSignaturesForAddress`, which the reader
-  follows, but it keeps only the newest 500 sales and bids in memory and
-  rebuilds them on every start.
-- A seller can stop their own auction by revoking the TransferDelegate (see
-  F3). Bids come back in full, but nothing discourages it yet.
+  follows. With `DATABASE_URL` set the history is kept whole in Postgres
+  (D-0093); without it the server keeps the newest 500 sales and bids in
+  memory and reads them again on every start.
+- `/market/activity` sends the whole history on every poll. That is small
+  for 100 citizens, but a busy market will need paging there.
 - Royalty and fee recipients are checked for the rent minimum only when the
   config is written. If one is emptied later, small sales fail until it is
   funded again.
@@ -283,13 +303,25 @@ recorded bidder, and a paused market that takes no bids but still settles.
 - Auctions: `getProgramAccounts` also reads every `Auction`. An auction is
   shown with its citizen, the bid to beat, the time left, whether the wallet
   leads, and whether it can still deliver. Starting one is one signature
-  (close a stale listing, point both delegates at the market, revoking a
-  delegate held by someone else first, then `create_auction`); bidding,
-  cancelling (with both revokes) and finishing are one each.
+  (close a stale listing if a previous owner left one, then
+  `create_auction`); bidding, cancelling and finishing are one each. While
+  the market holds a citizen it is not among the seller's own citizens, so
+  it cannot be trained, chatted with or sent on missions; YOUR CITIZENS in
+  the market still lists it with its auction, and its profile reads "Your
+  auction · held by the market until it ends". Whose auction it is comes
+  from the auction account (`sellerIsMe`), not from who owns the citizen.
 - The mission server reads the market program's transactions
   (`getSignaturesForAddress`, then `getTransaction`) every 15 seconds when
   `marketProgramId` is set, keeps the sales and bids, and serves them at
-  `GET /market/activity` without sign-in. Each sale is also written to the
+  `GET /market/activity` without sign-in. With `DATABASE_URL` set they go to
+  Postgres (D-0093, tables `market_sales`, `market_bids` and
+  `market_cursor` of migration `0002-market`): each transaction's records and
+  the cursor are written in one database transaction before they are
+  served, nothing is dropped, and a restart serves the kept history at once
+  and reads only the transactions after the cursor. The first start against
+  an empty database reads the program's whole history once. Without the
+  variable, or when Postgres does not answer at start, the history lives in
+  the process as before (newest 500 of each). Each sale is also written to the
   citizen's public history ("Bought in the market for 0.10 SOL on day 5 of
   season 1, and moved to a new owner." or "Won at auction …"), naming no
   wallet. The web app shows the sales in every citizen's history, and tells
@@ -308,8 +340,8 @@ recorded bidder, and a paused market that takes no bids but still settles.
   (`settle_auction`), which the program lets anyone send. The screens offer it
   to the side that gains from it (`auctionStage` in `lib/data/market.ts`): the
   winner sees YOU WON and CLAIM CITIZEN, the seller COLLECT PAYMENT, a seller
-  nobody bid for TAKE BACK, the highest bidder of an auction its seller stopped
-  TAKE BID BACK, and that seller END AUCTION. Anyone else sees "Waiting for the
+  nobody bid for TAKE BACK, and, for an auction started before D-0092 that its
+  seller stopped, the highest bidder TAKE BID BACK and that seller END AUCTION. Anyone else sees "Waiting for the
   winner to claim" and no button; the program would still take a
   `settle_auction` from them, but the screens leave it to the two sides. Whichever side
   presses first completes it for both, in one transaction. When an auction the
@@ -322,11 +354,12 @@ recorded bidder, and a paused market that takes no bids but still settles.
   Bids and Final price (or Price); an auction result opens its bids under a
   button across the card. "You" stands for the wallet.
   A citizen that is on the market again is marked "At auction again" or "For
-  sale again", so an old result is not taken for the one running now. The
-  auction bids They are rebuilt from `/market/activity` by following each bid's
+  sale again", so an old result is not taken for the one running now. An
+  auction's bids are rebuilt from `/market/activity` by following each bid's
   `previousBidder` back from the winning bid to the first one, which beat
   nobody, so bids of an earlier auction of the same citizen never mix in. The
-  list holds what the mission server keeps (the newest 500 sales).
+  list holds what the mission server keeps: everything with Postgres, the
+  newest 500 sales without it.
 
 ## Devnet setup
 
@@ -370,6 +403,9 @@ must have run first.
    devnet on 2026-10-16.
 9. FINISHED tab: auction results and fixed-price sales apart, with an
    auction's bids (D-0091).
+10. The market holds an auctioned citizen, so an auction with bids cannot be
+    stopped (D-0092). Written and tested; not deployed yet.
+11. The market history in Postgres (D-0093). Written and tested.
 
 ## The auction clock
 
@@ -392,7 +428,7 @@ accounts are the same in both builds; the seller still picks 24, 48 or 72.
   `create_auction`. `scripts/devnet/deploy.sh` looks for that text in the
   binary: it refuses a fast binary on any cluster whose genesis hash is not
   devnet's, and refuses a binary whose clock disagrees with the manifest.
-- The integration tests take the clock from the program crate, so all 57 run
+- The integration tests take the clock from the program crate, so all 61 run
   on either build: `pnpm market:test-core` and `pnpm market:test-sbf` on the
   real one, the same with `--features devnet-clock` (or
   `pnpm market:test-sbf-devnet`) on the fast one.
@@ -405,7 +441,8 @@ accounts are the same in both builds; the seller still picks 24, 48 or 72.
 the new `.so` is larger. The loader takes at least 10,240 bytes per extension,
 so the fast build (508,032 bytes, 128 more than the deployed one) grew the
 account from 507,904 to 518,144 bytes on 2026-10-16, which keeps 0.052 SOL more
-rent in it for good.
+rent in it for good. The D-0092 build (514,784 bytes) fits in that account,
+so it needs no extension.
 The upgrade buffer needs about 2.58 SOL while the deploy runs and is refunded
 afterwards; the deployer held 3.53 SOL after the upgrade of 2026-10-16. In WSL:
 

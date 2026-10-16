@@ -108,7 +108,7 @@ pub struct AuctionCancelled {
 
 /// The end of an auction. `delivered` is true when the asset went to the
 /// winner and the seller was paid; otherwise any bid was paid back and the
-/// asset stays with the seller, thawed.
+/// asset is back with the seller.
 #[event]
 pub struct AuctionSettled {
     pub asset: Pubkey,

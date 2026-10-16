@@ -277,6 +277,8 @@ export function createDistrictSlice(options: CreateBasStoreOptions, set: SetStat
       const next = await run(() => source.auctionCitizen(citizenId, startPriceLamports, durationHours));
       if (!next) return false;
       retroAudio.play('click');
+      // The market holds the citizen now, so another one of the wallet's takes the stage.
+      set({ selectedCitizenId: pickSelected(next, get().selectedCitizenId) });
       const name = next.citizens.find((item) => item.id === citizenId)?.name ?? '';
       get().openModal(
         MESSAGES.market.auctionStartedTitle,
@@ -314,7 +316,7 @@ export function createDistrictSlice(options: CreateBasStoreOptions, set: SetStat
       const auction = get().market.auctions.find((item) => item.citizenId === citizenId);
       const name = get().citizens.find((item) => item.id === citizenId)?.name ?? '';
       // The wallet's part in the auction is read before it is settled: afterwards the auction is gone.
-      const stage = auction ? auctionStage(auction, get().owned.includes(citizenId), Math.floor(Date.now() / 1000)) : null;
+      const stage = auction ? auctionStage(auction, Math.floor(Date.now() / 1000)) : null;
       const next = await run(() => source.settleAuction(citizenId));
       if (!next || !auction) return Boolean(next);
       const copy = MESSAGES.market;

@@ -86,7 +86,9 @@ export function createMockDataSource(options: MockDataSourceOptions): DistrictDa
   const listingOf = (citizenId: number) => state.market.listings.find((listing) => listing.citizenId === citizenId);
   const withListings = (listings: DistrictSnapshot['market']['listings']) => ({ ...state.market, listings });
   const auctionOf = (citizenId: number) => state.market.auctions.find((auction) => auction.citizenId === citizenId);
-  const isMine = (auction: MarketAuction) => auction.seller === state.wallet.label;
+  const isMine = (auction: MarketAuction) => auction.sellerIsMe;
+  /** The market hands a citizen it held back to its seller. */
+  const backHome = (citizenId: number) => (state.owned.includes(citizenId) ? state.owned : [...state.owned, citizenId]);
   const replaceAuction = (citizenId: number, next: MarketAuction | null) => {
     const others = state.market.auctions.filter((auction) => auction.citizenId !== citizenId);
     return next ? [...others, next] : others;
@@ -208,9 +210,10 @@ export function createMockDataSource(options: MockDataSourceOptions): DistrictDa
 
     async listCitizen(citizenId: number, priceLamports: bigint) {
       if (!state.market.open) return fail('market-closed');
+      // Checked first: the market holds an auctioned citizen, so it is not the wallet's meanwhile.
+      if (auctionOf(citizenId)) return fail('in-auction');
       if (!state.owned.includes(citizenId)) return fail('not-owner');
       if (listingOf(citizenId)) return fail('already-listed');
-      if (auctionOf(citizenId)) return fail('in-auction');
       if (priceProblem(priceLamports, state.market)) return fail('invalid-price');
       const listing = { citizenId, seller: state.wallet.label, priceLamports, listedDay: today() };
       return commit({ ...state, market: withListings([...state.market.listings, listing]) });
@@ -276,9 +279,9 @@ export function createMockDataSource(options: MockDataSourceOptions): DistrictDa
 
     async auctionCitizen(citizenId: number, startPriceLamports: bigint, durationHours: number) {
       if (!state.market.open) return fail('market-closed');
+      if (auctionOf(citizenId)) return fail('in-auction');
       if (!state.owned.includes(citizenId)) return fail('not-owner');
       if (listingOf(citizenId)) return fail('already-listed');
-      if (auctionOf(citizenId)) return fail('in-auction');
       if (priceProblem(startPriceLamports, state.market) || !AUCTION_HOURS.includes(durationHours)) return fail('invalid-price');
       const auction: MarketAuction = {
         citizenId,
@@ -290,9 +293,15 @@ export function createMockDataSource(options: MockDataSourceOptions): DistrictDa
         endsAt: now() + durationHours * state.market.auctionClock.hourSeconds,
         minBidLamports: startPriceLamports,
         leading: false,
+        sellerIsMe: true,
         deliverable: true,
       };
-      return commit({ ...state, market: { ...state.market, auctions: replaceAuction(citizenId, auction) } });
+      // The market holds the citizen until the auction is cancelled or finished.
+      return commit({
+        ...state,
+        owned: state.owned.filter((id) => id !== citizenId),
+        market: { ...state.market, auctions: replaceAuction(citizenId, auction) },
+      });
     },
 
     async placeBid(citizenId: number, amountLamports: bigint) {
@@ -328,7 +337,7 @@ export function createMockDataSource(options: MockDataSourceOptions): DistrictDa
       const auction = auctionOf(citizenId);
       if (!auction || !isMine(auction)) return fail('not-listed');
       if (auction.bidCount > 0) return fail('auction-has-bids');
-      return commit({ ...state, market: { ...state.market, auctions: replaceAuction(citizenId, null) } });
+      return commit({ ...state, owned: backHome(citizenId), market: { ...state.market, auctions: replaceAuction(citizenId, null) } });
     },
 
     async settleAuction(citizenId: number) {
@@ -336,7 +345,10 @@ export function createMockDataSource(options: MockDataSourceOptions): DistrictDa
       if (!auction) return fail('listing-gone');
       if (now() < auction.endsAt) return fail('auction-live');
       const price = auction.highestBidLamports;
-      if (price === null) return commit({ ...state, market: { ...state.market, auctions: replaceAuction(citizenId, null) } });
+      if (price === null) {
+        const owned = isMine(auction) ? backHome(citizenId) : state.owned;
+        return commit({ ...state, owned, market: { ...state.market, auctions: replaceAuction(citizenId, null) } });
+      }
       const winner = auction.leading ? state.wallet.label : (auction.bids[0]?.bidder ?? 'Kx3p…9Qe');
       const market = {
         ...state.market,

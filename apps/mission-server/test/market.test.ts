@@ -4,7 +4,19 @@ import { describe, it } from 'node:test';
 import { MARKET_EVENT_DISCRIMINATORS } from '@bas/chain-client';
 import { getAddressEncoder, type Address } from '@solana/kit';
 import { Keypair } from '@solana/web3.js';
-import { Authenticator, MarketIndexer, createMissionServer, describeSale, type MarketSource, type SaleRecord } from '../dist/index.js';
+import { createPool, migrate } from '@bas/chat-store';
+import {
+  Authenticator,
+  MarketIndexer,
+  PgMarketStore,
+  createMissionServer,
+  describeSale,
+  openMarketStore,
+  type BidRecord,
+  type MarketSource,
+  type MarketStore,
+  type SaleRecord,
+} from '../dist/index.js';
 import { DAY, SEASON_START, rig } from './fixtures.ts';
 
 const MARKET = 'EVjdJiuyVfKUoQFirJDbCauvkHcVKZ38y9i2XAP1ypyP';
@@ -143,6 +155,116 @@ describe('market activity', () => {
       assert.deepEqual(body.bids, []);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+});
+
+/** A store in memory, as Postgres would keep it, that can be told to fail. */
+class FakeStore implements MarketStore {
+  sales: SaleRecord[] = [];
+  bids: BidRecord[] = [];
+  cursor: string | null = null;
+  failNext = false;
+  async load() {
+    return { sales: [...this.sales].reverse(), bids: [...this.bids].reverse(), cursor: this.cursor };
+  }
+  async record(signature: string, sales: readonly SaleRecord[], bids: readonly BidRecord[]) {
+    if (this.failNext) {
+      this.failNext = false;
+      throw new Error('connection lost');
+    }
+    for (const sale of sales) if (!this.sales.some((kept) => kept.signature === sale.signature && kept.asset === sale.asset)) this.sales.push(sale);
+    for (const entry of bids) if (!this.bids.some((kept) => kept.signature === entry.signature && kept.bidder === entry.bidder)) this.bids.push(entry);
+    this.cursor = signature;
+  }
+}
+
+describe('market history kept between starts', () => {
+  it('goes on from the last transaction read, and reports each sale only once across restarts', async () => {
+    const source = new FakeSource();
+    const store = new FakeStore();
+    const [asset, seller, buyer, bidder] = [key(), key(), key(), key()];
+    source.push(inMarket(bid(asset, bidder, 10_000_000n, null)));
+    source.push(inMarket(sold(asset, seller, buyer, 100_000_000n)));
+    const reported: string[] = [];
+    const first = new MarketIndexer({ source, programId: MARKET, store, onSale: (sale) => reported.push(sale.signature) });
+    await first.sync();
+    assert.deepEqual([store.sales.length, store.bids.length, store.cursor], [1, 1, 'sig1']);
+
+    // A new process: what was kept is served at once, and only the new transaction is fetched.
+    source.push(inMarket(bid(asset, buyer, 20_000_000n, null)));
+    const lookups = source.lookups;
+    const second = new MarketIndexer({ source, programId: MARKET, store, onSale: (sale) => reported.push(sale.signature) });
+    await second.sync();
+    assert.equal(source.lookups - lookups, 1);
+    const { sales, bids } = second.activity();
+    assert.deepEqual(sales.map((sale) => sale.signature), ['sig1']);
+    assert.deepEqual(bids.map((entry) => entry.amountLamports), ['20000000', '10000000']);
+    assert.deepEqual(reported, ['sig1'], 'the sale of the first process is not reported again');
+  });
+
+  it('keeps everything with a store, and only the newest without one', async () => {
+    const source = new FakeSource();
+    const asset = key();
+    for (let index = 0; index < 5; index += 1) source.push(inMarket(sold(asset, key(), key(), BigInt(index + 1))));
+    const bounded = new MarketIndexer({ source, programId: MARKET, limit: 3 });
+    await bounded.sync();
+    assert.equal(bounded.activity().sales.length, 3);
+    const kept = new MarketIndexer({ source, programId: MARKET, limit: 3, store: new FakeStore() });
+    await kept.sync();
+    assert.equal(kept.activity().sales.length, 5);
+  });
+
+  it('lists nothing it could not keep, and reads that transaction again next time', async () => {
+    const source = new FakeSource();
+    const store = new FakeStore();
+    source.push(inMarket(sold(key(), key(), key(), 5n)));
+    const reported: string[] = [];
+    const indexer = new MarketIndexer({ source, programId: MARKET, store, onSale: (sale) => reported.push(sale.signature) });
+    store.failNext = true;
+    await assert.rejects(indexer.sync(), /connection lost/);
+    assert.deepEqual([indexer.activity().sales, reported, store.cursor], [[], [], null]);
+    await indexer.sync();
+    assert.deepEqual([indexer.activity().sales.length, reported, store.cursor], [1, ['sig0'], 'sig0']);
+  });
+
+  it('starts without a database, or with one that does not answer', async () => {
+    const said: string[] = [];
+    const log = { log: (line: string) => said.push(line), warn: (line: string) => said.push(line) };
+    assert.equal(await openMarketStore(undefined, MARKET, log), undefined);
+    assert.equal(await openMarketStore('postgres://bas:secret-word@127.0.0.1:1/bas', MARKET, log), undefined);
+    assert.match(said[0] ?? '', /DATABASE_URL is not set/);
+    assert.match(said[1] ?? '', /Cannot reach Postgres at 127\.0\.0\.1:1/);
+    assert.ok(said.every((line) => !line.includes('secret-word')));
+  });
+});
+
+const databaseUrl = process.env.BAS_TEST_DATABASE_URL;
+
+describe('market history in Postgres', { skip: databaseUrl ? false : 'set BAS_TEST_DATABASE_URL to run the Postgres tests' }, () => {
+  it('keeps sales, bids and the cursor of one program, newest first, with lamports exact', async () => {
+    const pool = createPool(databaseUrl ?? 'postgres://unused');
+    try {
+      await migrate(pool);
+      const program = key();
+      const store = new PgMarketStore(pool, program);
+      assert.deepEqual(await store.load(), { sales: [], bids: [], cursor: null });
+
+      const [asset, seller, buyer] = [key(), key(), key()];
+      const big = '18446744073709551615';
+      const firstBid: BidRecord = { signature: 'a', asset, bidder: buyer, amountLamports: '10000000', previousBidder: null, at: SEASON_START };
+      const secondBid: BidRecord = { signature: 'b', asset, bidder: seller, amountLamports: big, previousBidder: buyer, at: SEASON_START + 1 };
+      const sale: SaleRecord = { signature: 'c', asset, seller, buyer: seller, priceLamports: big, sellerLamports: '17524406870024074035', kind: 'auction', at: SEASON_START + 2 };
+      await store.record('a', [], [firstBid]);
+      await store.record('b', [], [secondBid]);
+      await store.record('c', [sale], []);
+      await store.record('c', [sale], []);
+      await store.record('d', [], []);
+
+      assert.deepEqual(await store.load(), { sales: [sale], bids: [secondBid, firstBid], cursor: 'd' });
+      assert.deepEqual(await new PgMarketStore(pool, key()).load(), { sales: [], bids: [], cursor: null }, 'another program has its own history');
+    } finally {
+      await pool.end();
     }
   });
 });

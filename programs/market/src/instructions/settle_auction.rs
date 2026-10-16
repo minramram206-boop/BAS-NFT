@@ -21,7 +21,7 @@ pub struct SettleAuction<'info> {
     )]
     pub auction: Account<'info, Auction>,
 
-    /// CHECK: the auction's asset; thawed and, after a sale, transferred by Core.
+    /// CHECK: the auction's asset; handed to the winner or back to the seller by Core.
     #[account(mut, address = auction.asset @ MarketError::InvalidAsset)]
     pub asset: UncheckedAccount<'info>,
 
@@ -45,7 +45,7 @@ pub struct SettleAuction<'info> {
     #[account(mut, address = config.fee_recipient @ MarketError::InvalidConfig)]
     pub fee_recipient: UncheckedAccount<'info>,
 
-    /// CHECK: PDA with no data; the asset's transfer and freeze delegate.
+    /// CHECK: PDA with no data; holds the asset (or, for an older auction, is its delegate).
     #[account(seeds = [AUTHORITY_SEED], bump = config.authority_bump)]
     pub market_authority: UncheckedAccount<'info>,
 
@@ -62,13 +62,14 @@ pub struct SettleAuction<'info> {
 
 impl<'info> SettleAuction<'info> {
     /// After the end: the asset goes to the highest bidder and the bid is
-    /// split between seller, royalty and fee, or, without a bid, the asset is
-    /// simply thawed. Works while the market is paused, so no bid can be held
-    /// forever.
+    /// split between seller, royalty and fee, or, without a bid, the asset goes
+    /// back to the seller. Works while the market is paused, so no bid can be
+    /// held forever.
     ///
-    /// When the market can no longer deliver the asset (the seller revoked a
-    /// delegate), the highest bid is paid back instead, and this may run before
-    /// the end so the bidder does not wait for it.
+    /// An auction started before the market held its asset keeps its older
+    /// path: the asset is thawed in the seller's wallet, and when the market
+    /// can no longer deliver it (the seller revoked a delegate), the highest
+    /// bid is paid back instead, which may happen before the end.
     pub fn process(ctx: Context<Self>) -> Result<()> {
         let accounts = &ctx.accounts;
         let auction = &accounts.auction;
@@ -81,6 +82,7 @@ impl<'info> SettleAuction<'info> {
         } else {
             None
         };
+        let held = asset.is_some_and(|asset| Auction::held_by_market(&asset, authority));
         let deliverable = asset.is_some_and(|asset| auction.can_deliver(&asset, authority));
         require!(
             now >= auction.ends_at || (auction.has_bids() && !deliverable),
@@ -154,6 +156,18 @@ impl<'info> SettleAuction<'info> {
                 event.delivered = true;
             }
             Some(winner) => move_lamports(&auction_info, winner, price)?,
+            None if held => core_asset::transfer(
+                TransferAccounts {
+                    core_program: &accounts.core_program,
+                    asset: &accounts.asset,
+                    collection: &accounts.collection,
+                    payer: &accounts.caller,
+                    authority: &accounts.market_authority,
+                    new_owner: &accounts.seller,
+                    system_program: &accounts.system_program,
+                },
+                seeds,
+            )?,
             None => {}
         }
 

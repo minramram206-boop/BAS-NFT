@@ -102,6 +102,7 @@
     "bracket": "{role} · {bracket} bracket (highest stat {score})",
     "ownerYou": "Owner {address} (you)",
     "ownerOther": "Owned by another player",
+    "ownerAuction": "Your auction · held by the market until it ends",
     "statsTitle": "STATS",
     "statsRule": "Max 10 · tiers at 3, 6 and 10",
     "tier": "Tier {tier}",
@@ -922,7 +923,7 @@
       },
       {
         "title": "Or let them bid",
-        "text": "An auction runs for one to three days and the highest bid wins. Anyone who is outbid gets their SOL back at once."
+        "text": "An auction runs for one to three days and the highest bid wins. The market holds the citizen meanwhile, and anyone who is outbid gets their SOL back at once."
       }
     ],
     "yourTab": "YOUR CITIZENS",
@@ -1019,7 +1020,7 @@
     "startPriceLabel": "Starting bid in SOL",
     "durationLabel": "Runs for",
     "rowAtStart": "If it sells at the starting bid",
-    "auctionNoteFrozen": "The citizen stays in your wallet but is frozen until the auction is finished: it cannot be listed, sent or sold anywhere else. You can still chat, train and take missions with it.",
+    "auctionNoteHeld": "The market holds the citizen until the auction is finished, so you cannot chat, train or take missions with it meanwhile. It comes back if nobody bids.",
     "auctionNoteCancel": "You can cancel only until the first bid. After that the auction runs to its end and the highest bid wins.",
     "auctionNoteLate": "A bid in the last {window} adds {window}, so others get the chance to answer it.",
     "testClockNote": "Test clock: on this network one auction hour lasts {hour}, so auctions end in minutes.",
@@ -1040,7 +1041,7 @@
     "mineBids": "Someone has bid, so the auction runs to its end.",
     "claimNote": "You won {name} for {price}. Claiming moves it into your wallet and pays the seller in the same step; you pay only the network fee.",
     "collectNote": "{name} sold for {price}. Collecting pays you {amount} after the {percent} royalty and moves the citizen to the winner in the same step.",
-    "takeBackNote": "Nobody bid on {name}. Taking it back unfreezes it in your wallet.",
+    "takeBackNote": "Nobody bid on {name}. Taking it back returns it to your wallet.",
     "refundNote": "The seller stopped this auction, so {name} cannot be delivered. Take your bid of {price} back.",
     "closeNote": "You stopped this auction, so {name} cannot be delivered. Ending it pays the highest bid of {price} back and unfreezes {name}.",
     "waitingNote": "This auction has ended. The winner claims the citizen or the seller collects the payment, and either one completes it for both.",
@@ -1048,7 +1049,7 @@
     "previewBid": "PREVIEW: ANOTHER PLAYER BIDS",
     "previewEnd": "PREVIEW: SKIP TO THE END",
     "auctionStartedTitle": "AUCTION OPEN",
-    "auctionStartedMessage": "{name} is up for auction from {price} for {time}. It stays with you, frozen, until the auction is finished.",
+    "auctionStartedMessage": "{name} is up for auction from {price} for {time}. The market holds it until the auction is finished.",
     "bidPlacedTitle": "BID PLACED",
     "bidPlacedMessage": "You lead the auction for {name} at {price}. If someone bids more, your SOL comes back at once.",
     "historyTab": "BID HISTORY",

@@ -166,7 +166,7 @@ export const SellDialog: React.FC<{ citizenId: number; onClose: () => void }> = 
 
         {auction ? (
           <>
-            <p className="m-0 text-[14px] leading-snug text-[#33485c]">{copy.auctionNoteFrozen}</p>
+            <p className="m-0 text-[14px] leading-snug text-[#33485c]">{copy.auctionNoteHeld}</p>
             <p className="m-0 text-[14px] leading-snug text-[#33485c]">{copy.auctionNoteCancel}</p>
             <p className="m-0 text-[14px] leading-snug text-[#33485c]">
               {formatMessage(copy.auctionNoteLate, { window: clockSpan(market.auctionClock.extensionSeconds) })}

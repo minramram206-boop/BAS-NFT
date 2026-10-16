@@ -47,14 +47,19 @@ function statusOf(market: ReturnType<typeof useMarket>, id: number): { text: str
   return { text: copy.notListed, active: false };
 }
 
-/** The wallet's SOL and its citizens, each with the way to sell it or manage its listing or auction. */
+/**
+ * The wallet's SOL and its citizens, each with the way to sell it or manage
+ * its listing or auction. A citizen the wallet put up for auction is held by
+ * the market until the auction is over, but it is still listed here.
+ */
 const YourCitizens: React.FC<{ onSell: (id: number) => void; onAuction: (id: number) => void }> = ({ onSell, onAuction }) => {
   const market = useMarket();
   const citizens = useCitizens();
   const owned = useOwnedIds();
   const wallet = useWallet();
   const mode = useDataMode();
-  const mine = owned.flatMap((id) => citizens.filter((citizen) => citizen.id === id));
+  const auctioned = market.auctions.filter((auction) => auction.sellerIsMe).map((auction) => auction.citizenId);
+  const mine = citizens.filter((citizen) => owned.includes(citizen.id) || auctioned.includes(citizen.id));
 
   return (
     <Panel title={copy.yourTab} icon="/icons/icon_citizens_group.png">
@@ -264,7 +269,6 @@ export const MarketScreen: React.FC = () => {
                       <AuctionCard
                         key={auction.citizenId}
                         auction={auction}
-                        mine={(owned as readonly number[]).includes(auction.citizenId)}
                         now={now}
                         onOpen={openAuction}
                       />

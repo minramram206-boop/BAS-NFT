@@ -47,17 +47,17 @@ export function auctionAction(stage: AuctionStage, mine: boolean, leading: boole
 /** One citizen up for auction: who it is, the bid to beat, the time left and the way to act on it. */
 export const AuctionCard: React.FC<{
   auction: MarketAuction;
-  mine: boolean;
   now: number | null;
   onOpen: (citizenId: number) => void;
-}> = ({ auction, mine, now, onOpen }) => {
+}> = ({ auction, now, onOpen }) => {
   const citizen = useCitizen(auction.citizenId);
   const { extensionSeconds } = useMarket().auctionClock;
   if (!citizen) return null;
 
   const ended = now !== null && now >= auction.endsAt;
   const closing = !ended && now !== null && auction.endsAt - now < extensionSeconds;
-  const stage = auctionStage(auction, mine, now);
+  const mine = auction.sellerIsMe;
+  const stage = auctionStage(auction, now);
   const action = auctionAction(stage, mine, auction.leading);
 
   return (

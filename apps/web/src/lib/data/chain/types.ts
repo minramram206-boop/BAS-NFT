@@ -110,19 +110,17 @@ export interface DistrictTransactions {
     maxPriceLamports: bigint;
     config: Pick<MarketConfigOnChain, 'collection' | 'royaltyRecipient' | 'feeRecipient'>;
   }): Promise<Uint8Array>;
-  /** An unsigned auction: both delegates to the market, then `create_auction`, which freezes the citizen. */
+  /** An unsigned auction: `create_auction`, which hands the citizen to the market until it ends. */
   buildStartAuction(input: {
     seller: string;
     asset: string;
     startPriceLamports: bigint;
     durationHours: number;
-    transferDelegate: CorePluginAuthority | null;
-    freezeDelegate: CorePluginAuthority | null;
     staleListingSeller: string | null;
   }): Promise<Uint8Array>;
   /** `place_bid`, naming the current highest bidder so the program can pay them back. */
   buildPlaceBid(input: { bidder: string; asset: string; amountLamports: bigint; previousBidder: string | null }): Promise<Uint8Array>;
-  /** `cancel_auction`, then both delegates back to the seller while the market holds them. */
+  /** `cancel_auction`, which hands the citizen back; for an older auction, also the delegates the market still holds. */
   buildCancelAuction(input: {
     seller: string;
     asset: string;

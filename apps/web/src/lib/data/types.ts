@@ -150,8 +150,9 @@ export interface MarketBid {
 }
 
 /**
- * A citizen up for auction (D-0087). It stays in the seller's wallet, frozen,
- * until someone finishes the auction after it ends.
+ * A citizen up for auction (D-0087). The market holds it (D-0092) until the
+ * seller cancels before the first bid, or someone finishes the auction after
+ * it ends.
  */
 export interface MarketAuction {
   readonly citizenId: number;
@@ -173,8 +174,14 @@ export interface MarketAuction {
   /** The connected wallet holds the highest bid. */
   readonly leading: boolean;
   /**
-   * False once the seller took the market's right to move the citizen back.
-   * No bid is taken then, and finishing the auction pays the highest bid back.
+   * The connected wallet started this auction. The market holds the citizen
+   * until it ends, so it is not among the wallet's own citizens meanwhile.
+   */
+  readonly sellerIsMe: boolean;
+  /**
+   * False only for an auction from before the market held its citizen, once
+   * the seller took the market's right to move it back. No bid is taken
+   * then, and finishing the auction pays the highest bid back.
    */
   readonly deliverable: boolean;
 }
@@ -340,7 +347,7 @@ export interface DistrictDataSource {
   cancelListing(citizenId: number): Promise<DistrictActionResult>;
   /** Pay the asking price and take the citizen, in one step: either both happen or neither. */
   buyCitizen(citizenId: number): Promise<DistrictActionResult>;
-  /** Put an owned citizen up for auction. It stays in the wallet, frozen, until the auction is finished. */
+  /** Put an owned citizen up for auction. The market holds it until the auction is cancelled or finished. */
   auctionCitizen(citizenId: number, startPriceLamports: bigint, durationHours: number): Promise<DistrictActionResult>;
   /** Bid on an auction. The SOL is held by the market and comes back in full when someone bids more. */
   placeBid(citizenId: number, amountLamports: bigint): Promise<DistrictActionResult>;

@@ -23,7 +23,7 @@
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{
     instruction::{AccountMeta, Instruction},
-    program::invoke_signed,
+    program::{invoke, invoke_signed},
 };
 
 use crate::errors::MarketError;
@@ -317,6 +317,36 @@ pub fn transfer(accounts: TransferAccounts, authority_seeds: &[&[u8]]) -> Result
             accounts.core_program.clone(),
         ],
         &[authority_seeds],
+    )?;
+    Ok(())
+}
+
+/// `TransferV1` signed by a wallet that signed the whole transaction, such as
+/// a seller handing a citizen to the market. No program seeds are involved.
+pub fn transfer_by_signer(accounts: TransferAccounts) -> Result<()> {
+    require_keys_eq!(
+        *accounts.core_program.key,
+        MPL_CORE_PROGRAM_ID,
+        MarketError::InvalidAsset
+    );
+    let instruction = transfer_instruction(
+        accounts.asset.key,
+        accounts.collection.key,
+        accounts.payer.key,
+        accounts.authority.key,
+        accounts.new_owner.key,
+    );
+    invoke(
+        &instruction,
+        &[
+            accounts.asset.clone(),
+            accounts.collection.clone(),
+            accounts.payer.clone(),
+            accounts.authority.clone(),
+            accounts.new_owner.clone(),
+            accounts.system_program.clone(),
+            accounts.core_program.clone(),
+        ],
     )?;
     Ok(())
 }

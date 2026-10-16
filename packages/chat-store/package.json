@@ -2,7 +2,7 @@
   "name": "@bas/chat-store",
   "version": "1.0.0",
   "private": true,
-  "description": "Postgres and Redis storage for citizen chat: quota, budget, memory, conversations, locks and job queue",
+  "description": "Postgres and Redis storage for citizen chat (quota, budget, memory, conversations, locks and job queue) and the tables of the market history",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

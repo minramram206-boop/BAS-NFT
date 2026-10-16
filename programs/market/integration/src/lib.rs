@@ -13,7 +13,7 @@ use std::path::Path;
 
 use anchor_lang::{
     solana_program::{bpf_loader_upgradeable, system_instruction, system_program},
-    AccountDeserialize, InstructionData, ToAccountMetas,
+    AccountDeserialize, AccountSerialize, InstructionData, ToAccountMetas,
 };
 use market::{
     core_asset::MPL_CORE_PROGRAM_ID,
@@ -333,63 +333,27 @@ impl World {
     /// refuses to re-point a delegated plugin directly (`CannotRedelegate`).
     pub async fn delegate_ix(&mut self, asset: &Pubkey, owner: &Pubkey, delegate: &Pubkey) -> Vec<Instruction> {
         let core = self.core_asset(asset).await;
+        let collection = collection_of(&core);
         let current = core
             .plugin_list
             .transfer_delegate
             .as_ref()
             .map(|plugin| plugin.base.authority.clone());
-        self.point_plugin_at(&core, asset, owner, delegate, PluginType::TransferDelegate, current)
-    }
-
-    /// Shared by both delegates; `current` is the plugin's authority, if the plugin exists.
-    fn point_plugin_at(
-        &self,
-        core: &Asset,
-        asset: &Pubkey,
-        owner: &Pubkey,
-        delegate: &Pubkey,
-        plugin_type: PluginType,
-        current: Option<mpl_core::BaseAuthority>,
-    ) -> Vec<Instruction> {
-        let collection = collection_of(core);
-        let authority = PluginAuthority::Address { address: *delegate };
-        let approve = || {
-            ApprovePluginAuthorityV1Builder::new()
+        match current {
+            None => vec![AddPluginV1Builder::new()
                 .asset(*asset)
                 .collection(Some(collection))
                 .payer(*owner)
                 .authority(Some(*owner))
-                .plugin_type(plugin_type.clone())
-                .new_authority(authority.clone())
-                .instruction()
-        };
-        match current {
-            None => {
-                let plugin = match plugin_type {
-                    PluginType::FreezeDelegate => Plugin::FreezeDelegate(FreezeDelegate { frozen: false }),
-                    _ => Plugin::TransferDelegate(TransferDelegate {}),
-                };
-                vec![AddPluginV1Builder::new()
-                    .asset(*asset)
-                    .collection(Some(collection))
-                    .payer(*owner)
-                    .authority(Some(*owner))
-                    .plugin(plugin)
-                    .init_authority(authority.clone())
-                    .instruction()]
-            }
+                .plugin(Plugin::TransferDelegate(TransferDelegate {}))
+                .init_authority(PluginAuthority::Address { address: *delegate })
+                .instruction()],
             Some(current) if current.address == Some(*delegate) => vec![],
             Some(current) if current.address.is_some() => vec![
-                RevokePluginAuthorityV1Builder::new()
-                    .asset(*asset)
-                    .collection(Some(collection))
-                    .payer(*owner)
-                    .authority(Some(*owner))
-                    .plugin_type(plugin_type.clone())
-                    .instruction(),
-                approve(),
+                self.revoke_delegate_ix(asset, owner),
+                self.approve_transfer_ix(asset, owner, delegate),
             ],
-            Some(_) => vec![approve()],
+            Some(_) => vec![self.approve_transfer_ix(asset, owner, delegate)],
         }
     }
 
@@ -763,18 +727,6 @@ impl World {
         self.context.set_sysvar(&clock);
     }
 
-    /// The Core instructions a client sends before `create_auction` so the
-    /// market holds an unfrozen FreezeDelegate, by the same rules as `delegate_ix`.
-    pub async fn freeze_delegate_ix(&mut self, asset: &Pubkey, owner: &Pubkey, delegate: &Pubkey) -> Vec<Instruction> {
-        let core = self.core_asset(asset).await;
-        let current = core
-            .plugin_list
-            .freeze_delegate
-            .as_ref()
-            .map(|plugin| plugin.base.authority.clone());
-        self.point_plugin_at(&core, asset, owner, delegate, PluginType::FreezeDelegate, current)
-    }
-
     pub fn create_auction_ix(&self, asset: &Pubkey, seller: &Pubkey, start_price_lamports: u64, duration_hours: u8) -> Instruction {
         Instruction {
             program_id: market::ID,
@@ -798,13 +750,48 @@ impl World {
         }
     }
 
-    /// Both delegates and `create_auction` in one transaction, as the web client sends them.
+    /// `create_auction` alone, as the web client sends it: the market takes the asset.
     pub async fn start_auction(&mut self, asset: &Pubkey, seller: &Keypair, start_price_lamports: u64, duration_hours: u8) -> SendResult {
+        let instruction = self.create_auction_ix(asset, &seller.pubkey(), start_price_lamports, duration_hours);
+        self.send(&[instruction], &[seller]).await
+    }
+
+    /// An auction as the program made them before it held the asset: the
+    /// citizen frozen in the seller's wallet, with both delegates held by the
+    /// market. The program no longer creates these, but the ones still open
+    /// on devnet must settle, so the state is written here directly.
+    pub async fn legacy_auction(&mut self, asset: &Pubkey, seller: &Keypair, start_price_lamports: u64, duration_hours: u8) {
         let authority = self.authority_key();
         let mut instructions = self.delegate_ix(asset, &seller.pubkey(), &authority).await;
-        instructions.extend(self.freeze_delegate_ix(asset, &seller.pubkey(), &authority).await);
-        instructions.push(self.create_auction_ix(asset, &seller.pubkey(), start_price_lamports, duration_hours));
-        self.send(&instructions, &[seller]).await
+        instructions.push(
+            AddPluginV1Builder::new()
+                .asset(*asset)
+                .collection(Some(self.collection))
+                .payer(seller.pubkey())
+                .authority(Some(seller.pubkey()))
+                .plugin(Plugin::FreezeDelegate(FreezeDelegate { frozen: true }))
+                .init_authority(PluginAuthority::Address { address: authority })
+                .instruction(),
+        );
+        self.send(&instructions, &[seller]).await.expect("freeze in the seller's wallet");
+
+        let started_at = self.now().await;
+        let auction = Auction {
+            version: market::constants::AUCTION_VERSION,
+            asset: *asset,
+            seller: seller.pubkey(),
+            start_price_lamports,
+            highest_bid_lamports: 0,
+            highest_bidder: Pubkey::default(),
+            started_at,
+            ends_at: started_at + i64::from(duration_hours) * market::constants::AUCTION_HOUR_SECONDS,
+            bid_count: 0,
+            bump: pda::auction_address(asset).1,
+        };
+        let mut data = Vec::with_capacity(Auction::LEN);
+        auction.try_serialize(&mut data).expect("serialize the auction");
+        let key = self.auction_key(asset);
+        self.install_account(&key, data, market::ID).await;
     }
 
     pub fn bid_ix(&self, asset: &Pubkey, bidder: &Pubkey, amount_lamports: u64, previous_bidder: Option<Pubkey>) -> Instruction {

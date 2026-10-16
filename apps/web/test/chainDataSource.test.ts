@@ -917,21 +917,29 @@ describe('auctions on chain', () => {
     return wallet;
   }
 
-  const held = { kind: 'address', address: MARKET_AUTHORITY };
+  /** The owner's citizen A in an auction from before the market held its citizens. */
+  async function legacyAuctioned(): Promise<Rig> {
+    const r = await rig({ market: 'open' });
+    ok(await r.source.setWallet(r.owner));
+    await r.world.legacyAuction(r.asset.a, START, 24);
+    ok(await r.source.refresh!());
+    return r;
+  }
 
-  it('starts with one signature: the market holds both delegates and the citizen is frozen at home', async () => {
+  it('starts with one signature and the market holds the citizen until it ends', async () => {
     const r = await auctioned();
     try {
       assert.equal(r.owner.prompts.transaction, 1);
       const asset = r.world.find(r.asset.a);
-      assert.deepEqual([asset.owner, asset.frozen, asset.delegate, asset.freeze], [r.owner.address, true, held, held]);
+      assert.deepEqual([asset.owner, asset.frozen], [MARKET_AUTHORITY, false]);
       const [shown] = r.source.snapshot().market.auctions;
       assert.equal(shown?.citizenId, A);
       assert.equal(shown?.highestBidLamports, null);
       assert.equal(shown?.minBidLamports, START);
       assert.equal(shown?.endsAt, SEASON_START + HOUR + 24 * HOUR);
       assert.equal(shown?.deliverable, true);
-      assert.ok(r.source.snapshot().owned.includes(A));
+      assert.equal(shown?.sellerIsMe, true);
+      assert.ok(!r.source.snapshot().owned.includes(A), 'not among the wallet\'s citizens while the market holds it');
       assert.equal(refused(await r.source.listCitizen(A, START)), 'in-auction');
       assert.equal(refused(await r.source.auctionCitizen(A, START, 24)), 'in-auction');
       assert.equal(refused(await r.source.auctionCitizen(C, START, 36)), 'invalid-price');
@@ -999,7 +1007,7 @@ describe('auctions on chain', () => {
       assert.deepEqual(done.market.auctions, []);
 
       const asset = r.world.find(r.asset.a);
-      assert.deepEqual([asset.owner, asset.frozen, asset.delegate, asset.freeze], [winner.address, false, { kind: 'owner' }, { kind: 'owner' }]);
+      assert.deepEqual([asset.owner, asset.frozen], [winner.address, false]);
       assert.equal((r.world.sol.get(r.owner.address) ?? 0n) - sellerBefore, 475_000_000n);
       assert.equal(r.world.sol.get(TREASURY), 25_000_000n);
       assert.equal(done.history[A]?.[0]?.kind, 'sale', 'anyone sees the sale in the public history');
@@ -1059,13 +1067,13 @@ describe('auctions on chain', () => {
     }
   });
 
-  it('cancels until the first bid, thawing the citizen and taking both delegates back', async () => {
+  it('cancels until the first bid, handing the citizen back', async () => {
     const r = await auctioned();
     try {
       const snapshot = ok(await r.source.cancelAuction(A));
       assert.deepEqual(snapshot.market.auctions, []);
-      const asset = r.world.find(r.asset.a);
-      assert.deepEqual([asset.frozen, asset.delegate, asset.freeze], [false, { kind: 'owner' }, { kind: 'owner' }]);
+      assert.equal(r.world.find(r.asset.a).owner, r.owner.address);
+      assert.ok(snapshot.owned.includes(A));
 
       ok(await r.source.auctionCitizen(A, START, 48));
       await bidder(r);
@@ -1147,8 +1155,37 @@ describe('auctions on chain', () => {
     }
   });
 
-  it('pays the bid back at once when the seller takes the right to move the citizen away', async () => {
-    const r = await auctioned();
+  it('still settles an older auction, with the citizen frozen at home, for the winner', async () => {
+    const r = await legacyAuctioned();
+    try {
+      const [shown] = r.source.snapshot().market.auctions;
+      assert.deepEqual([shown?.deliverable, shown?.sellerIsMe], [true, true]);
+      assert.ok(r.source.snapshot().owned.includes(A), 'an older auction leaves the citizen in the wallet');
+      const winner = await bidder(r);
+      ok(await r.source.placeBid(A, START));
+      r.clock.advance(24 * HOUR);
+      ok(await r.source.settleAuction(A));
+      const asset = r.world.find(r.asset.a);
+      assert.deepEqual([asset.owner, asset.frozen, asset.delegate, asset.freeze], [winner.address, false, { kind: 'owner' }, { kind: 'owner' }]);
+    } finally {
+      await r.close();
+    }
+  });
+
+  it('cancels an older auction by thawing the citizen and taking both delegates back', async () => {
+    const r = await legacyAuctioned();
+    try {
+      const snapshot = ok(await r.source.cancelAuction(A));
+      assert.deepEqual(snapshot.market.auctions, []);
+      const asset = r.world.find(r.asset.a);
+      assert.deepEqual([asset.owner, asset.frozen, asset.delegate, asset.freeze], [r.owner.address, false, { kind: 'owner' }, { kind: 'owner' }]);
+    } finally {
+      await r.close();
+    }
+  });
+
+  it('pays the bid back at once when the seller of an older auction takes the right to move the citizen away', async () => {
+    const r = await legacyAuctioned();
     try {
       const first = await bidder(r);
       ok(await r.source.placeBid(A, START));

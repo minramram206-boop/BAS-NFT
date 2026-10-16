@@ -225,7 +225,7 @@ export function createTransactions(options: TransactionsOptions): DistrictTransa
       );
     },
 
-    async buildStartAuction({ seller, asset, startPriceLamports, durationHours, transferDelegate, freezeDelegate, staleListingSeller }) {
+    async buildStartAuction({ seller, asset, startPriceLamports, durationHours, staleListingSeller }) {
       const { programId: marketId, collection } = market();
       return unsigned(
         seller,
@@ -236,8 +236,6 @@ export function createTransactions(options: TransactionsOptions): DistrictTransa
           collection,
           startPriceLamports,
           durationHours: durationHours as AuctionDurationHours,
-          transferDelegate,
-          freezeDelegate,
           staleListingSeller: staleListingSeller ? address(staleListingSeller) : null,
         }),
       );

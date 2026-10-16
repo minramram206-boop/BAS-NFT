@@ -341,9 +341,9 @@ export const ProfileScreen: React.FC<{ id: number }> = ({ id }) => {
   const closeMarketDialog = React.useCallback(() => setMarketDialog(null), []);
   /** Same button as the auction's market card, except that a live auction names the bid to beat. */
   const auctionButton = (current: NonNullable<typeof auction>): { label: string; primary: boolean } => {
-    const stage = auctionStage(current, owned, now);
-    if (stage !== 'live') return auctionAction(stage, owned, current.leading);
-    if (owned) return { label: MESSAGES.market.manage, primary: false };
+    const stage = auctionStage(current, now);
+    if (stage !== 'live') return auctionAction(stage, current.sellerIsMe, current.leading);
+    if (current.sellerIsMe) return { label: MESSAGES.market.manage, primary: false };
     if (current.leading) return { label: MESSAGES.market.youLead, primary: false };
     return { label: formatMessage(MESSAGES.market.profileBid, { price: formatSolExact(current.minBidLamports) }), primary: true };
   };
@@ -383,7 +383,11 @@ export const ProfileScreen: React.FC<{ id: number }> = ({ id }) => {
           })}
         </span>
         <span className="text-[13px] text-[#33485c]">
-          {owned ? formatMessage(copy.ownerYou, { address: wallet.label }) : copy.ownerOther}
+          {owned
+            ? formatMessage(copy.ownerYou, { address: wallet.label })
+            : auction?.sellerIsMe
+              ? copy.ownerAuction
+              : copy.ownerOther}
         </span>
       </div>
       <p className="m-0 border-t-2 border-[#b9c9d8] pt-3 text-[15px] leading-snug text-[#2b3d4f]">{citizen.lore}</p>
