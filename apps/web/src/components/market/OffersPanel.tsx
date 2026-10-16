@@ -101,8 +101,15 @@ export const OffersPanel: React.FC<{
                 <CardHead citizen={citizen} at={newest} now={now} />
                 <div className="bas-inset flex flex-col px-3 py-1">
                   <ReceiptRow label={copy.rowOffers} value={offerCountText(list, now)} />
-                  <ReceiptRow label={copy.rowFrom} value={best ? best.buyer : '—'} />
-                  <ReceiptRow label={copy.rowBestOffer} value={best ? formatSolExact(best.amountLamports) : copy.offerExpired} strong />
+                  {best ? (
+                    <>
+                      <ReceiptRow label={copy.rowFrom} value={best.buyer} />
+                      <ReceiptRow label={copy.rowBestOffer} value={formatSolExact(best.amountLamports)} strong />
+                    </>
+                  ) : (
+                    // Only expired offers: nothing to accept, and each buyer takes the SOL back.
+                    <ReceiptRow label={copy.rowBestOffer} value={copy.offersNoneOpen} />
+                  )}
                 </div>
                 <button type="button" className="bas-btn bas-btn-primary min-h-10" onClick={() => onReview(citizen.id)}>
                   {copy.reviewOffers}

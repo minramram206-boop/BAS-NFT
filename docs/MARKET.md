@@ -455,6 +455,10 @@ someone else refused.
   `getMinimumBalanceForRentExemption` rather than assumed. A new or changed
   offer on the wallet's citizen is a notice (its id carries the time it was
   made); an accepted one is the buyer's notice and the seller's "sold".
+  An offer needs no citizen of the wallet's own. A wallet without one sees
+  the welcome steps in the city; a citizen it taps there gets a card above
+  them with PROFILE and MAKE OFFER (MARKET for one at auction). A wallet with
+  citizens that taps someone else's gets MAKE OFFER in place of MISSIONS.
 - Digits: Pixelify Sans draws 5 almost as S and 2 almost as Z, so text in
   that font takes its digits from Silkscreen, scaled to 88%
   (`BAS Digits` in `globals.css`, `unicode-range` 0-9 only).
@@ -539,8 +543,13 @@ must have run first.
     per wallet on the mission server (D-0096).
 15. Offers (F2): screens and rules in mock mode (D-0097).
 16. Offers on chain (D-0098): the program, its client, the indexer and the
-    chain data source. Next: upgrade devnet and run an offer between two
-    wallets.
+    chain data source. Devnet upgraded on 2026-10-16 (slot 511630123, the
+    program data extended by 65,496 bytes to 583,640). First offer on devnet:
+    `CJkc…t2AK` offered 0.02 SOL for Baker Mabel at 14:27:06 WIB, open for
+    one day of the test clock (4 minutes); the offer account held 0.02114808
+    SOL, the offer plus its rent. `9fd6…WBD8` accepted at 14:29:39: the
+    citizen went to `CJkc…t2AK`, the owner got 0.019 SOL, the royalty 0.001
+    SOL, and the account closed.
 
 ## The auction clock
 

@@ -6,18 +6,24 @@ import type { CitizenRecord } from '@bas/content';
 import { CitizenStats } from '@/components/citizen/CitizenStats';
 import { CitizenRail } from '@/components/citizen/CitizenRail';
 import { NextStepLine } from '@/components/journey/JourneyPanel';
+import { OfferDialog } from '@/components/market/OfferDialog';
 import { ChevronIcon, MinusIcon, PlusIcon, TargetIcon } from '@/components/ui/icons';
 import { STAT_COLORS, STAT_ORDER } from '@/config/constants';
 import type { CityActivity } from '@/game/CityScene';
+import { myOffer } from '@/lib/data/market';
 import { districtName, formatHours, statLabel } from '@/lib/format';
 import { cn } from '@/lib/utils/cn';
 import { usePersistedFlag } from '@/lib/utils/usePersistedFlag';
 import { MESSAGES, formatMessage } from '@/messages';
+import { PickedCitizenCard } from './PickedCitizenCard';
 import { WelcomePanel } from './WelcomePanel';
 import {
+  useAuction,
   useCityMode,
+  useCityPick,
   useFoundingIds,
   useIsOwned,
+  useMarket,
   useMissionProgress,
   useMissions,
   useOwnedIds,
@@ -141,10 +147,25 @@ export const SelectedCitizenPanel: React.FC<{ activity: CityActivity | null; com
   const focus = useRequestFocus();
   const missions = useMissions();
   const progress = useMissionProgress();
-  // A wallet without a citizen has nothing to select yet; tell it where to start instead of leaving the sidebar empty.
-  // A newcomer sees the way in and nothing else: no roster to browse and no citizen to play as.
-  if (ownedIds.length === 0) return <WelcomePanel compact={compact} />;
+  const picked = useCityPick();
+  const market = useMarket();
+  const auction = useAuction(citizen?.id ?? -1);
+  const [offering, setOffering] = React.useState(false);
+  // A wallet without a citizen has nothing to play as yet; tell it where to start instead of leaving the sidebar empty.
+  // A citizen it taps in the city is shown too, so it can make an offer without minting first.
+  if (ownedIds.length === 0) {
+    if (picked === null) return <WelcomePanel compact={compact} />;
+    if (compact) return <PickedCitizenCard citizenId={picked} />;
+    return (
+      <div className="pointer-events-auto flex w-full flex-col gap-3">
+        <PickedCitizenCard citizenId={picked} />
+        <WelcomePanel />
+      </div>
+    );
+  }
   if (!citizen) return null;
+  // Someone else's citizen: an offer is the useful next step; an auctioned one is bid on from the market.
+  const canOffer = !owned && market.offersOpen && !auction;
 
   const missionEntry = Object.entries(progress).find(([, value]) => value.citizenId === citizen.id);
   const mission = missionEntry ? missions.find((item) => item.id === missionEntry[0]) : undefined;
@@ -162,9 +183,16 @@ export const SelectedCitizenPanel: React.FC<{ activity: CityActivity | null; com
       <Link href={`/citizen/${citizen.id}`} className="bas-btn">
         {MESSAGES.city.profile}
       </Link>
-      <Link href="/missions" className="bas-btn">
-        {MESSAGES.city.missions}
-      </Link>
+      {canOffer ? (
+        <button type="button" className="bas-btn" onClick={() => setOffering(true)}>
+          {myOffer(market.offers, citizen.id) ? MESSAGES.market.changeOffer : MESSAGES.market.makeOffer}
+        </button>
+      ) : (
+        <Link href="/missions" className="bas-btn">
+          {MESSAGES.city.missions}
+        </Link>
+      )}
+      {offering && <OfferDialog citizenId={citizen.id} onClose={() => setOffering(false)} />}
       {owned && (
         <Link href="/training" className="bas-btn bas-btn-primary">
           {MESSAGES.city.train}

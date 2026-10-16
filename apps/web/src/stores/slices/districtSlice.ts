@@ -113,6 +113,12 @@ export function createDistrictSlice(options: CreateBasStoreOptions, set: SetStat
       set({ selectedCitizenId: id });
     },
 
+    cityPick: null,
+    pickFromCity: (id) => {
+      set({ cityPick: id });
+      if (id !== null) get().selectCitizen(id);
+    },
+
     mintCitizen: async () => {
       const drawn: { id: number | null } = { id: null };
       const next = await run(async () => {

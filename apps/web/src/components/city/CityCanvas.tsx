@@ -59,7 +59,7 @@ export const CityCanvas: React.FC<CityCanvasProps> = ({ onActivity }) => {
       selectedId: state.selectedCitizenId,
       mode: state.cityMode,
       labels: LABELS,
-      onSelect: (id) => api.getState().selectCitizen(id),
+      onSelect: (id) => api.getState().pickFromCity(id),
       onBlocked: (district) => {
         const current = api.getState();
         const citizen = current.citizens.find((item) => item.id === current.selectedCitizenId);

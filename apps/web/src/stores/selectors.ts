@@ -95,6 +95,8 @@ export const useSetFocus = () => useSlice((state) => state.setFocus);
 
 /** Actions are stable references, safe to select individually. */
 export const useSelectCitizen = () => useSlice((state) => state.selectCitizen);
+export const useCityPick = () => useSlice((state) => state.cityPick);
+export const usePickFromCity = () => useSlice((state) => state.pickFromCity);
 export const useTrainStat = () => useSlice((state) => state.trainStat);
 export const useStartMission = () => useSlice((state) => state.startMission);
 export const useAdvanceMission = () => useSlice((state) => state.advanceMission);

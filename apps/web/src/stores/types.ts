@@ -56,6 +56,12 @@ export interface DistrictSlice extends Omit<DistrictSnapshot, 'citizens'> {
   /** Result of the last action, shown by the screen that started it. */
   lastError: DistrictActionError | null;
   selectCitizen: (id: number) => void;
+  /**
+   * The citizen last tapped in the city, so a wallet without a citizen of its
+   * own can see who that is and make an offer. `null` once the card is closed.
+   */
+  cityPick: number | null;
+  pickFromCity: (id: number | null) => void;
   /** Mint one citizen and select it; resolves to its id, or `null` when the mint was refused. */
   mintCitizen: () => Promise<number | null>;
   trainStat: (stat: StatKey, targetElement?: HTMLElement | null) => Promise<boolean>;
