@@ -20,6 +20,7 @@ import {
   priceProblem,
   shownAuctions,
   shownListings,
+  shownSales,
   solInputText,
   splitSale,
   suggestedBid,
@@ -223,6 +224,9 @@ describe('the preview market', () => {
       assert.equal(after.market.listings.some((item) => item.citizenId === MILO), false);
       assert.deepEqual(after.history[MILO]?.[0], { day: after.season.day, kind: 'sale', priceLamports: 450_000_000n });
       assert.equal(after.history[MILO]?.at(-1)?.kind, 'register', 'the registration stays at the start of its history');
+      const [sale] = after.market.sales;
+      assert.deepEqual(sale && [sale.citizenId, sale.kind, sale.priceLamports, sale.buyerIsMe, sale.bids.length], [MILO, 'fixed', 450_000_000n, true, 0]);
+      assert.equal(after.market.sales.length, before.market.sales.length + 1);
     });
 
     it('brings the citizen with its scores and credits', async () => {
@@ -426,6 +430,18 @@ describe('auction rules', () => {
     assert.deepEqual(auctionNotices([auction({ leading: true })], [], null), [], 'no notice before the clock is known');
   });
 
+  it('shows the finished sales of a role, newest first as they came', () => {
+    const { market, citizens } = source().snapshot();
+    assert.ok(market.sales.length >= 2, 'the preview opens with sales of other players');
+    assert.deepEqual(shownSales(market.sales, citizens, 'all'), market.sales);
+    const roleOf = (id: number) => citizens.find((citizen) => citizen.id === id)?.roleKey;
+    const role = roleOf(market.sales[0]?.citizenId ?? 0);
+    assert.ok(role);
+    assert.ok(shownSales(market.sales, citizens, role).every((sale) => roleOf(sale.citizenId) === role));
+    const auctionSale = market.sales.find((sale) => sale.kind === 'auction');
+    assert.equal(auctionSale?.bids[0]?.amountLamports, auctionSale?.priceLamports, 'the newest bid of an auction sale is its price');
+  });
+
   it('remembers which notices were shown, newest first and capped', () => {
     const notice = (id: string) => ({ id, kind: 'won', citizenId: 1, priceLamports: 1n }) as const;
     const seen = markNoticesSeen(['old'], [notice('b'), notice('old'), notice('a')]);
@@ -546,6 +562,8 @@ describe('auctions in the preview', () => {
     assert.equal(auctionStage(won, false, auction.endsAt), 'claim', 'the winner is offered the claim');
     assert.ok((await data.settleAuction(id)).ok);
     assert.ok(data.snapshot().owned.includes(id));
+    const [sale] = data.snapshot().market.sales;
+    assert.deepEqual(sale && [sale.citizenId, sale.kind, sale.buyerIsMe, sale.bids[0]?.mine], [id, 'auction', true, true]);
     assert.equal(auctionOf(data, id), undefined);
     assert.equal(data.snapshot().history[id]?.[0]?.kind, 'sale');
 

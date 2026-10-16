@@ -179,6 +179,24 @@ export interface MarketAuction {
   readonly deliverable: boolean;
 }
 
+/** A finished sale: a fixed-price buy, or an auction that delivered its citizen. */
+export interface MarketSale {
+  /** The signature of the transaction that completed it. */
+  readonly id: string;
+  readonly citizenId: number;
+  readonly kind: 'fixed' | 'auction';
+  readonly priceLamports: bigint;
+  /** Shortened addresses. */
+  readonly seller: string;
+  readonly buyer: string;
+  readonly sellerIsMe: boolean;
+  readonly buyerIsMe: boolean;
+  /** Unix seconds. */
+  readonly at: number;
+  /** An auction's bids, newest first, so the first one won. Empty for a fixed-price sale. */
+  readonly bids: readonly MarketBid[];
+}
+
 /** Something that happened to the connected wallet in the market while it was away. */
 export type MarketNotice =
   | {
@@ -214,6 +232,8 @@ export interface MarketSnapshot {
   readonly maxPriceLamports: bigint;
   readonly listings: readonly MarketListing[];
   readonly auctions: readonly MarketAuction[];
+  /** Finished sales, newest first. */
+  readonly sales: readonly MarketSale[];
   /** How long an auction may run, in hours of `auctionClock`. */
   readonly auctionHours: readonly number[];
   /**

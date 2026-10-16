@@ -34,8 +34,15 @@ hours", which lasted exactly 240 seconds (05:17:25 to 05:21:25). `CJLT…ZaY1`
 bid 0.034 SOL, `CJkc…t2AK` 0.04 SOL (the 0.034 went back in the same
 transaction), and `CJLT…ZaY1` 0.045 SOL at 05:20:42, inside the last minute,
 which moved the end to 05:21:42, one minute after that bid, and paid the 0.04
-back. An ended auction is finished by the side that gains from it (D-0090):
-the winner claims the citizen or the seller collects the payment. Sales on
+back. `CJkc…t2AK` finished it at 05:24:07 with the old FINISH button although
+it had been outbid: Baker Mabel went to `CJLT…ZaY1`, unfrozen, the seller got
+0.04275 SOL plus the auction rent, the royalty 0.00225 SOL. An ended auction
+is now finished by the side that gains from it (D-0090): the winner claims the
+citizen or the seller collects the payment. The second fast auction of Baker
+Mabel (`CJLT…ZaY1` selling, won by `CJkc…t2AK` at 0.03 SOL) was finished with
+COLLECT PAYMENT at 06:58:35: the seller got 0.0285 SOL plus the rent, the
+royalty 0.0015 SOL, and the winner the citizen, in that one transaction.
+Finished auctions and sales are listed in the FINISHED tab (D-0091). Sales on
 chain appear in each citizen's public history, and a seller is told when a
 citizen sold. The decision records are D-0082 to D-0090 in `DECISIONS.md`.
 
@@ -308,6 +315,18 @@ recorded bidder, and a paused market that takes no bids but still settles.
   presses first completes it for both, in one transaction. When an auction the
   wallet won or sold ends, the wallet gets an AUCTION ENDED notice, with OPEN
   MARKET on any other screen; the leading bid of an ended auction reads WON.
+- Finished (D-0091): the FINISHED tab holds what has ended, in two parts
+  that never mix: AUCTION RESULTS (the default) and FIXED-PRICE SALES, each
+  newest first and under the role filter. Each card is laid out like the
+  market's receipts: the citizen and the time, then Winner (or Buyer), Seller,
+  Bids and Final price (or Price); an auction result opens its bids under a
+  button across the card. "You" stands for the wallet.
+  A citizen that is on the market again is marked "At auction again" or "For
+  sale again", so an old result is not taken for the one running now. The
+  auction bids They are rebuilt from `/market/activity` by following each bid's
+  `previousBidder` back from the winning bid to the first one, which beat
+  nobody, so bids of an earlier auction of the same citizen never mix in. The
+  list holds what the mission server keeps (the newest 500 sales).
 
 ## Devnet setup
 
@@ -347,7 +366,10 @@ must have run first.
 7. Bid history in the market (D-0088), and the fast devnet auction clock
    (D-0089) so an auction can be finished on devnet within minutes. Deployed
    and tried with Baker Mabel on 2026-10-16.
-8. Claim and collect instead of one FINISH button (D-0090).
+8. Claim and collect instead of one FINISH button (D-0090). Collected on
+   devnet on 2026-10-16.
+9. FINISHED tab: auction results and fixed-price sales apart, with an
+   auction's bids (D-0091).
 
 ## The auction clock
 

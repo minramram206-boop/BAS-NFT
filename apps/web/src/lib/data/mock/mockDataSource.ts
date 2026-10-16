@@ -6,6 +6,7 @@ import { MISSION_POINTS, startBlocker } from '../missions';
 import type {
   DistrictActionError,
   MarketAuction,
+  MarketSale,
   DistrictActionResult,
   DistrictDataSource,
   DistrictSnapshot,
@@ -70,6 +71,7 @@ export function createMockDataSource(options: MockDataSourceOptions): DistrictDa
   });
   const random = options.random ?? Math.random;
   let noticeId = 0;
+  let saleId = 0;
   const today = () => state.season.day;
 
   const fail = (error: DistrictActionError) => ({ ok: false, error }) as const;
@@ -91,6 +93,15 @@ export function createMockDataSource(options: MockDataSourceOptions): DistrictDa
   };
   const withNotice = (notice: DistrictSnapshot['market']['notices'][number] | null) =>
     notice ? [notice, ...state.market.notices] : state.market.notices;
+  /** A finished sale, on top of the market's list. */
+  const withSale = (sale: Omit<MarketSale, 'id' | 'at' | 'sellerIsMe' | 'buyerIsMe'>) => {
+    saleId += 1;
+    const me = state.wallet.label;
+    return [
+      { ...sale, id: `mock-sale-${saleId}`, at: now(), sellerIsMe: sale.seller === me, buyerIsMe: sale.buyer === me },
+      ...state.market.sales,
+    ];
+  };
   /** A citizen that changed hands keeps its registration in its public history, then gains the sale. */
   const soldHistory = (citizenId: number, priceLamports: bigint) => ({
     ...state.history,
@@ -236,7 +247,10 @@ export function createMockDataSource(options: MockDataSourceOptions): DistrictDa
         wallet: { ...state.wallet, solLamports: state.wallet.solLamports - listing.priceLamports },
         owned: [...state.owned, citizenId],
         history: soldHistory(citizenId, listing.priceLamports),
-        market: withListings(state.market.listings.filter((item) => item.citizenId !== citizenId)),
+        market: {
+          ...withListings(state.market.listings.filter((item) => item.citizenId !== citizenId)),
+          sales: withSale({ citizenId, kind: 'fixed', priceLamports: listing.priceLamports, seller: listing.seller, buyer: state.wallet.label, bids: [] }),
+        },
       });
     },
 
@@ -253,7 +267,10 @@ export function createMockDataSource(options: MockDataSourceOptions): DistrictDa
           Object.entries(state.missionProgress).filter(([, progress]) => progress.citizenId !== citizenId),
         ),
         history: soldHistory(citizenId, listing.priceLamports),
-        market: withListings(state.market.listings.filter((item) => item.citizenId !== citizenId)),
+        market: {
+          ...withListings(state.market.listings.filter((item) => item.citizenId !== citizenId)),
+          sales: withSale({ citizenId, kind: 'fixed', priceLamports: listing.priceLamports, seller: state.wallet.label, buyer: 'Kx3p…9Qe', bids: [] }),
+        },
       });
     },
 
@@ -318,9 +335,14 @@ export function createMockDataSource(options: MockDataSourceOptions): DistrictDa
       const auction = auctionOf(citizenId);
       if (!auction) return fail('listing-gone');
       if (now() < auction.endsAt) return fail('auction-live');
-      const market = { ...state.market, auctions: replaceAuction(citizenId, null) };
       const price = auction.highestBidLamports;
-      if (price === null) return commit({ ...state, market });
+      if (price === null) return commit({ ...state, market: { ...state.market, auctions: replaceAuction(citizenId, null) } });
+      const winner = auction.leading ? state.wallet.label : (auction.bids[0]?.bidder ?? 'Kx3p…9Qe');
+      const market = {
+        ...state.market,
+        auctions: replaceAuction(citizenId, null),
+        sales: withSale({ citizenId, kind: 'auction', priceLamports: price, seller: auction.seller, buyer: winner, bids: auction.bids }),
+      };
       if (isMine(auction)) {
         const { proceedsLamports } = splitSale(price, state.market.royaltyBps);
         return commit({

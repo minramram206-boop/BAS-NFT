@@ -7,7 +7,7 @@ import {
 } from '@bas/chain-client/browser';
 import type { CitizenRecord, RoleKey } from '@bas/content';
 import { highestStat } from './districts';
-import type { MarketAuction, MarketBid, MarketListing, MarketNotice, MarketSnapshot } from './types';
+import type { MarketAuction, MarketBid, MarketListing, MarketNotice, MarketSale, MarketSnapshot } from './types';
 
 /**
  * The market as the screens use it (D-0082, D-0087, docs/MARKET.md). The
@@ -115,6 +115,7 @@ export const CLOSED_MARKET: MarketSnapshot = {
   maxPriceLamports: MAX_PRICE_LAMPORTS,
   listings: [],
   auctions: [],
+  sales: [],
   auctionHours: AUCTION_HOURS,
   auctionClock: AUCTION_CLOCKS.real,
   notices: [],
@@ -198,6 +199,19 @@ export function shownAuctions(
       return citizen !== undefined && (role === 'all' || citizen.roleKey === role);
     })
     .sort((a, b) => a.endsAt - b.endsAt);
+}
+
+/** The finished sales of citizens that match the role filter, newest first as they came. */
+export function shownSales(
+  sales: readonly MarketSale[],
+  citizens: readonly CitizenRecord[],
+  role: RoleFilter,
+): readonly MarketSale[] {
+  const byId = new Map(citizens.map((citizen) => [citizen.id, citizen]));
+  return sales.filter((sale) => {
+    const citizen = byId.get(sale.citizenId);
+    return citizen !== undefined && (role === 'all' || citizen.roleKey === role);
+  });
 }
 
 /** Notice ids one browser remembers per wallet; the oldest are forgotten first. */

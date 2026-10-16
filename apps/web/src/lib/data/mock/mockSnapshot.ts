@@ -8,6 +8,7 @@ import type {
   LeaderboardEntry,
   MarketAuction,
   MarketListing,
+  MarketSale,
   MissionDefinition,
   StatCredits,
 } from '../types';
@@ -53,6 +54,41 @@ const MOCK_LISTINGS: readonly MarketListing[] = [
   { citizenId: 8, seller: '3mRt…Wq2', priceLamports: 1_200_000_000n, listedDay: 9 },
   { citizenId: 11, seller: 'H2vN…x5T', priceLamports: 2_400_000_000n, listedDay: 12 },
 ];
+
+/**
+ * Sales other players finished before the preview starts: Ivy won at auction
+ * and Milo bought at a fixed price, each by the wallet that lists it again now.
+ */
+function mockSales(nowSeconds: number): MarketSale[] {
+  const hoursAgo = (hours: number) => nowSeconds - Math.round(hours * 3_600);
+  const bid = (bidder: string, amountLamports: bigint, hours: number) => ({ bidder, amountLamports, at: hoursAgo(hours), mine: false });
+  return [
+    {
+      id: 'mock-sale-auction-19',
+      citizenId: 19,
+      kind: 'auction',
+      priceLamports: 550_000_000n,
+      seller: 'Q6aY…r1D',
+      buyer: '3mRt…Wq2',
+      sellerIsMe: false,
+      buyerIsMe: false,
+      at: hoursAgo(5),
+      bids: [bid('3mRt…Wq2', 550_000_000n, 5.2), bid('Hd4r…L8m', 500_000_000n, 9), bid('3mRt…Wq2', 420_000_000n, 20)],
+    },
+    {
+      id: 'mock-sale-fixed-3',
+      citizenId: 3,
+      kind: 'fixed',
+      priceLamports: 380_000_000n,
+      seller: 'H2vN…x5T',
+      buyer: '9bKd…4Lp',
+      sellerIsMe: false,
+      buyerIsMe: false,
+      at: hoursAgo(30),
+      bids: [],
+    },
+  ];
+}
 
 /**
  * Auctions other players run in the preview, timed from when the preview
@@ -296,6 +332,7 @@ export function createMockSnapshot(
       auctions: mockAuctions(options.nowSeconds).filter(
         (auction) => citizens.some((citizen) => citizen.id === auction.citizenId) && !(owned as readonly number[]).includes(auction.citizenId),
       ),
+      sales: mockSales(options.nowSeconds).filter((sale) => citizens.some((citizen) => citizen.id === sale.citizenId)),
       auctionHours: AUCTION_HOURS,
       auctionClock: AUCTION_CLOCKS.real,
       notices: [],

@@ -5,7 +5,7 @@ import { ROLE_KEYS, ROLE_LABELS } from '@bas/content';
 import { ScreenColumns, ScreenShell } from '@/components/layout/ScreenShell';
 import { PanelTab } from '@/components/ui/PanelTab';
 import { ReceiptRow } from '@/components/ui/ReceiptRow';
-import { MARKET_SORTS, formatSolExact, shownAuctions, shownListings, type MarketSort, type RoleFilter } from '@/lib/data/market';
+import { MARKET_SORTS, formatSolExact, shownAuctions, shownListings, shownSales, type MarketSort, type RoleFilter } from '@/lib/data/market';
 import { cn } from '@/lib/utils/cn';
 import { useNow } from '@/lib/utils/useNow';
 import { MESSAGES, formatMessage } from '@/messages';
@@ -16,11 +16,12 @@ import { BidHistoryPanel } from './BidHistory';
 import { BuyDialog } from './BuyDialog';
 import { ListingCard } from './ListingCard';
 import { SellDialog } from './SellDialog';
+import { FinishedSales } from './FinishedSales';
 
 const copy = MESSAGES.market;
 
 type DialogState = { kind: 'buy' | 'sell' | 'auction'; id: number } | null;
-type Tab = 'listings' | 'auctions';
+type Tab = 'listings' | 'auctions' | 'finished';
 
 const Panel: React.FC<{ title: string; icon?: string; children: React.ReactNode }> = ({ title, icon, children }) => (
   <section className="bas-panel flex flex-col gap-2.5 p-3 md:p-4">
@@ -195,6 +196,16 @@ export const MarketScreen: React.FC = () => {
   const now = useNow();
   const shown = useMemo(() => shownListings(market.listings, citizens, { role, sort }), [market.listings, citizens, role, sort]);
   const auctions = useMemo(() => shownAuctions(market.auctions, citizens, role), [market.auctions, citizens, role]);
+  const sales = useMemo(() => shownSales(market.sales, citizens, role), [market.sales, citizens, role]);
+  const againOf = React.useCallback(
+    (citizenId: number) =>
+      market.auctions.some((auction) => auction.citizenId === citizenId)
+        ? ('auction' as const)
+        : market.listings.some((listing) => listing.citizenId === citizenId)
+          ? ('listed' as const)
+          : null,
+    [market.auctions, market.listings],
+  );
   const close = React.useCallback(() => setDialog(null), []);
   const openAuction = React.useCallback((id: number) => setDialog({ kind: 'auction', id }), []);
 
@@ -227,16 +238,21 @@ export const MarketScreen: React.FC = () => {
           </section>
         ) : (
           <section className="bas-panel flex min-w-0 flex-col gap-3 p-3 md:p-4">
-            <div role="tablist" className="flex gap-1.5">
+            <div role="tablist" className="flex flex-wrap gap-1.5">
               <TabButton active={tab === 'listings'} onClick={() => setTab('listings')}>
                 {copy.listingsTab} · {count}
               </TabButton>
               <TabButton active={tab === 'auctions'} onClick={() => setTab('auctions')}>
                 {copy.auctionsTab} · {auctionCount}
               </TabButton>
+              <TabButton active={tab === 'finished'} onClick={() => setTab('finished')}>
+                {copy.finishedTab} · {market.sales.length}
+              </TabButton>
             </div>
             <Filters role={role} sort={tab === 'listings' ? sort : null} onRole={setRole} onSort={setSort} />
-            {tab === 'auctions' ? (
+            {tab === 'finished' ? (
+              <FinishedSales sales={sales} all={market.sales} now={now} againOf={againOf} />
+            ) : tab === 'auctions' ? (
               auctions.length === 0 ? (
                 <p className="m-0 rounded-md bg-[#f2f6fa] p-3 text-[15px]">
                   {auctionCount === 0 ? copy.emptyAuctions : copy.emptyFilter}

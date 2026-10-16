@@ -1016,6 +1016,49 @@ describe('auctions on chain', () => {
     }
   });
 
+  it('lists a finished auction under the sales with exactly its own chain of bids', async () => {
+    const r = await auctioned();
+    try {
+      // A bid from an earlier auction of the same citizen, by a wallet that bids again now.
+      const first = await bidder(r);
+      r.world.activity.bids.push({
+        signature: 'earlier',
+        asset: r.asset.a,
+        bidder: first.address,
+        amountLamports: '900000000',
+        previousBidder: null,
+        at: SEASON_START,
+      });
+      ok(await r.source.placeBid(A, START));
+      const second = await bidder(r);
+      ok(await r.source.placeBid(A, 525_000_000n));
+      ok(await r.source.setWallet(first));
+      ok(await r.source.placeBid(A, 551_250_000n));
+      r.clock.advance(24 * HOUR);
+      const done = ok(await r.source.settleAuction(A));
+
+      const short = (address: string) => `${address.slice(0, 4)}…${address.slice(-3)}`;
+      const [sale] = done.market.sales;
+      assert.deepEqual(
+        sale && [sale.citizenId, sale.kind, sale.priceLamports, sale.seller, sale.buyer, sale.buyerIsMe, sale.sellerIsMe],
+        [A, 'auction', 551_250_000n, short(r.owner.address), short(first.address), true, false],
+      );
+      assert.deepEqual(
+        sale?.bids.map((bid) => [bid.bidder, bid.amountLamports, bid.mine]),
+        [
+          [short(first.address), 551_250_000n, true],
+          [short(second.address), 525_000_000n, false],
+          [short(first.address), START, true],
+        ],
+        'newest first, ending at the first bid, without the bid of the earlier auction',
+      );
+      const seller = ok(await r.source.setWallet(r.owner));
+      assert.deepEqual(seller.market.sales.map((item) => [item.sellerIsMe, item.buyerIsMe]), [[true, false]]);
+    } finally {
+      await r.close();
+    }
+  });
+
   it('cancels until the first bid, thawing the citizen and taking both delegates back', async () => {
     const r = await auctioned();
     try {

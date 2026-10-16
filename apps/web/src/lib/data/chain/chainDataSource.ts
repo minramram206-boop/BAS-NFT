@@ -19,6 +19,7 @@ import type {
   MarketBid,
   MarketListing,
   MarketNotice,
+  MarketSale,
   MarketSnapshot,
   MissionDefinition,
   MissionProgress,
@@ -282,10 +283,60 @@ export function createChainDataSource(options: ChainDataSourceOptions): ChainDat
       maxPriceLamports: MAX_PRICE_LAMPORTS,
       listings,
       auctions,
+      sales: salesNow(),
       auctionHours: AUCTION_HOURS,
       auctionClock: options.auctionClock ?? AUCTION_CLOCKS.real,
       notices: noticesNow(),
     };
+  };
+
+  /**
+   * The bids of the auction a sale finished, newest first. Every bid names the
+   * bidder it beat, so the chain is followed back from the winning bid to the
+   * first one, which beat nobody. Bids of an earlier auction of the same
+   * citizen are never part of that chain.
+   */
+  const bidChainOf = (sale: MarketActivity['sales'][number]): MarketBid[] => {
+    const me = session?.address ?? null;
+    const candidates = activity.bids.filter((bid) => bid.asset === sale.asset && bid.at <= sale.at);
+    const chain: MarketActivity['bids'][number][] = [];
+    let current = candidates.find((bid) => bid.bidder === sale.buyer && bid.amountLamports === sale.priceLamports);
+    while (current) {
+      chain.push(current);
+      const beaten = current;
+      if (beaten.previousBidder === null) break;
+      current = candidates.find(
+        (bid) =>
+          bid !== beaten &&
+          bid.at <= beaten.at &&
+          bid.bidder === beaten.previousBidder &&
+          BigInt(bid.amountLamports) < BigInt(beaten.amountLamports),
+      );
+    }
+    return chain.map((bid) => ({ bidder: shorten(bid.bidder), amountLamports: BigInt(bid.amountLamports), at: bid.at, mine: bid.bidder === me }));
+  };
+
+  /** Finished sales of roster citizens, newest first, as the server read them. */
+  const salesNow = (): MarketSale[] => {
+    const me = session?.address ?? null;
+    const sales: MarketSale[] = [];
+    for (const sale of activity.sales) {
+      const citizenId = serialOf(sale.asset);
+      if (citizenId === undefined) continue;
+      sales.push({
+        id: sale.signature,
+        citizenId,
+        kind: sale.kind,
+        priceLamports: BigInt(sale.priceLamports),
+        seller: shorten(sale.seller),
+        buyer: shorten(sale.buyer),
+        sellerIsMe: sale.seller === me,
+        buyerIsMe: sale.buyer === me,
+        at: sale.at,
+        bids: sale.kind === 'auction' ? bidChainOf(sale) : [],
+      });
+    }
+    return sales;
   };
 
   /** Serial of a roster citizen by its asset address. */
