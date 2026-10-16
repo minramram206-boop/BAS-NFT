@@ -244,12 +244,15 @@ keys, so everything compiles, but none of them is deployed.
 - **load time** — the file exists, every field is present, non-empty, and
   correctly shaped. A malformed file breaks the build instead of shipping.
 - **launch gate** — `validateProductionReadiness(config)` rejects unresolved
-  critical addresses and reserved placeholder metadata hosts such as
-  `*.invalid` and `example.com`. `findPlaceholderAddresses(config)` reports
-  the address portion, while `findPlaceholderConfiguration(config)` reports
-  both addresses and the approved-template URI prefix. Call these from
-  deployment and release checks, never from rendering. A config test fails if
-  any critical address in either shipped manifest slips past the gate.
+  critical addresses, reserved placeholder metadata hosts such as `*.invalid`
+  and `example.com`, and on any cluster but devnet every address, RPC
+  endpoint or metadata origin copied from `config/devnet.json` (D-0094,
+  `findDevnetReuse`). `findPlaceholderAddresses(config)` reports the address
+  portion, while `findPlaceholderConfiguration(config)` reports all of it.
+  The mission server and chat server call the gate when they start on
+  mainnet, and `next.config.mjs` when the web targets mainnet;
+  `pnpm mainnet:check` prints the list. A config test fails if any critical
+  address in either shipped manifest slips past the gate.
 
 The program enforces the release order itself (SPEC §5.7): only the upgrade
 authority can run `initialize_config`, the district always starts paused, and

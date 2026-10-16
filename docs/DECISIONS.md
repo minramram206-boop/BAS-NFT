@@ -1031,3 +1031,17 @@ bukan untuk mengganti persyaratan yang sudah eksplisit.
 - Batas yang diketahui: `/market/activity` masih mengirim seluruh riwayat pada setiap polling. Untuk 100 citizen ini kecil; pasar yang ramai nanti perlu paging.
 - Komponen terkait: `apps/mission-server`, `packages/chat-store`, `docs/MARKET.md`
 - Menggantikan: batas 500 penjualan dan tawaran yang dicatat di D-0091
+
+## D-0094 — Mainnet tidak boleh memakai nilai tes devnet
+
+- Tanggal: 2026-10-16
+- Status: Approved (pemilik menegaskan bahwa semua yang dipakai sekarang hanya untuk tes, dan mainnet nanti memakai semuanya baru: alamat program, wallet, dan lainnya; lalu meminta pengecekannya dibuat sekarang)
+- Pemilik keputusan: Owner
+- Konteks: Commit `d6b9b9d` ikut mendorong `_to_delete/bas-src.tgz` ke GitHub, dan di dalamnya ada `programs/district/keypair.json`, keypair alamat program district devnet (`82zc…m1Ym`). Program itu sudah ter-deploy di devnet, jadi devnet tidak terpengaruh, tetapi `config/mainnet.json` memakai alamat yang sama. Gerbang peluncuran (`validateProductionReadiness`) hanya menolak alamat placeholder dan satu alamat devnet yang ditulis tangan, dan belum dipanggil dari mana pun selain tes.
+- Keputusan: (1) `findDevnetReuse` menolak, di cluster selain devnet, setiap alamat (semua field alamat, termasuk `marketProgramId`) yang ada di `config/devnet.json` dalam field mana pun, karena satu wallet devnet mengisi beberapa peran. Endpoint RPC dan host metadata devnet juga ditolak. (2) `findPlaceholderConfiguration` dan `validateProductionReadiness` dari `@bas/config` membandingkan dengan manifest devnet secara bawaan; satu field hanya dilaporkan sekali. (3) Mission server dan chat server menolak mulai, dan `next.config.mjs` menolak build atau dev web, bila jaringannya bukan devnet dan gerbangnya belum lulus. (4) `pnpm mainnet:check` mencetak daftar yang masih kurang dan keluar dengan kode 1 selama daftar itu tidak kosong.
+- Alasan: Pengecekan berdasarkan isi manifest devnet ikut berubah sendiri setiap kali devnet diganti, jadi tidak ada daftar tulis tangan yang bisa ketinggalan. Memasang gerbang di tempat yang benar-benar menjalankan mainnet membuat nilai tes tidak bisa ikut terbawa tanpa sengaja.
+- Dampak: `packages/config/src/{readiness,index}.ts`, `packages/config/test/config.test.ts`, `apps/mission-server/src/config.ts`, `apps/chat-server/src/config.ts`, `apps/chat-server/test/config.test.ts`, `apps/web/next.config.mjs`, `scripts/check-mainnet.mjs`, `package.json`, `README.md`, `docs/ARCHITECTURE.md`.
+- Bukti: Tes `@bas/config` 21 lulus: mainnet dengan semua alamat baru lulus; wallet deployer devnet sebagai `missionAuthority`, `marketProgramId` devnet, RPC devnet dan host metadata devnet masing-masing ditolak dengan alasannya; alamat program district hanya dilaporkan sekali; devnet tidak dibandingkan dengan dirinya sendiri. Chat server menolak mainnet dengan manifest saat ini. `NEXT_PUBLIC_SOLANA_NETWORK=mainnet-beta next build` berhenti dengan daftar masalah, sedangkan web devnet tetap jalan. `pnpm mainnet:check` menampilkan 10 hal yang belum siap. Semua `pnpm test` lulus.
+- Batas yang diketahui: `declare_id!` program district dan `Anchor.toml` masih memakai alamat devnet. Saat mainnet disiapkan, program district perlu keypair baru, dan tes yang memastikan alamat itu sama di semua tempat perlu disesuaikan untuk dua cluster.
+- Komponen terkait: `packages/config`, `apps/mission-server`, `apps/chat-server`, `apps/web`
+- Menggantikan: —

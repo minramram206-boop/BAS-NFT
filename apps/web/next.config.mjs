@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import { getNetworkConfig, resolveNetwork, validateProductionReadiness } from '@bas/config';
 
 // The repository keeps one .env at its root, shared with the mission server and the devnet scripts.
 // Next only reads apps/web/.env*, so load the root file here; variables already set win.
@@ -7,6 +8,10 @@ try {
 } catch {
   // No root .env: the defaults in config/*.json apply.
 }
+
+// A mainnet build never goes out with placeholders or with values copied from the devnet tests.
+const network = resolveNetwork();
+if (network !== 'devnet') validateProductionReadiness(getNetworkConfig(network));
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

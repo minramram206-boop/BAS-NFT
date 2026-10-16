@@ -1,5 +1,5 @@
 import { type ChatConfig, loadChatConfig } from '@bas/ai';
-import { type DistrictNetworkConfig, getNetworkConfig } from '@bas/config';
+import { type DistrictNetworkConfig, getNetworkConfig, validateProductionReadiness } from '@bas/config';
 
 export interface ServerConfig {
   readonly network: DistrictNetworkConfig;
@@ -38,6 +38,8 @@ export function loadServerConfig(env: NodeJS.ProcessEnv = process.env): ServerCo
   if (network.cluster === 'mainnet-beta' && (!databaseUrl || !redisUrl)) {
     throw new Error('[chat-server] mainnet needs DATABASE_URL and REDIS_URL');
   }
+  // Mainnet never starts on placeholders or on values copied from the devnet tests.
+  if (network.cluster !== 'devnet') validateProductionReadiness(network);
 
   return {
     network,

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getNetworkConfig, type DistrictNetworkConfig } from '@bas/config';
+import { getNetworkConfig, validateProductionReadiness, type DistrictNetworkConfig } from '@bas/config';
 import { Keypair, PublicKey } from '@solana/web3.js';
 import type { EventWindow, SeasonConfig } from './service.js';
 
@@ -60,6 +60,8 @@ const fromRepoRoot = (file: string): string => resolve(REPO_ROOT, file);
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const network = getNetworkConfig(env.BAS_NETWORK);
+  // Mainnet never starts on placeholders or on values copied from the devnet tests.
+  if (network.cluster !== 'devnet') validateProductionReadiness(network);
   const authority = Keypair.fromSecretKey(
     Uint8Array.from(JSON.parse(readFileSync(fromRepoRoot(required(env, 'MISSION_AUTHORITY_KEYPAIR_FILE')), 'utf8')) as number[]),
   );

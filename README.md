@@ -178,9 +178,13 @@ pnpm devnet:setup                # token mirror, Core collection, initialize, lo
 `pnpm test` fails if `declare_id!`, `Anchor.toml` and the two config files
 disagree. `validateProductionReadiness` keeps throwing for mainnet while any
 critical address is a shipped placeholder (`REPO_PLACEHOLDER_ADDRESSES`) or the
-devnet program id (`DEVNET_ONLY_ADDRESSES`), or while the approved-template URI
-points at a reserved example host. Mainnet gets its own program keypair and a
-real production metadata origin before launch.
+devnet program id (`DEVNET_ONLY_ADDRESSES`), while any address, the RPC or the
+metadata origin is copied from `config/devnet.json` (D-0094), or while the
+approved-template URI points at a reserved example host. Everything on devnet
+is for testing only, so mainnet gets its own program keypairs, wallets,
+collection and metadata origin. The mission server, the chat server and the
+web build refuse to start on mainnet until the gate passes, and
+`pnpm mainnet:check` lists what is still missing.
 
 The mandatory release sequence is in
 [`docs/AGENT_START_HERE.md`](docs/AGENT_START_HERE.md#4-required-delivery-sequence):

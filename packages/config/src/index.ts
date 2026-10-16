@@ -5,12 +5,17 @@ import type { DistrictNetworkConfig, NetworkConfigFile, SupportedNetwork } from 
 
 export type { DistrictNetworkConfig, SupportedNetwork };
 export { NETWORK_CONFIG_FIELDS, NETWORK_CONFIG_FILES, parseNetworkConfig } from './network.js';
+import {
+  findPlaceholderConfiguration as findProblems,
+  validateProductionReadiness as validateReadiness,
+  type ReadinessProblem,
+} from './readiness.js';
+export type { ReadinessProblem };
 export {
   PRODUCTION_CRITICAL_ADDRESS_FIELDS,
   REPO_PLACEHOLDER_ADDRESSES,
+  findDevnetReuse,
   findPlaceholderAddresses,
-  findPlaceholderConfiguration,
-  validateProductionReadiness,
 } from './readiness.js';
 export { isWellFormedPublicKey } from './pubkey.js';
 export { MAX_TEMPLATE_URI_PREFIX_LENGTH, isValidTemplateUriPrefix } from './template-uri.js';
@@ -40,4 +45,20 @@ export function getNetworkConfig(
   const config = cluster === 'mainnet-beta' ? MAINNET_CONFIG : DEVNET_CONFIG;
   const rpcUrl = readRpcOverride(cluster);
   return rpcUrl ? { ...config, rpcUrl } : config;
+}
+
+/** Every value that keeps `config` from launching, checked against `config/devnet.json` by default. */
+export function findPlaceholderConfiguration(
+  config: DistrictNetworkConfig,
+  devnet: DistrictNetworkConfig = DEVNET_CONFIG,
+): ReadinessProblem[] {
+  return findProblems(config, devnet);
+}
+
+/** The launch gate, checked against `config/devnet.json` by default. */
+export function validateProductionReadiness(
+  config: DistrictNetworkConfig,
+  devnet: DistrictNetworkConfig = DEVNET_CONFIG,
+): DistrictNetworkConfig {
+  return validateReadiness(config, devnet);
 }

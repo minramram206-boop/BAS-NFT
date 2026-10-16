@@ -240,6 +240,51 @@ describe('@bas/config', () => {
     assert.ok(!findPlaceholderAddresses(DEVNET_CONFIG).some(({ field }) => field === 'districtProgramId'));
   });
 
+  it('refuses on mainnet any address, RPC or metadata origin copied from the devnet tests', () => {
+    const fresh = (seed: number) => base58Encode(Array.from({ length: 32 }, (_, index) => (seed * 31 + index * 7 + 1) % 256));
+    const mainnet = {
+      ...MAINNET_CONFIG,
+      districtProgramId: fresh(1),
+      marketProgramId: fresh(2),
+      coreCollection: fresh(3),
+      candyMachine: fresh(4),
+      candyGuard: fresh(5),
+      utilityTokenMint: fresh(6),
+      solTreasury: fresh(7),
+      royaltyRecipient: fresh(8),
+      missionAuthority: fresh(9),
+      mintSigner: fresh(10),
+      approvedTemplateUriPrefix: 'https://metadata.basnft.community/templates/7/',
+    };
+    assert.deepEqual(findPlaceholderConfiguration(mainnet), [], 'a mainnet of its own launches');
+    assert.equal(validateProductionReadiness(mainnet), mainnet);
+
+    // The devnet deployer is treasury and royalty recipient there; on mainnet it is refused in any role.
+    const reused = {
+      ...mainnet,
+      missionAuthority: DEVNET_CONFIG.solTreasury,
+      marketProgramId: DEVNET_CONFIG.marketProgramId,
+      rpcUrl: DEVNET_CONFIG.rpcUrl,
+      approvedTemplateUriPrefix: DEVNET_CONFIG.approvedTemplateUriPrefix,
+    };
+    assert.deepEqual(
+      findPlaceholderConfiguration(reused).map(({ field, reason }) => [field, reason]),
+      [
+        ['missionAuthority', 'devnet test value (devnet solTreasury), not valid on mainnet-beta'],
+        ['marketProgramId', 'devnet test value (devnet marketProgramId), not valid on mainnet-beta'],
+        ['rpcUrl', 'devnet RPC endpoint'],
+        ['approvedTemplateUriPrefix', 'devnet metadata origin'],
+      ],
+    );
+    assert.throws(() => validateProductionReadiness(reused), /not launch ready.*marketProgramId/);
+    assert.deepEqual(findPlaceholderConfiguration(DEVNET_CONFIG), [], 'devnet itself is not compared with itself');
+  });
+
+  it('lists a devnet program id once, not as both placeholder and reuse', () => {
+    const fields = findPlaceholderConfiguration(MAINNET_CONFIG).map(({ field }) => field);
+    assert.equal(fields.filter((field) => field === 'districtProgramId').length, 1);
+  });
+
   it('rejects well-formed placeholders by value, not by shape', () => {
     const placeholders = findPlaceholderAddresses(MAINNET_CONFIG);
     assert.ok(

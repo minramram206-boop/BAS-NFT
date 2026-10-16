@@ -22,7 +22,11 @@ describe('server config', () => {
     const base = { BAS_NETWORK: 'mainnet-beta', MISSION_TOKEN_SECRET: secret };
     assert.throws(() => loadServerConfig(base), /DATABASE_URL and REDIS_URL/);
     assert.throws(() => loadServerConfig({ ...base, DATABASE_URL: 'postgres://x' }), /DATABASE_URL and REDIS_URL/);
-    assert.equal(loadServerConfig({ ...base, DATABASE_URL: 'postgres://x', REDIS_URL: 'redis://x' }).network.cluster, 'mainnet-beta');
+  });
+
+  it('refuses mainnet while its manifest holds placeholders or devnet values', () => {
+    const env = { BAS_NETWORK: 'mainnet-beta', MISSION_TOKEN_SECRET: secret, DATABASE_URL: 'postgres://x', REDIS_URL: 'redis://x' };
+    assert.throws(() => loadServerConfig(env), /not launch ready.*districtProgramId/);
   });
 
   it('reads the port and the allowed origins', () => {
