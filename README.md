@@ -4,12 +4,15 @@ Living pixel-art world and citizen progression on Solana. Citizens register in
 District 01, train three attributes, and burn the one official utility token to
 raise a canonical score.
 
-> **Status:** Stage 1–4 of the build order in
-> [`docs/id/TECH_STACK_ID.md`](docs/id/TECH_STACK_ID.md) are partially in place.
-> The web app runs end to end against authored content. The Anchor program
-> compiles and passes its host-side test suites, but it has never been built
-> for BPF, deployed or audited, and every address in `config/*.json` is still a
-> placeholder. Nothing here is launch ready — see [Launch gate](#launch-gate).
+> **Status:** everything runs on devnet and is for testing only. The
+> `district` program (registration, mission credits, token-burn training) and
+> the `market` program (fixed-price sales, offers and auctions) are deployed
+> there; citizens are minted through a Core Candy Machine, missions are
+> checked and signed by `apps/mission-server`, and citizens talk through
+> `apps/chat-server`. Neither program is audited, the season prize vault and
+> clans are not built yet, and mainnet has no addresses of its own. Nothing
+> here is launch ready — see [Launch gate](#launch-gate) and
+> [Known gaps](#known-gaps).
 
 ## Quick start
 
@@ -20,12 +23,22 @@ pnpm install     # also builds the workspace packages (postinstall)
 pnpm dev         # http://localhost:3000
 ```
 
-Two routes:
+Routes:
 
 | Route | Screen |
 | --- | --- |
-| `/` | District 01 plaza — 2.5D courtyard, dialogue panel, registry, agent profile |
-| `/training` | Agent Training Dojo — hero stage, attributes, drills, avatar strip |
+| `/` | District 01 city (Phaser), the selected citizen and the next step |
+| `/missions` | Mission board and the mission being played |
+| `/training` | Training: a credit and `$BAS` raise one stat |
+| `/season` | Season standings by bracket and the prize pool |
+| `/market` | Fixed-price sales, offers, auctions and finished sales |
+| `/mint` | The public sale: one citizen per wallet |
+| `/citizen/[id]` | A citizen's profile, history, chat and market actions |
+
+`pnpm dev` runs the web app on mock data. `pnpm dev:all` starts Postgres and
+Redis in Docker, then the mission server, the chat server, the worker and the
+web app; set `NEXT_PUBLIC_BAS_DATA=chain` in `.env` to play against devnet
+(see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) section 3a).
 
 Useful commands:
 
@@ -90,20 +103,23 @@ copyright notices and OFL license texts are served from
 ## Repository layout
 
 ```text
-apps/web            Next.js 15 App Router application
-apps/mission-server mission rules and claim signing (docs/MISSION_SERVER.md)
-packages/config     typed cluster configuration, read from config/*.json
+apps/web            Next.js 15 App Router application and the Phaser city
+apps/mission-server mission rules, claim signing, mint offers and the market index (docs/MISSION_SERVER.md)
+apps/chat-server    citizen chat through @bas/ai
+apps/worker         background upkeep for chat: summaries and public history lines
+packages/ai         owner-only citizen chat: prompt, reply checks, quota and budget
+packages/chat-store Postgres and Redis storage for chat and the market history, with migrations
+packages/server-kit what the servers share: the wallet bearer token, asset reads, HTTP helpers
+packages/config     typed cluster configuration, read from config/*.json, and the launch gate
 packages/content    content schema, validation, and server-only loaders
-packages/chain-client  typed client for the District program
+packages/chain-client  typed clients for the district and market programs
 packages/metaplex-client  Node-only builders for the Candy Machine sale and the mint transaction
 programs/district   Anchor program (registration, mission credits, token-burn training)
-                    src/instructions/ one module per instruction
-                    src/mpl_core.rs   pinned Metaplex Core membership check
-                    tests/integration/ instruction tests, harness + one file per area
+programs/market     Anchor program (listings, offers, auctions; docs/MARKET.md)
 config/             devnet.json, mainnet.json — the canonical addresses
 content/en/         citizens.json — the authored English roster
-scripts/            check-assets.mjs — the asset guard; gen-metadata.mjs and check-metadata.mjs — NFT metadata
-docs/               product spec, tech stack, prize model, decisions, architecture
+scripts/            asset, metadata and launch checks; scripts/devnet — deploy and setup
+docs/               product spec, tech stack, prize model, decisions, architecture, market
 .github/workflows/  verify.yml — CI
 ```
 
@@ -145,11 +161,11 @@ not measured — latency, sync state — are not displayed at all.
 
 ## Launch gate
 
-`config/*.json` ships placeholder addresses and an example metadata host. The
-addresses are all well-formed 32 byte base58 public keys — `@bas/config` rejects
-anything else at load time, because `declare_id!` parses the program id at
-compile time — but none is deployed or controlled by this project. Readiness
-for launch is a separate check:
+`config/devnet.json` holds the devnet test deployment; `config/mainnet.json`
+still ships placeholder addresses and an example metadata host. Every address
+is a well-formed 32 byte base58 public key — `@bas/config` rejects anything
+else at load time, because `declare_id!` parses the program id at compile
+time. Readiness for launch is a separate check:
 
 ```ts
 import {
@@ -204,32 +220,25 @@ The program enforces that order on chain (D-0016):
 
 ## Known gaps
 
-- By default the web app runs on the mock data source (D-0020) with a mock
-  wallet. The Wallet Standard integration is only active in chain mode (D-0060); `@solana/kit` plus Wallet Standard is the mandated integration.
-- Scores in the browser are presentation state. Only `programs/district` and
-  trusted server logic may write canonical progression.
-- Every instruction that acts on a citizen verifies Metaplex Core collection
-  membership on chain against the pinned Core program id (D-0011, D-0016) and
-  rejects compressed assets. The off-chain adapter from `TECH_STACK_ID.md` §11
-  is `packages/metaplex-client` (D-0061).
-- `programs/district` is built and tested as SBF and runs on a local validator
-  (see Building the program), but it has not been deployed to devnet and has
-  not been audited (SPEC §16). Event payloads from `emit!` are still not
-  asserted by any test.
-- A citizen's role is read from its metadata file name, `<serial>-<role>.json`
-  under the approved template prefix (D-0022), so every metadata file must be
-  named that way before mint. A file without a known role cannot register.
-- The isometric city (Phaser 3, D-0021) and the mission, training, season and
-  profile screens run on mock data. Mission steps are still checked in the browser
-  there; `apps/mission-server` implements the real checks and signs claims
-  (D-0059). The web app can use it: set `NEXT_PUBLIC_BAS_DATA=chain` (D-0060),
-  see `docs/ARCHITECTURE.md` section 3a. Minting goes through a Core Candy Machine
-  in one transaction with `register_citizen` (D-0061); it is unit-tested and checked
-  against the Candy Machine sources but has not yet run on a cluster: run
-  `pnpm devnet:mint-simulate` first. The conversational citizens ("agents", SPEC §3.3)
-  are not started: they come after the devnet end-to-end test and before the
-  mainnet mint opens. `apps/worker` and the remaining packages listed in
-  `TECH_STACK_ID.md` §11 do not exist yet.
+- Devnet only. Every address, wallet and key in use is a test value;
+  mainnet gets its own (D-0094), and `pnpm mainnet:check` lists what is
+  missing.
+- Neither program is audited (SPEC §16). The market holds SOL for auction
+  bids and open offers, so its audit comes before any mainnet use.
+- The season prize vault (D-0019) is not built: the Season screen shows the
+  pool as empty and the vault address as not set. Winners cannot be paid yet.
+- Clans (D-0023) and the Squads multisig that will hold the program
+  authorities (D-0024) are not built or tried yet.
+- `pnpm dev` without `NEXT_PUBLIC_BAS_DATA=chain` runs on mock data with a
+  mock wallet (D-0020); scores there are presentation only. On chain, only
+  `programs/district` and the mission server write progression.
+- Solflare is the wallet tried on devnet; Phantom and Backpack are not tried
+  yet.
+- The roster covers the citizens minted on devnet so far; every metadata file
+  must still be named `<serial>-<role>.json` under the approved template
+  prefix (D-0022) before the mainnet mint.
+- `/market/activity` sends the whole market history on every poll; it needs
+  paging once the market is busy.
 
 Details and the reasoning behind each omission are recorded in
 [`docs/DECISIONS.md`](docs/DECISIONS.md).

@@ -116,6 +116,7 @@ export const useSimulateAuctionEnd = () => useSlice((state) => state.simulateAuc
 export const useMakeOffer = () => useSlice((state) => state.makeOffer);
 export const useWithdrawOffer = () => useSlice((state) => state.withdrawOffer);
 export const useAcceptOffer = () => useSlice((state) => state.acceptOffer);
+export const useCloseExpiredOffers = () => useSlice((state) => state.closeExpiredOffers);
 export const useSimulateOffer = () => useSlice((state) => state.simulateOffer);
 export const useSimulateOfferAccepted = () => useSlice((state) => state.simulateOfferAccepted);
 export const useSetCityMode = () => useSlice((state) => state.setCityMode);

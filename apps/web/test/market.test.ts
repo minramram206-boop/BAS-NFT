@@ -647,6 +647,17 @@ describe('offers in the preview', () => {
     assert.equal(offerSeconds(3, AUCTION_CLOCKS['devnet-fast']), 3 * 24 * 10, 'the test clock shortens offers too');
   });
 
+  it('clears the expired offers on a citizen of the wallet and keeps the open ones', async () => {
+    const { data } = timed();
+    const before = sol(data);
+    assert.ok((await data.closeExpiredOffers(FARMER)).ok);
+    const left = offersOn(data.snapshot().market.offers, FARMER, START);
+    assert.deepEqual(left.map((offer) => offer.amountLamports), [300_000_000n, 250_000_000n]);
+    assert.equal(sol(data), before, 'the SOL was the other buyers\' and went back to them');
+    assert.deepEqual(await data.closeExpiredOffers(FARMER), { ok: false, error: 'offer-gone' });
+    assert.deepEqual(await data.closeExpiredOffers(MILO), { ok: false, error: 'not-owner' });
+  });
+
   it('holds the SOL of an offer, swaps it for a new one, and gives it all back', async () => {
     const { data } = timed();
     const before = sol(data);

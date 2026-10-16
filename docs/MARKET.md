@@ -459,6 +459,9 @@ someone else refused.
   the welcome steps in the city; a citizen it taps there gets a card above
   them with PROFILE and MAKE OFFER (MARKET for one at auction). A wallet with
   citizens that taps someone else's gets MAKE OFFER in place of MISSIONS.
+  The owner's review offers CLEAR EXPIRED OFFERS once offers have run out:
+  one transaction of `close_expired_offer` (up to eight), each buyer's SOL
+  and deposit going back to that buyer, the owner paying only the fee.
 - Digits: Pixelify Sans draws 5 almost as S and 2 almost as Z, so text in
   that font takes its digits from Silkscreen, scaled to 88%
   (`BAS Digits` in `globals.css`, `unicode-range` 0-9 only).

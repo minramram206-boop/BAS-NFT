@@ -406,6 +406,11 @@ export interface DistrictDataSource {
   withdrawOffer(citizenId: number): Promise<DistrictActionResult>;
   /** The owner sells to one offer: the citizen goes to its buyer and the owner is paid, less the royalty. */
   acceptOffer(citizenId: number, offerId: string): Promise<DistrictActionResult>;
+  /**
+   * The owner clears the offers on a citizen that ran out. Each one's SOL goes
+   * back to its buyer; the owner pays only the network fee.
+   */
+  closeExpiredOffers(citizenId: number): Promise<DistrictActionResult>;
   /** Mock only: another player makes an offer on one of the wallet's citizens. */
   simulateOffer?(citizenId: number): Promise<DistrictActionResult>;
   /** Mock only: the owner accepts the wallet's offer on a citizen. */

@@ -7,7 +7,17 @@ import type { MarketOffer } from '@/lib/data/types';
 import { cn } from '@/lib/utils/cn';
 import { useNow } from '@/lib/utils/useNow';
 import { MESSAGES, formatMessage } from '@/messages';
-import { useAcceptOffer, useAuction, useBusy, useCitizen, useDataMode, useIsOwned, useMarket, useSimulateOffer } from '@/stores/selectors';
+import {
+  useAcceptOffer,
+  useAuction,
+  useBusy,
+  useCitizen,
+  useCloseExpiredOffers,
+  useDataMode,
+  useIsOwned,
+  useMarket,
+  useSimulateOffer,
+} from '@/stores/selectors';
 import { CitizenLine, StatTiles } from './CitizenLine';
 import { Note } from './DialogParts';
 import { MarketDialog } from './MarketDialog';
@@ -72,6 +82,7 @@ export const OffersDialog: React.FC<{ citizenId: number; onClose: () => void }> 
   const now = useNow();
   const accept = useAcceptOffer();
   const simulateOffer = useSimulateOffer();
+  const closeExpired = useCloseExpiredOffers();
   const [picked, setPicked] = useState<string | null>(null);
   if (!citizen) return null;
 
@@ -81,6 +92,8 @@ export const OffersDialog: React.FC<{ citizenId: number; onClose: () => void }> 
   // The market holds a citizen at auction, so nobody can sell it another way until the auction is over.
   const acceptable = owned && !auction;
   const split = chosen ? splitSale(chosen.amountLamports, market.royaltyBps) : null;
+  // Offers of other buyers that ran out; the owner may close them so their SOL goes home.
+  const stale = owned ? offers.filter((offer) => offerExpired(offer, now) && !offer.mine).length : 0;
 
   return (
     <MarketDialog title={formatMessage(copy.offersTitle, { name: citizen.name.toUpperCase() })} onClose={onClose}>
@@ -142,6 +155,7 @@ export const OffersDialog: React.FC<{ citizenId: number; onClose: () => void }> 
           <Note>{formatMessage(copy.acceptNote, { name: citizen.name, buyer: chosen.buyer })}</Note>
         </>
       )}
+      {stale > 0 && !chosen && <Note>{copy.clearExpiredNote}</Note>}
       {mode === 'mock' && <p className="m-0 text-[13px] leading-snug text-[#5b6b7a]">{copy.mockNote}</p>}
 
       <div className="grid gap-2">
@@ -157,6 +171,11 @@ export const OffersDialog: React.FC<{ citizenId: number; onClose: () => void }> 
             }
           >
             {busy ? copy.working : copy.confirmAccept}
+          </button>
+        )}
+        {stale > 0 && (
+          <button type="button" className="bas-btn" disabled={busy} onClick={() => void closeExpired(citizenId)}>
+            {stale === 1 ? copy.clearExpiredOne : formatMessage(copy.clearExpired, { count: stale })}
           </button>
         )}
         {mode === 'mock' && owned && (

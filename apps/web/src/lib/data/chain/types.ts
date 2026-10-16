@@ -152,6 +152,8 @@ export interface DistrictTransactions {
     listed: boolean;
     config: Pick<MarketConfigOnChain, 'collection' | 'royaltyRecipient' | 'feeRecipient'>;
   }): Promise<Uint8Array>;
+  /** `close_expired_offer` for each offer, in one transaction paid by `caller`. */
+  buildCloseExpiredOffers(input: { caller: string; offers: readonly { asset: string; buyer: string }[] }): Promise<Uint8Array>;
   /** Sends a signed transaction and resolves with its signature once it is confirmed. */
   send(signed: Uint8Array): Promise<string>;
 }

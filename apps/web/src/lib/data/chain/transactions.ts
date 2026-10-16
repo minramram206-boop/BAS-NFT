@@ -1,6 +1,7 @@
 import {
   acceptOfferInstruction,
   buyInstruction,
+  closeExpiredOfferInstruction,
   cancelAuctionInstructions,
   cancelSaleInstructions,
   listForSaleInstructions,
@@ -298,6 +299,18 @@ export function createTransactions(options: TransactionsOptions): DistrictTransa
           listed,
           config,
         }).then((one) => [one]),
+      );
+    },
+
+    async buildCloseExpiredOffers({ caller, offers }) {
+      const { programId: marketId } = market();
+      return unsigned(
+        caller,
+        Promise.all(
+          offers.map((offer) =>
+            closeExpiredOfferInstruction({ programId: marketId, buyer: address(offer.buyer), asset: address(offer.asset), caller: address(caller) }),
+          ),
+        ),
       );
     },
 

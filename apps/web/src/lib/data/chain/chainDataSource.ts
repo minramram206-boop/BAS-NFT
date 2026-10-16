@@ -156,6 +156,9 @@ const shorten = (address: string): string => `${address.slice(0, 4)}…${address
 
 const SECONDS_PER_DAY = 86_400;
 
+/** Expired offers closed in one transaction; each `close_expired_offer` adds three accounts. */
+const CLOSE_EXPIRED_PER_TRANSACTION = 8;
+
 /** One offer per buyer and citizen, so the two name it; also part of its notice id. */
 const offerIdOf = (offer: { asset: string; buyer: string }): string => `${offer.asset}-${offer.buyer}`;
 
@@ -1005,6 +1008,20 @@ export function createChainDataSource(options: ChainDataSourceOptions): ChainDat
           config,
         }),
       );
+    },
+
+    async closeExpiredOffers(citizenId: number) {
+      // The program lets anyone close an expired offer, also while paused; the screens offer it to the owner.
+      if (!market) return fail('market-closed');
+      const target = ownedAsset(citizenId);
+      if ('error' in target) return fail(target.error);
+      const now = Math.floor(clock() / 1000);
+      const expired = market.offers
+        .filter((offer) => offer.asset === target.asset && offer.buyer !== target.seller && now >= offer.expiresAt)
+        .slice(0, CLOSE_EXPIRED_PER_TRANSACTION)
+        .map((offer) => ({ asset: offer.asset, buyer: offer.buyer }));
+      if (expired.length === 0) return fail('offer-gone');
+      return sendMarket(() => transactions.buildCloseExpiredOffers({ caller: target.seller, offers: expired }));
     },
 
     async buyCitizen(citizenId: number) {

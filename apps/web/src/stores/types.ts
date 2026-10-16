@@ -101,6 +101,7 @@ export interface DistrictSlice extends Omit<DistrictSnapshot, 'citizens'> {
   withdrawOffer: (citizenId: number) => Promise<boolean>;
   /** Sell an owned citizen to one offer; resolves to whether the sale went through. */
   acceptOffer: (citizenId: number, offerId: string) => Promise<boolean>;
+  closeExpiredOffers: (citizenId: number) => Promise<boolean>;
   /** Mock only: another player makes an offer on one of the wallet's citizens. */
   simulateOffer: (citizenId: number) => Promise<void>;
   /** Mock only: the owner accepts the wallet's offer. */

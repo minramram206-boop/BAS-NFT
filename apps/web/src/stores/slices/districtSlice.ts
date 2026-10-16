@@ -418,6 +418,12 @@ export function createDistrictSlice(options: CreateBasStoreOptions, set: SetStat
       return true;
     },
 
+    closeExpiredOffers: async (citizenId) => {
+      const next = await run(() => source.closeExpiredOffers(citizenId));
+      if (next) retroAudio.play('click');
+      return Boolean(next);
+    },
+
     simulateOffer: async (citizenId) => {
       const { simulateOffer } = source;
       if (!simulateOffer) return;

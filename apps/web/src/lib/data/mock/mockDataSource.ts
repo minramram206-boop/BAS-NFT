@@ -444,6 +444,14 @@ export function createMockDataSource(options: MockDataSourceOptions): DistrictDa
       });
     },
 
+    async closeExpiredOffers(citizenId: number) {
+      if (!state.owned.includes(citizenId)) return fail('not-owner');
+      const expired = state.market.offers.filter((offer) => offer.citizenId === citizenId && !offer.mine && offerExpired(offer, now()));
+      if (expired.length === 0) return fail('offer-gone');
+      // The SOL goes back to the other buyers; nothing here belongs to the wallet.
+      return commit({ ...state, market: { ...state.market, offers: state.market.offers.filter((offer) => !expired.includes(offer)) } });
+    },
+
     async simulateOffer(citizenId: number) {
       if (!state.owned.includes(citizenId)) return fail('not-owner');
       const best = bestOffer(state.market.offers, citizenId, now());

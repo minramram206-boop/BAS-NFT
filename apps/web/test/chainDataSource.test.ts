@@ -1372,6 +1372,28 @@ describe('offers on chain', () => {
     }
   });
 
+  it('lets the owner clear expired offers, sending each buyer the SOL and the deposit back', async () => {
+    const r = await rig({ market: 'open' });
+    try {
+      const buyer = await buyerOf(r);
+      ok(await r.source.makeOffer(A, OFFER, 1));
+      ok(await r.source.setWallet(r.owner));
+      assert.equal(refused(await r.source.closeExpiredOffers(A)), 'offer-gone', 'nothing has run out yet');
+      r.clock.advance(DAY);
+      ok(await r.source.refresh());
+      const prompts = r.owner.prompts.transaction;
+      ok(await r.source.closeExpiredOffers(A));
+      assert.equal(r.owner.prompts.transaction, prompts + 1, 'one signature');
+      assert.equal(r.world.sol.get(buyer.address), SOL, 'the buyer has everything back');
+      assert.deepEqual(r.source.snapshot().market.offers, []);
+      assert.equal(r.world.find(r.asset.a).owner, r.owner.address);
+      ok(await r.source.setWallet(buyer));
+      assert.equal(refused(await r.source.closeExpiredOffers(A)), 'not-owner');
+    } finally {
+      await r.close();
+    }
+  });
+
   it('refuses an offer the buyer changed after the owner read it', async () => {
     const r = await rig({ market: 'open' });
     try {
