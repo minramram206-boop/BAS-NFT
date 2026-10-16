@@ -6,6 +6,7 @@ import { MissionError } from './errors.js';
 import type { MarketActivity } from './market.js';
 import { SEEN_NOTICES_LIMIT, type SeenStore } from './market-seen.js';
 import type { MintService } from './mint.js';
+import type { PrizeBook } from './prizes.js';
 import { parseProof } from './rules.js';
 import type { MissionService } from './service.js';
 
@@ -22,6 +23,8 @@ export interface HttpOptions {
   readonly mint?: MintService;
   /** Sales and bids read from the market program. Without it `/market/activity` is empty. */
   readonly market?: { activity(): MarketActivity };
+  /** Published winners of each season. Without it `/season/prizes` has none. */
+  readonly prizes?: Pick<PrizeBook, 'published'>;
   /** Market notices each wallet dismissed. Without it `/market/seen` keeps nothing. */
   readonly seen?: SeenStore;
   /** Origins of the web app; requests from others get no CORS headers. */
@@ -93,6 +96,16 @@ export function createMissionServer(options: HttpOptions): Server {
       const ids = noticeIds(await readBody(request, MAX_SEEN_BODY_BYTES));
       await options.seen?.add(wallet, ids, (options.clock ?? Date.now)());
       return { status: 200, payload: { ids: (await options.seen?.list(wallet)) ?? [] } };
+    }
+
+    // Public like the standings: who won and how much is published on chain as a root anyway.
+    if (method === 'GET' && path === '/season/prizes') {
+      const requested = url.searchParams.get('season');
+      const seasonId = requested === null ? service.season().id : Number(requested);
+      if (!Number.isSafeInteger(seasonId) || seasonId < 1 || seasonId > 0xffff_ffff) {
+        throw new MissionError('bad-request', 'season must be a season number');
+      }
+      return { status: 200, payload: { prizes: (await options.prizes?.published(seasonId)) ?? null } };
     }
 
     if (method === 'GET' && path === '/season/standings') {

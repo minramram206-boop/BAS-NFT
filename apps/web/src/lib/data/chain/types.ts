@@ -5,6 +5,8 @@ import type {
   ListingOnChain,
   MarketConfigOnChain,
   OfferOnChain,
+  PrizeConfigOnChain,
+  SeasonOnChain,
 } from '@bas/chain-client/browser';
 import type { StatKey } from '@bas/content';
 import type { DistrictActionResult, DistrictDataSource, StepProof } from '../types';
@@ -62,6 +64,17 @@ export interface MarketReading {
   readonly offerDepositLamports: bigint;
 }
 
+/** The prize vault and one season's account in it. */
+export interface PrizeReading {
+  readonly vault: string;
+  readonly vaultLamports: bigint;
+  /** What the vault keeps to stay rent exempt; never part of a prize. */
+  readonly vaultRentLamports: bigint;
+  readonly config: PrizeConfigOnChain;
+  /** `null` until the season is funded. */
+  readonly season: SeasonOnChain | null;
+}
+
 /** Reads of the cluster. */
 export interface DistrictReads {
   /** Every asset of the official collection with its district state. */
@@ -71,6 +84,8 @@ export interface DistrictReads {
   sale(wallet: string | null): Promise<SaleReading | null>;
   /** The market, or `null` when this cluster has no market program or its config is not set up. */
   market(): Promise<MarketReading | null>;
+  /** The prize vault with season `seasonId`, or `null` when this cluster has none or it is not opened yet. */
+  prize(seasonId: number): Promise<PrizeReading | null>;
 }
 
 /** What a connected wallet can do. Both calls may be refused by the person. */
@@ -91,6 +106,12 @@ export class WalletDeclinedError extends Error {
 
 /** Builds and sends the transactions the program accepts from the owner. */
 export interface DistrictTransactions {
+  /** One `claim` per prize, each with its Merkle proof, signed by the winner. */
+  buildClaimPrizes(input: {
+    winner: string;
+    seasonId: number;
+    prizes: readonly { index: number; amountLamports: bigint; proof: readonly Uint8Array[] }[];
+  }): Promise<Uint8Array>;
   /** An unsigned `upgrade_score` transaction paid by `owner`. */
   buildUpgradeScore(input: { owner: string; asset: string; stat: StatKey }): Promise<Uint8Array>;
   /**

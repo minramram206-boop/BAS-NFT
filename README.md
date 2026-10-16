@@ -9,9 +9,10 @@ raise a canonical score.
 > the `market` program (fixed-price sales, offers and auctions) are deployed
 > there; citizens are minted through a Core Candy Machine, missions are
 > checked and signed by `apps/mission-server`, and citizens talk through
-> `apps/chat-server`. Neither program is audited, the season prize vault and
-> clans are not built yet, and mainnet has no addresses of its own. Nothing
-> here is launch ready — see [Launch gate](#launch-gate) and
+> `apps/chat-server`. The season prize vault (`programs/prize_vault`) is
+> written and tested and goes to devnet next. No program is audited, clans
+> are not built yet, and mainnet has no addresses of its own. Nothing here
+> is launch ready — see [Launch gate](#launch-gate) and
 > [Known gaps](#known-gaps).
 
 ## Quick start
@@ -32,6 +33,7 @@ Routes:
 | `/training` | Training: a credit and `$BAS` raise one stat |
 | `/season` | Season standings by bracket and the prize pool |
 | `/market` | Fixed-price sales, offers, auctions and finished sales |
+| `/studio` | BAS Studio: the district's music and videos (tap the studio in the city) |
 | `/mint` | The public sale: one citizen per wallet |
 | `/citizen/[id]` | A citizen's profile, history, chat and market actions |
 
@@ -58,6 +60,27 @@ pnpm clean            # remove dist/, .next/ and tsbuildinfo files
 Do not run `pnpm build` while `pnpm dev` is running: both write to
 `apps/web/.next` and the dev server then fails on a stale chunk. See
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+## BAS Studio playlist
+
+The studio plays what `apps/web/src/config/studio.json` lists:
+
+```json
+{
+  "tracks": [
+    { "src": "/studio/night-market.mp3", "title": "Night Market", "artist": "BAS House Band", "cover": "/studio/night-market.jpg" },
+    { "src": "/studio/district-live.mp4", "title": "District Live" }
+  ]
+}
+```
+
+Files go in `apps/web/public/studio/`, and `src` starts with `/studio/`. A
+long video is better kept on a CDN or any `https://` address, since GitHub
+refuses files over 100 MB. Audio: mp3, m4a, aac, ogg, opus, wav, flac.
+Video: mp4 (H.264), webm, mov. `title` defaults to the file name; `artist`
+and `cover` are optional. `pnpm --filter @bas/web test` fails when a listed
+local file is missing. Music keeps playing while the player moves between
+screens; videos play on the studio page only.
 
 ## Building the program
 
@@ -112,10 +135,11 @@ packages/chat-store Postgres and Redis storage for chat and the market history, 
 packages/server-kit what the servers share: the wallet bearer token, asset reads, HTTP helpers
 packages/config     typed cluster configuration, read from config/*.json, and the launch gate
 packages/content    content schema, validation, and server-only loaders
-packages/chain-client  typed clients for the district and market programs
+packages/chain-client  typed clients for the district, market and prize vault programs
 packages/metaplex-client  Node-only builders for the Candy Machine sale and the mint transaction
 programs/district   Anchor program (registration, mission credits, token-burn training)
 programs/market     Anchor program (listings, offers, auctions; docs/MARKET.md)
+programs/prize_vault  Anchor program (season prize vault, Merkle claims; docs/PRIZE_VAULT.md)
 config/             devnet.json, mainnet.json — the canonical addresses
 content/en/         citizens.json — the authored English roster
 scripts/            asset, metadata and launch checks; scripts/devnet — deploy and setup
@@ -139,6 +163,7 @@ reading order and the authority order for every other document.
 | [`docs/id/PRIZE_POOL_MODEL.md`](docs/id/PRIZE_POOL_MODEL.md) | Competitions, prize pools, winner caps, payout integrity |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | Append-only implementation decision log |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Repository layout and engineering rationale |
+| [`docs/PRIZE_VAULT.md`](docs/PRIZE_VAULT.md) | The season prize vault: accounts, claims, the devnet flow |
 
 ## Single sources of truth
 
@@ -223,10 +248,12 @@ The program enforces that order on chain (D-0016):
 - Devnet only. Every address, wallet and key in use is a test value;
   mainnet gets its own (D-0094), and `pnpm mainnet:check` lists what is
   missing.
-- Neither program is audited (SPEC §16). The market holds SOL for auction
+- No program is audited (SPEC §16). The market holds SOL for auction
   bids and open offers, so its audit comes before any mainnet use.
-- The season prize vault (D-0019) is not built: the Season screen shows the
-  pool as empty and the vault address as not set. Winners cannot be paid yet.
+- The season prize vault (D-0019, D-0101, `docs/PRIZE_VAULT.md`) is not on
+  devnet until its first deploy; until then the Season screen shows the vault
+  as not live. One citizen per wallet per competition, the Master
+  achievements and a minimum prize are not checked yet.
 - Clans (D-0023) and the Squads multisig that will hold the program
   authorities (D-0024) are not built or tried yet.
 - `pnpm dev` without `NEXT_PUBLIC_BAS_DATA=chain` runs on mock data with a

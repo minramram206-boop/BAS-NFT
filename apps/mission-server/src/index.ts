@@ -12,3 +12,5 @@ export * from './upkeep.js';
 export * from './market.js';
 export * from './market-store.js';
 export * from './market-seen.js';
+export * from './prizes.js';
+export { DEFAULT_PRIZES_DIR, seasonFrom } from './config.js';

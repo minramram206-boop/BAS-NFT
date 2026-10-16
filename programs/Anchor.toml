@@ -5,7 +5,7 @@ solana_version = "1.18.26"
 # This file lives in programs/, so the program sits at ./district rather than
 # Anchor's default programs/*.
 [workspace]
-members = ["district", "market"]
+members = ["district", "market", "prize_vault"]
 
 [features]
 resolution = true
@@ -15,6 +15,8 @@ skip-lint = false
 district = "82zccW1Z97ic24aCrt2c3U6qDUZMfbHufZMCjv2dm1Ym"
 # Devnet only until an external audit (docs/MARKET.md).
 market = "EVjdJiuyVfKUoQFirJDbCauvkHcVKZ38y9i2XAP1ypyP"
+# Season prize vault (docs/PRIZE_VAULT.md). Mainnet gets its own keypair.
+prize_vault = "5A2vzRDhfPfzpZrtvmhx6HFLLD2xmdcHStDwzPcNuXUP"
 
 [programs.mainnet]
 district = "82zccW1Z97ic24aCrt2c3U6qDUZMfbHufZMCjv2dm1Ym"

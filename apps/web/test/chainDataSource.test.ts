@@ -1,10 +1,23 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
-import { AUCTION_CLOCKS, type AuctionClock } from '@bas/chain-client/browser';
+import { AUCTION_CLOCKS, buildPrizeTree, toHex, type AuctionClock, type PrizeRow } from '@bas/chain-client/browser';
+import type { Address } from '@solana/kit';
 import { loadCitizens } from '@bas/content/server';
-import { Authenticator, MemorySeenStore, MemoryStore, MintService, MissionService, createMissionServer, findMission } from '@bas/mission-server';
+import {
+  Authenticator,
+  MemorySeenStore,
+  MemoryStore,
+  MintService,
+  MissionService,
+  PrizeBook,
+  createMissionServer,
+  findMission,
+} from '@bas/mission-server';
 import { Keypair } from '@solana/web3.js';
 
 import { createChainDataSource } from '../src/lib/data/chain/chainDataSource.ts';
@@ -20,6 +33,8 @@ import {
   MARKET_AUTHORITY,
   MARKET_ID,
   OFFER_RENT_LAMPORTS,
+  PRIZE_ID,
+  PRIZE_VAULT,
   PROGRAM_ID,
   SEASON_START,
   TREASURY,
@@ -50,6 +65,8 @@ interface Rig {
   stranger: TestWallet;
   asset: { a: string; b: string; c: string };
   network: { serverDown: boolean };
+  /** Where the mission server reads published winners from. */
+  prizesDir: string;
   close: () => Promise<void>;
 }
 
@@ -98,8 +115,10 @@ async function rig(options: RigOptions = {}): Promise<Rig> {
     chain: world,
     clock: clock.read,
   });
+  const prizesDir = mkdtempSync(join(tmpdir(), 'bas-prizes-'));
   const server = createMissionServer({
     service,
+    prizes: new PrizeBook(prizesDir, clock.read, 0),
     mint: new MintService({ backend: world.mintBackend(), limitPerWallet: 1 }),
     auth: new Authenticator(Buffer.alloc(32, 9)),
     allowedOrigins: [],
@@ -119,6 +138,7 @@ async function rig(options: RigOptions = {}): Promise<Rig> {
       programId: PROGRAM_ID.toBase58(),
       utilityMint: UTILITY_MINT,
       market: { programId: MARKET_ID, collection: COLLECTION },
+      prizeVaultProgramId: PRIZE_ID,
       sleep: async () => {},
     }),
     missionApi: {
@@ -144,6 +164,7 @@ async function rig(options: RigOptions = {}): Promise<Rig> {
     stranger,
     asset,
     network,
+    prizesDir,
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
 }
@@ -1405,6 +1426,121 @@ describe('offers on chain', () => {
       assert.equal(refused(await r.source.acceptOffer(A, owner.market.offers[0]!.id)), 'price-changed');
       assert.equal(r.world.find(r.asset.a).owner, r.owner.address);
       assert.equal(r.source.snapshot().market.offers[0]?.amountLamports, OFFER / 3n, 'read again, with the new amount');
+    } finally {
+      await r.close();
+    }
+  });
+});
+
+describe('chain data source: season prizes', () => {
+  const SOL = 1_000_000_000n;
+  const DISPUTE = 480;
+  const DECADE = 10 * 365 * DAY;
+
+  /** Publishes `rows` the way the finalize script does: the root on chain, the list beside the mission server. */
+  async function publish(r: Rig, rows: PrizeRow[], listRows: PrizeRow[] = rows): Promise<void> {
+    const tree = await buildPrizeTree(1, rows);
+    const total = rows.reduce((sum, row) => sum + row.amountLamports, 0n);
+    r.world.publishWinners(tree.root, rows.length, total, DISPUTE);
+    const listTree = await buildPrizeTree(1, listRows);
+    writeFileSync(
+      join(r.prizesDir, 'season-1.json'),
+      JSON.stringify({
+        seasonId: 1,
+        root: toHex(listTree.root),
+        fundedLamports: '10000000000',
+        prizesLamports: total.toString(),
+        signature: null,
+        publishedAt: 0,
+        rows: listRows.map((row) => ({ ...row, amountLamports: row.amountLamports.toString() })),
+      }),
+    );
+  }
+
+  const row = (index: number, winner: string, amountLamports: bigint, asset: string, rank: number): PrizeRow => ({
+    index,
+    winner: winner as Address,
+    amountLamports,
+    asset,
+    pool: 'open',
+    rank,
+  });
+
+  it('shows the vault and the running season, with nothing to claim yet', async () => {
+    const r = await rig();
+    try {
+      r.world.openPrizeVault(12n * SOL, 10n * SOL, SEASON_START + 28 * DAY);
+      const snapshot = ok(await r.source.setWallet(r.owner));
+      assert.equal(snapshot.season.vaultAddress, PRIZE_VAULT);
+      assert.equal(snapshot.season.fundedLamports, 10n * SOL);
+      const prize = snapshot.season.prize;
+      assert.ok(prize);
+      assert.equal(prize.stage, 'running');
+      assert.equal(prize.unallocatedLamports, 2n * SOL);
+      assert.deepEqual(prize.mine, []);
+      assert.equal(refused(await r.source.claimPrizes()), 'prize-not-open');
+    } finally {
+      await r.close();
+    }
+  });
+
+  it('pays a winner once, after the challenge window, from the list the vault proves', async () => {
+    const r = await rig();
+    try {
+      r.world.openPrizeVault(10n * SOL, 10n * SOL, SEASON_START + 2 * DAY);
+      r.clock.advance(2 * DAY);
+      await publish(r, [
+        row(0, r.owner.address, 3n * SOL, r.asset.a, 1),
+        row(1, r.stranger.address, 2n * SOL, r.asset.b, 2),
+        row(2, r.owner.address, SOL / 2n, r.asset.c, 3),
+      ]);
+      let snapshot = ok(await r.source.setWallet(r.owner));
+      const prize = snapshot.season.prize;
+      assert.equal(prize?.stage, 'disputing');
+      assert.deepEqual(
+        prize?.mine.map((item) => [item.index, item.citizenId, item.amountLamports, item.claimed]),
+        [
+          [0, A, 3n * SOL, false],
+          [2, C, SOL / 2n, false],
+        ],
+      );
+      assert.equal(refused(await r.source.claimPrizes()), 'prize-not-open');
+
+      r.clock.advance(DISPUTE);
+      const before = r.world.sol.get(r.owner.address) ?? 0n;
+      const prompts = r.owner.prompts.transaction;
+      snapshot = ok(await r.source.claimPrizes());
+      assert.equal(r.owner.prompts.transaction, prompts + 1, 'both prizes in one signature');
+      assert.equal(r.world.sol.get(r.owner.address), before + 3n * SOL + SOL / 2n);
+      assert.deepEqual(snapshot.season.prize?.mine.map((item) => item.claimed), [true, true]);
+      assert.equal(snapshot.season.prize?.claimedLamports, 3n * SOL + SOL / 2n);
+      assert.equal(refused(await r.source.claimPrizes()), 'prize-claimed');
+
+      // The other winner's prize waits for them alone, with no deadline.
+      r.clock.advance(DECADE);
+      assert.equal(ok(await r.source.setWallet(r.stranger)).season.prize?.stage, 'claiming');
+      const settled = ok(await r.source.claimPrizes());
+      assert.equal(r.world.prizeVault?.season?.claimedLamports, 5n * SOL + SOL / 2n);
+      assert.equal(settled.season.prize?.stage, 'settled');
+    } finally {
+      await r.close();
+    }
+  });
+
+  it('offers no claim from a list that does not hash to the root on chain', async () => {
+    const r = await rig();
+    try {
+      r.world.openPrizeVault(10n * SOL, 10n * SOL, SEASON_START + DAY);
+      r.clock.advance(DAY);
+      const real = [row(0, r.stranger.address, 3n * SOL, r.asset.b, 1)];
+      // A server that names the owner instead: it hashes to its own root, not the vault's.
+      await publish(r, real, [row(0, r.owner.address, 3n * SOL, r.asset.a, 1)]);
+      r.clock.advance(DISPUTE);
+      const snapshot = ok(await r.source.setWallet(r.owner));
+      assert.equal(snapshot.season.prize?.listMissing, true);
+      assert.deepEqual(snapshot.season.prize?.mine, []);
+      assert.equal(refused(await r.source.claimPrizes()), 'prize-not-open');
+      assert.equal(r.world.prizeVault?.season?.claimedLamports, 0n);
     } finally {
       await r.close();
     }

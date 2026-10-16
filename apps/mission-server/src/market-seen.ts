@@ -24,7 +24,8 @@ export class MemorySeenStore implements SeenStore {
     return [...(this.byWallet.get(wallet) ?? [])];
   }
 
-  async add(wallet: string, ids: readonly string[]): Promise<void> {
+  // Memory keeps insertion order, so it needs no time.
+  async add(wallet: string, ids: readonly string[], _at?: number): Promise<void> {
     const kept = this.byWallet.get(wallet) ?? [];
     const fresh = ids.filter((id, index) => !kept.includes(id) && ids.indexOf(id) === index);
     this.byWallet.set(wallet, [...fresh, ...kept].slice(0, SEEN_NOTICES_LIMIT));

@@ -82,7 +82,7 @@ export function rpcMarketSource(rpcUrl: string): MarketSource {
  * what the chain already makes public: the price and when. It names no wallet.
  */
 export function describeSale(sale: SaleRecord, season: SeasonConfig): HistoryEvent {
-  const day = Math.floor((sale.at - season.startsAt) / 86_400) + 1;
+  const day = Math.floor((sale.at - season.startsAt) / (season.daySeconds ?? 86_400)) + 1;
   const when =
     day >= 1 && day <= season.days ? `on day ${day} of season ${season.id}` : `on ${new Date(sale.at * 1000).toISOString().slice(0, 10)}`;
   const how = sale.kind === 'auction' ? 'Won at auction' : sale.kind === 'offer' ? 'Sold on an accepted offer' : 'Bought';

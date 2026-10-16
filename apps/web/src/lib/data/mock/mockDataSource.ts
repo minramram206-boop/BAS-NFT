@@ -444,6 +444,11 @@ export function createMockDataSource(options: MockDataSourceOptions): DistrictDa
       });
     },
 
+    async claimPrizes() {
+      // Prizes are paid by the vault program; the preview has none to claim.
+      return { ok: false, error: 'prize-not-open' } as const;
+    },
+
     async closeExpiredOffers(citizenId: number) {
       if (!state.owned.includes(citizenId)) return fail('not-owner');
       const expired = state.market.offers.filter((offer) => offer.citizenId === citizenId && !offer.mine && offerExpired(offer, now()));

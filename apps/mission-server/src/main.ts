@@ -7,6 +7,7 @@ import { MarketIndexer, describeSale, rpcMarketSource } from './market.js';
 import { MemorySeenStore, PgSeenStore } from './market-seen.js';
 import { PgMarketStore, openMarketDatabase } from './market-store.js';
 import { MintService } from './mint.js';
+import { PrizeBook } from './prizes.js';
 import { MissionService } from './service.js';
 import { FileStore } from './store.js';
 import { openUpkeep } from './upkeep.js';
@@ -75,6 +76,7 @@ createMissionServer({
   ...(sale ? { mint: sale } : {}),
   ...(market ? { market } : {}),
   seen: database ? new PgSeenStore(database) : new MemorySeenStore(),
+  prizes: new PrizeBook(config.prizesDir),
   service,
   auth: new Authenticator(config.tokenSecret),
   allowedOrigins: config.allowedOrigins,

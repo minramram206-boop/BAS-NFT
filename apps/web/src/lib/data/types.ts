@@ -92,6 +92,45 @@ export interface BracketPool {
   readonly validEntries: number;
 }
 
+/**
+ * Where the season's prize stands, from its account in the prize vault:
+ * not funded yet, running, ended and waiting for its winners, winners
+ * published and open to challenge, open to claims (with no deadline), or
+ * settled once every prize is paid.
+ */
+export type PrizeStage = 'unfunded' | 'running' | 'counting' | 'disputing' | 'claiming' | 'settled';
+
+/** One prize the connected wallet won this season. */
+export interface MyPrize {
+  /** Row of the published winners list; the claim names it. */
+  readonly index: number;
+  readonly pool: BracketId;
+  readonly rank: number;
+  readonly amountLamports: bigint;
+  /** The citizen that won it, when it is in the roster. */
+  readonly citizenId: number | null;
+  readonly claimed: boolean;
+}
+
+/** The season's account in the prize vault, as the Season screen shows it. */
+export interface SeasonPrize {
+  readonly stage: PrizeStage;
+  /** Unix seconds, from the vault; `null` while the season is not funded. */
+  readonly endsAt: number | null;
+  readonly claimsOpenAt: number | null;
+  readonly winners: number;
+  readonly prizesLamports: bigint;
+  readonly claimedLamports: bigint;
+  /** SOL in the vault that no season holds yet. */
+  readonly unallocatedLamports: bigint;
+  /** Everything the vault has paid to winners, all seasons. */
+  readonly paidLamports: bigint;
+  /** This wallet's prizes, from a published list whose root matches the vault. */
+  readonly mine: readonly MyPrize[];
+  /** Winners are published on chain but the list behind them is not readable yet. */
+  readonly listMissing: boolean;
+}
+
 export interface SeasonSnapshot {
   readonly number: number;
   readonly day: number;
@@ -103,6 +142,8 @@ export interface SeasonSnapshot {
   readonly vaultAddress: string;
   readonly pools: readonly BracketPool[];
   readonly leaderboards: Readonly<Partial<Record<BracketId, readonly LeaderboardEntry[]>>>;
+  /** The season in the prize vault; `null` on a cluster without one, and in the preview. */
+  readonly prize: SeasonPrize | null;
 }
 
 export interface WalletView {
@@ -346,7 +387,9 @@ export type DistrictActionError =
   | 'auction-has-bids'
   | 'offers-closed'
   | 'offer-gone'
-  | 'own-citizen';
+  | 'own-citizen'
+  | 'prize-not-open'
+  | 'prize-claimed';
 
 export type DistrictActionResult =
   | { readonly ok: true; readonly snapshot: DistrictSnapshot }
@@ -411,6 +454,8 @@ export interface DistrictDataSource {
    * back to its buyer; the owner pays only the network fee.
    */
   closeExpiredOffers(citizenId: number): Promise<DistrictActionResult>;
+  /** Claims every unclaimed prize of the connected wallet this season, in one transaction. */
+  claimPrizes(): Promise<DistrictActionResult>;
   /** Mock only: another player makes an offer on one of the wallet's citizens. */
   simulateOffer?(citizenId: number): Promise<DistrictActionResult>;
   /** Mock only: the owner accepts the wallet's offer on a citizen. */

@@ -9,7 +9,8 @@
     "season": "Season",
     "citizen": "Citizen profile",
     "mint": "Mint a citizen",
-    "market": "Market"
+    "market": "Market",
+    "studio": "BAS Studio"
   },
   "app": {
     "name": "BAS DISTRICT",
@@ -606,13 +607,31 @@
     "stepChallenge": "48H",
     "stepChallengeText": "Challenge window",
     "stepClaim": "CLAIM",
-    "stepClaimText": "Winner signs",
+    "stepClaimText": "Winner signs, any time",
     "disclosure": "Funded only by Pump.fun creator fees under a locked 50 / 30 / 20 split. Prize amounts are not guaranteed. Holding a citizen does not earn rewards.",
     "vaultSoon": "The vault address appears here once the prize vault is live.",
     "explorerTitle": "MOCK VAULT",
     "explorerTitleChain": "PRIZE VAULT",
     "explorerMessage": "This vault is mock data. The real address appears here after the prize_vault program is deployed.",
-    "explorerMessageChain": "The prize vault is not live yet, so there is no address to show. It appears here once the prize vault program is deployed."
+    "explorerMessageChain": "The prize vault is not live yet, so there is no address to show. It appears here once the prize vault program is deployed.",
+    "unallocated": "Free for next seasons",
+    "paidOut": "Paid to winners",
+    "stageUnfunded": "Season {number} is not funded yet.",
+    "stageRunning": "Season running · ends in {time}",
+    "stageCounting": "Season over · the winners are being counted",
+    "stageDisputing": "Winners posted · claims open in {time}",
+    "stageClaiming": "Claims open · a prize waits for its winner, with no deadline",
+    "stageSettled": "Every prize of this season is paid",
+    "posted": "{winners} winners · {prizes} in prizes · {claimed} claimed",
+    "yourPrizes": "YOUR PRIZES",
+    "prizeRow": "{pool} · rank {rank}",
+    "claim": "CLAIM {amount}",
+    "claimed": "CLAIMED",
+    "claimSoon": "You can claim once the challenge window ends, in {time}.",
+    "claimSign": "Your wallet signs the claim; the vault sends the SOL straight to it.",
+    "noPrize": "This wallet won no cash prize this season.",
+    "listMissing": "The winners are posted on chain, but the list with each wallet's share cannot be read from the server right now.",
+    "openExplorer": "Opens the vault on Solana Explorer"
   },
   "wallet": {
     "connect": "CONNECT WALLET",
@@ -789,6 +808,14 @@
     "own-citizen": {
       "title": "YOUR CITIZEN",
       "message": "You cannot make an offer on a citizen of your own."
+    },
+    "prize-not-open": {
+      "title": "NOT YET",
+      "message": "Prizes can be claimed once the winners are published and the challenge window has passed."
+    },
+    "prize-claimed": {
+      "title": "ALREADY CLAIMED",
+      "message": "This wallet has already claimed every prize it won this season."
     }
   },
   "actions": {
@@ -1166,5 +1193,46 @@
     "offerWithdrawnMessage": "Your offer for {name} is closed and {price} is back in your wallet.",
     "offerAcceptedTitle": "OFFER ACCEPTED",
     "offerAcceptedMessage": "{name} went to {buyer} for {price}. {amount} reached your wallet after the royalty."
+  },
+  "studio": {
+    "name": "BAS Studio",
+    "cityHint": "TAP TO LISTEN",
+    "title": "BAS STUDIO",
+    "subtitle": "Music and videos from the district",
+    "stage": "STAGE",
+    "nowPlaying": "NOW PLAYING",
+    "idleTitle": "The stage is quiet",
+    "idleBody": "Pick something from the playlist.",
+    "playlist": "PLAYLIST",
+    "count": "{count} tracks",
+    "countOne": "1 track",
+    "filterAll": "ALL",
+    "filterMusic": "MUSIC",
+    "filterVideo": "VIDEO",
+    "kindMusic": "MUSIC",
+    "kindVideo": "VIDEO",
+    "noMusic": "No music here yet.",
+    "noVideo": "No videos here yet.",
+    "emptyTitle": "NOTHING ON THE PLAYLIST",
+    "emptyBody": "New music and videos arrive here soon.",
+    "emptyHint": "Put the files in apps/web/public/studio and list them in apps/web/src/config/studio.json.",
+    "skipped": "{count} playlist entries were left out: each needs a src starting with / or https:// and an audio or video file.",
+    "unknownArtist": "BAS District",
+    "cannotPlay": "Could not play this one",
+    "play": "Play",
+    "pause": "Pause",
+    "next": "Next",
+    "previous": "Previous",
+    "shuffle": "Shuffle",
+    "repeatAll": "Repeat the playlist",
+    "repeatOne": "Repeat this track",
+    "repeatOff": "Repeat off",
+    "seek": "Position",
+    "volume": "Volume",
+    "mute": "Mute",
+    "unmute": "Unmute",
+    "fullscreen": "Full screen",
+    "stop": "Stop",
+    "openStudio": "Open BAS Studio"
   }
 }

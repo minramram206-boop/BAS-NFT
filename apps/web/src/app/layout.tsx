@@ -8,6 +8,7 @@ import '@fontsource/silkscreen/latin-700.css';
 import { loadCitizens } from '@bas/content/server';
 import { loadDistrictTelemetry } from '@/config/telemetry';
 import { DistrictTelemetryProvider } from '@/components/layout/DistrictTelemetryProvider';
+import { StudioPlayerProvider } from '@/components/studio/StudioPlayer';
 import { WalletDialog } from '@/components/modal/WalletDialog';
 import { WalletProvider } from '@/lib/wallet/context';
 import { BasStoreProvider } from '@/stores/BasStoreProvider';
@@ -46,6 +47,8 @@ function chainOptions(telemetry: ReturnType<typeof loadDistrictTelemetry>): Chai
     utilityMint: telemetry.utilityTokenMint,
     ...(telemetry.marketProgramId ? { marketProgramId: telemetry.marketProgramId } : {}),
     ...(telemetry.auctionClock ? { auctionClock: telemetry.auctionClock } : {}),
+    ...(telemetry.prizeVaultProgramId ? { prizeVaultProgramId: telemetry.prizeVaultProgramId } : {}),
+    ...(telemetry.prizeClock ? { prizeClock: telemetry.prizeClock } : {}),
     maxSupply: telemetry.maxSupply,
     missionServerUrl: process.env.NEXT_PUBLIC_MISSION_SERVER_URL ?? 'http://localhost:8787',
     chatServerUrl: process.env.NEXT_PUBLIC_CHAT_SERVER_URL ?? 'http://localhost:8788',
@@ -81,14 +84,17 @@ export default function RootLayout({
             mintLimitPerWallet={telemetry.mintLimitPerWallet}
             {...(chain ? { chain } : {})}
           >
-            {chain ? (
-              <WalletProvider cluster={chain.cluster}>
-                {children}
-                <WalletDialog cluster={chain.cluster} />
-              </WalletProvider>
-            ) : (
-              children
-            )}
+            {/* BAS Studio's music keeps playing from one screen to the next. */}
+            <StudioPlayerProvider>
+              {chain ? (
+                <WalletProvider cluster={chain.cluster}>
+                  {children}
+                  <WalletDialog cluster={chain.cluster} />
+                </WalletProvider>
+              ) : (
+                children
+              )}
+            </StudioPlayerProvider>
           </BasStoreProvider>
         </DistrictTelemetryProvider>
       </body>

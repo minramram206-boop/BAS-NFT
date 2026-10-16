@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["programs/district", "programs/market"]
+members = ["programs/district", "programs/market", "programs/prize_vault"]
 # Runs the market against the Core program itself; it has its own lockfile
 # so Core's dependencies never touch the versions the SBF build resolves.
 exclude = ["programs/market/integration"]

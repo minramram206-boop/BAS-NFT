@@ -7,15 +7,16 @@
 #
 #   bash scripts/devnet/deploy.sh [rpc-url]
 #   PROGRAM=market bash scripts/devnet/deploy.sh [rpc-url]
+#   PROGRAM=prize_vault bash scripts/devnet/deploy.sh [rpc-url]
 set -euo pipefail
 
 RPC_URL="${1:-https://api.devnet.solana.com}"
 DEPLOYER="${DEPLOYER_KEYPAIR:-.keys/devnet-deployer.json}"
 PROGRAM="${PROGRAM:-district}"
 case "$PROGRAM" in
-  district | market) ;;
+  district | market | prize_vault) ;;
   *)
-    echo "Unknown PROGRAM $PROGRAM (expected district or market)" >&2
+    echo "Unknown PROGRAM $PROGRAM (expected district, market or prize_vault)" >&2
     exit 1
     ;;
 esac
@@ -63,6 +64,32 @@ if [ "$PROGRAM" = market ]; then
       exit 1
     fi
     echo "Auctions: real clock"
+  fi
+fi
+
+# The prize vault has a fast devnet clock too (an 8 minute dispute window instead
+# of 48 hours), checked the same way against "prizeClock" in config/devnet.json.
+if [ "$PROGRAM" = prize_vault ]; then
+  devnet_genesis="EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
+  manifest_clock=real
+  if grep -q '"prizeClock": *"devnet-fast"' config/devnet.json; then manifest_clock=devnet-fast; fi
+  if grep -qa "BAS devnet prize clock" "$PROGRAM_SO"; then
+    if [ "$(solana genesis-hash --url "$RPC_URL")" != "$devnet_genesis" ]; then
+      echo "This prize vault binary runs the fast devnet clock; $RPC_URL is not devnet." >&2
+      exit 1
+    fi
+    if [ "$manifest_clock" != "devnet-fast" ]; then
+      echo "This prize vault binary runs the fast devnet clock, but config/devnet.json has no \"prizeClock\": \"devnet-fast\"." >&2
+      exit 1
+    fi
+    echo "Prizes: fast devnet clock (8 minute dispute window)"
+  else
+    if [ "$manifest_clock" = "devnet-fast" ]; then
+      echo "config/devnet.json says \"prizeClock\": \"devnet-fast\", but this prize vault binary runs the real clock." >&2
+      echo "Build it with: cargo build-sbf --manifest-path programs/prize_vault/Cargo.toml --features devnet-clock" >&2
+      exit 1
+    fi
+    echo "Prizes: real clock"
   fi
 fi
 

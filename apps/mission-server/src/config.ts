@@ -14,6 +14,8 @@ export interface ServerConfig {
   readonly season: SeasonConfig;
   readonly events: Readonly<Record<string, EventWindow>>;
   readonly storeFile: string;
+  /** Where `scripts/devnet/prize-finalize.mjs` writes each season's published winners. */
+  readonly prizesDir: string;
   readonly port: number;
   readonly allowedOrigins: readonly string[];
   /** Redis of the chat upkeep queue. Without it, confirmed missions leave no line in a citizen's public history. */
@@ -43,6 +45,28 @@ function integer(env: NodeJS.ProcessEnv, name: string, fallback?: number): numbe
   const value = Number(raw);
   if (!Number.isSafeInteger(value) || value < 0) throw new Error(`[mission-server] ${name} must be a whole number`);
   return value;
+}
+
+/** Relative to the repository root, where the finalize script writes too. */
+export const DEFAULT_PRIZES_DIR = 'apps/mission-server/data/prizes';
+
+/**
+ * The season from `SEASON_ID`, `SEASON_STARTS_AT`, `SEASON_DAYS` and, on
+ * devnet only, `SEASON_DAY_SECONDS`: a short day lets a whole season, its
+ * prizes and their claims be tried in one sitting.
+ */
+export function seasonFrom(env: NodeJS.ProcessEnv, cluster: string): SeasonConfig {
+  const daySeconds = integer(env, 'SEASON_DAY_SECONDS', 86_400);
+  if (daySeconds < 60) throw new Error('[mission-server] SEASON_DAY_SECONDS must be at least 60');
+  if (daySeconds !== 86_400 && cluster !== 'devnet') {
+    throw new Error('[mission-server] SEASON_DAY_SECONDS may only be shortened on devnet');
+  }
+  return {
+    id: integer(env, 'SEASON_ID', 1),
+    startsAt: integer(env, 'SEASON_STARTS_AT'),
+    days: integer(env, 'SEASON_DAYS', 28),
+    ...(daySeconds === 86_400 ? {} : { daySeconds }),
+  };
 }
 
 // dist/config.js sits in apps/mission-server/dist, three levels below the repository root.
@@ -97,13 +121,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     collection: new PublicKey(network.coreCollection),
     authority,
     tokenSecret,
-    season: {
-      id: integer(env, 'SEASON_ID', 1),
-      startsAt: integer(env, 'SEASON_STARTS_AT'),
-      days: integer(env, 'SEASON_DAYS', 28),
-    },
+    season: seasonFrom(env, network.cluster),
     events,
     storeFile: env.MISSION_STORE_FILE ?? './data/missions.json',
+    prizesDir: fromRepoRoot(env.PRIZES_DIR ?? DEFAULT_PRIZES_DIR),
     port: integer(env, 'PORT', 8787),
     allowedOrigins: (env.ALLOWED_ORIGINS ?? 'http://localhost:3000').split(',').map((origin) => origin.trim()),
     ...(env.REDIS_URL?.trim() ? { redisUrl: env.REDIS_URL.trim() } : {}),

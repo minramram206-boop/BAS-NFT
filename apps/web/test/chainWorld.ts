@@ -1,4 +1,4 @@
-import { createPrivateKey, sign } from 'node:crypto';
+import { createHash, createPrivateKey, sign } from 'node:crypto';
 import {
   CORE_CANDY_GUARD_PROGRAM_ID,
   CORE_INSTRUCTION,
@@ -12,6 +12,8 @@ import {
   AUCTION_CLOCKS,
   AUCTION_DURATIONS_HOURS,
   OFFER_DAYS,
+  PRIZE_ERRORS,
+  PRIZE_INSTRUCTION_DISCRIMINATORS,
   auctionAddress,
   marketAuthorityAddress,
   minNextBid,
@@ -23,12 +25,15 @@ import {
   type MarketConfigOnChain,
   type MarketErrorName,
   type OfferOnChain,
+  type PrizeConfigOnChain,
+  type PrizeErrorName,
+  type SeasonOnChain,
 } from '@bas/chain-client';
 import { address } from '@solana/kit';
 import type { CitizenRecord } from '@bas/content';
 import type { BidRecord, ChainReader, CitizenOnChain, MarketActivity, SaleRecord } from '@bas/mission-server';
 import { Keypair, PublicKey, Transaction, TransactionInstruction } from '@solana/web3.js';
-import type { Balances, ChainCitizen, DistrictReads, MarketReading, SaleReading, WalletSession } from '../src/lib/data/chain/types.ts';
+import type { Balances, ChainCitizen, DistrictReads, MarketReading, PrizeReading, SaleReading, WalletSession } from '../src/lib/data/chain/types.ts';
 import { WalletDeclinedError } from '../src/lib/data/chain/types.ts';
 import type { SendRpc, SignatureStatus } from '../src/lib/data/chain/transactions.ts';
 
@@ -44,6 +49,25 @@ export const OFFER_RENT_LAMPORTS = 1_148_080n;
 export const MARKET_AUTHORITY: string = await marketAuthorityAddress(address(MARKET_ID));
 export const COLLECTION = '7Cxz7FfrZ5cAeZruPU8wN9fdti4Y97DJgw3y3kXw4jDa';
 export const TREASURY = '9DfhjiWco7mDjyiwwSZo9UtyAYqYhjxSw3GyfTmCGEuK';
+export const PRIZE_ID = '5A2vzRDhfPfzpZrtvmhx6HFLLD2xmdcHStDwzPcNuXUP';
+export const PRIZE_VAULT = 'PrzVau1t1111111111111111111111111111111111';
+/** Rent of the 10 byte vault account. */
+export const VAULT_RENT_LAMPORTS = 960_480n;
+
+/** The program's tree hashes, done here with Node's own SHA-256 so the client's are checked by something else. */
+const sha256 = (...parts: Uint8Array[]): Uint8Array => {
+  const hash = createHash('sha256');
+  for (const part of parts) hash.update(part);
+  return new Uint8Array(hash.digest());
+};
+function prizeNode(a: Uint8Array, b: Uint8Array): Uint8Array {
+  const low = Buffer.compare(Buffer.from(a), Buffer.from(b)) <= 0;
+  return low ? sha256(Uint8Array.of(1), a, b) : sha256(Uint8Array.of(1), b, a);
+}
+
+function prizeError(name: PrizeErrorName): Error {
+  return new Error(`Program log: AnchorError occurred. Error Code: ${name}. Error Number: ${6000 + PRIZE_ERRORS.indexOf(name)}.`);
+}
 
 /** A refusal worded the way Anchor logs it, so the client can tell which rule failed. */
 function marketError(name: MarketErrorName): Error {
@@ -108,6 +132,8 @@ export class World implements ChainReader, DistrictReads {
   readonly auctions = new Map<string, AuctionOnChain>();
   /** Offers by their account address. */
   readonly offers = new Map<string, OfferOnChain>();
+  /** The prize vault and this season's account in it, or `null` while the program is not set up. */
+  prizeVault: { vaultLamports: bigint; config: PrizeConfigOnChain; season: SeasonOnChain | null } | null = null;
   /** What the mission server's indexer would have read off the market program, newest first. */
   readonly activity: { sales: SaleRecord[]; bids: BidRecord[] } = { sales: [], bids: [] };
 
@@ -272,6 +298,116 @@ export class World implements ChainReader, DistrictReads {
     };
   }
 
+  async prize(seasonId: number): Promise<PrizeReading | null> {
+    if (this.down) throw new Error('connection dropped');
+    const vault = this.prizeVault;
+    if (!vault) return null;
+    return {
+      vault: PRIZE_VAULT,
+      vaultLamports: vault.vaultLamports,
+      vaultRentLamports: VAULT_RENT_LAMPORTS,
+      config: { ...vault.config },
+      season: vault.season?.seasonId === seasonId ? { ...vault.season } : null,
+    };
+  }
+
+  /** Opens the vault with `vaultLamports` in it and a funded, running season. */
+  openPrizeVault(vaultLamports: bigint, fundedLamports: bigint, endsAt: number): void {
+    this.prizeVault = {
+      vaultLamports: vaultLamports + VAULT_RENT_LAMPORTS,
+      config: {
+        version: 1,
+        authority: TREASURY as never,
+        pendingAuthority: null,
+        reservedLamports: fundedLamports,
+        paidLamports: 0n,
+        bump: 255,
+        vaultBump: 254,
+      },
+      season: {
+        version: 1,
+        seasonId: 1,
+        fundedLamports,
+        endsAt,
+        winnersRoot: new Uint8Array(32),
+        winners: 0,
+        prizesLamports: 0n,
+        finalizedAt: 0,
+        claimsOpenAt: 0,
+        claimedLamports: 0n,
+        claimedBitmap: 0n,
+        leftoverReleased: false,
+        bump: 253,
+      },
+    };
+  }
+
+  /** `finalize_winners`, as the authority would send it. */
+  publishWinners(root: Uint8Array, winners: number, prizesLamports: bigint, disputeSeconds: number): void {
+    const season = this.prizeVault?.season;
+    if (!season) throw new Error('no season to publish');
+    const now = this.nowSeconds();
+    Object.assign(season, {
+      winnersRoot: root,
+      winners,
+      prizesLamports,
+      finalizedAt: now,
+      claimsOpenAt: now + disputeSeconds,
+    });
+  }
+
+  /** The vault program's `claim` checks, for every claim in one transaction, all or nothing. */
+  private applyPrize(transaction: Transaction): string {
+    const vault = this.prizeVault;
+    const season = vault?.season;
+    if (!vault || !season) throw new Error('the prize vault is not set up');
+    const saved = { vault: { ...vault, config: { ...vault.config } }, season: { ...season }, sol: new Map(this.sol) };
+    try {
+      for (const instruction of transaction.instructions) {
+        if (instruction.programId.toBase58() !== PRIZE_ID) throw new Error('not a prize vault instruction');
+        const data = new Uint8Array(instruction.data);
+        if (!same(data.subarray(0, 8), PRIZE_INSTRUCTION_DISCRIMINATORS.claim)) throw new Error('unknown prize instruction');
+        const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+        const seasonId = view.getUint32(8, true);
+        const index = data[12]!;
+        const amount = view.getBigUint64(13, true);
+        const proofLength = view.getUint32(21, true);
+        const proof = Array.from({ length: proofLength }, (_, i) => data.subarray(25 + i * 32, 57 + i * 32));
+        const winner = instruction.keys[3]!;
+        if (!winner.isSigner) throw new Error('the winner must sign');
+        const now = this.nowSeconds();
+        if (season.finalizedAt === 0) throw prizeError('NotFinalized');
+        if (now < season.claimsOpenAt) throw prizeError('ClaimsNotOpen');
+        if (index >= season.winners) throw prizeError('InvalidIndex');
+        if ((season.claimedBitmap & (1n << BigInt(index))) !== 0n) throw prizeError('AlreadyClaimed');
+        const seasonBytes = new Uint8Array(4);
+        new DataView(seasonBytes.buffer).setUint32(0, seasonId, true);
+        const amountBytes = new Uint8Array(8);
+        new DataView(amountBytes.buffer).setBigUint64(0, amount, true);
+        let hash = sha256(Uint8Array.of(0), seasonBytes, Uint8Array.of(index), winner.pubkey.toBytes(), amountBytes);
+        for (const sibling of proof) hash = prizeNode(hash, sibling);
+        if (!same(hash, season.winnersRoot)) throw prizeError('InvalidProof');
+        if (season.claimedLamports + amount > season.prizesLamports) throw prizeError('ClaimsOverPrizes');
+        season.claimedLamports += amount;
+        season.claimedBitmap |= 1n << BigInt(index);
+        vault.config.reservedLamports -= amount;
+        vault.config.paidLamports += amount;
+        vault.vaultLamports -= amount;
+        const to = winner.pubkey.toBase58();
+        this.sol.set(to, (this.sol.get(to) ?? 0n) + amount);
+      }
+    } catch (error) {
+      this.prizeVault = saved.vault;
+      Object.assign(saved.vault, { season: saved.season });
+      this.sol.clear();
+      for (const [key, value] of saved.sol) this.sol.set(key, value);
+      throw error;
+    }
+    const signature = transaction.signatures[0]!.signature!.toString('base64');
+    this.applied.push(signature);
+    return signature;
+  }
+
   async sale(wallet: string | null): Promise<SaleReading | null> {
     if (this.down) throw new Error('connection dropped');
     const sale = this.sale_;
@@ -339,6 +475,7 @@ export class World implements ChainReader, DistrictReads {
     if (!transaction.verifySignatures()) throw new Error('a signature is missing or wrong');
     const [instruction] = transaction.instructions;
     if (instruction?.programId.toBase58() === CORE_CANDY_GUARD_PROGRAM_ID) return this.applyMint(transaction, instruction);
+    if (instruction?.programId.toBase58() === PRIZE_ID) return this.applyPrize(transaction);
     if (transaction.instructions.some((item) => [MARKET_ID, MPL_CORE_PROGRAM_ID].includes(item.programId.toBase58()))) {
       return this.applyMarket(transaction);
     }

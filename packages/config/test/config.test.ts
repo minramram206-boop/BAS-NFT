@@ -263,7 +263,7 @@ describe('@bas/config', () => {
     const reused = {
       ...mainnet,
       missionAuthority: DEVNET_CONFIG.solTreasury,
-      marketProgramId: DEVNET_CONFIG.marketProgramId,
+      marketProgramId: DEVNET_CONFIG.marketProgramId as string,
       rpcUrl: DEVNET_CONFIG.rpcUrl,
       approvedTemplateUriPrefix: DEVNET_CONFIG.approvedTemplateUriPrefix,
     };
@@ -312,6 +312,26 @@ describe('@bas/config', () => {
     // The market stays on devnet until an external audit (docs/MARKET.md).
     assert.equal(MAINNET_CONFIG.marketProgramId, undefined);
     assert.equal(anchorTomlProgramId('mainnet', 'market'), undefined);
+  });
+
+  it('keeps the prize vault program id identical in every place', () => {
+    const rust = readFileSync(join(repoRoot, 'programs/prize_vault/src/lib.rs'), 'utf8');
+    const declared = /declare_id!\("([^"]+)"\)/.exec(rust);
+    assert.ok(declared, 'prize_vault lib.rs must declare the program id');
+    assert.equal(DEVNET_CONFIG.prizeVaultProgramId, declared[1], 'config/devnet.json must match prize_vault lib.rs');
+    assert.equal(anchorTomlProgramId('devnet', 'prize_vault'), declared[1], 'Anchor.toml devnet prize_vault drifted');
+    // Mainnet gets a fresh keypair before launch, never the devnet one.
+    assert.equal(MAINNET_CONFIG.prizeVaultProgramId, undefined);
+  });
+
+  it('allows the fast prize clock only on devnet, with a prize vault', () => {
+    const devnet = readConfigFile<Record<string, unknown>>('config/devnet.json');
+    assert.equal(parseNetworkConfig(devnet as NetworkConfigFile, 'devnet').prizeClock, 'devnet-fast');
+    assert.throws(() => parseNetworkConfig({ ...devnet, prizeClock: 'fast' } as NetworkConfigFile, 'devnet'), /prizeClock/);
+    const { prizeVaultProgramId: _vault, ...noVault } = devnet;
+    assert.throws(() => parseNetworkConfig(noVault as NetworkConfigFile, 'devnet'), /prizeClock/);
+    const { prizeClock: _clock, ...noClock } = noVault;
+    assert.equal(parseNetworkConfig(noClock as NetworkConfigFile, 'devnet').prizeVaultProgramId, undefined);
   });
 
   it('accepts a manifest without a market and refuses a malformed one', () => {

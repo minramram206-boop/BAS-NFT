@@ -209,6 +209,8 @@ describe('limits', () => {
       id: 1,
       startsAt: 1_800_000_000,
       days: 28,
+      daySeconds: 86_400,
+      endsAt: 1_800_000_000 + 28 * 86_400,
       day: 1,
       open: true,
       events: { blackoutNight: window },

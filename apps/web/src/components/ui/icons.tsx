@@ -127,6 +127,59 @@ export const InfoIcon = (props: IconProps) => (
 );
 
 /** Filled shield crest of the district. */
+export const PlayIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M4 2v12l9-6z" fill="currentColor" strokeLinejoin="round" />
+  </Icon>
+);
+
+export const PauseIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M4 2h3v12H4zM9 2h3v12H9z" fill="currentColor" strokeWidth={0} />
+  </Icon>
+);
+
+export const SkipIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M2 3v10l7-5z" fill="currentColor" strokeLinejoin="round" />
+    <path d="M12 3v10" strokeWidth={2.5} />
+  </Icon>
+);
+
+export const ShuffleIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M1 4h3l7 8h4M1 12h3l2-2.3M9 6.3 11 4h4" />
+    <path d="M12.5 1.5 15 4l-2.5 2.5M12.5 9.5 15 12l-2.5 2.5" />
+  </Icon>
+);
+
+export const RepeatIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M2 8V5h11M14 8v3H3" />
+    <path d="m10.5 2.5 2.5 2.5-2.5 2.5M5.5 8.5 3 11l2.5 2.5" />
+  </Icon>
+);
+
+export const SpeakerIcon = ({ muted, ...props }: IconProps & { muted?: boolean }) => (
+  <Icon {...props}>
+    <path d="M1 6h3l4-3.5v11L4 10H1z" fill="currentColor" strokeLinejoin="round" />
+    {muted ? <path d="m10.5 5.5 5 5M15.5 5.5l-5 5" /> : <path d="M11 5a4 4 0 0 1 0 6M13 3a7 7 0 0 1 0 10" />}
+  </Icon>
+);
+
+export const ExpandIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M1.5 6V1.5H6M10 1.5h4.5V6M14.5 10v4.5H10M6 14.5H1.5V10" />
+  </Icon>
+);
+
+export const NoteIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="5" cy="12" r="2.4" fill="currentColor" />
+    <path d="M7.2 12V2.5l6 2v3l-6-2" strokeLinejoin="round" />
+  </Icon>
+);
+
 export const CrestIcon = ({ size = 28, className }: { size?: number; className?: string }) => (
   <svg width={size} height={size} viewBox="0 0 16 16" className={className} aria-hidden>
     <path d="M8 1 2 3v5c0 3.5 2.6 6 6 7 3.4-1 6-3.5 6-7V3z" fill="#3b74a6" stroke="#1a2734" strokeWidth={1.5} />

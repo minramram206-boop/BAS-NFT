@@ -23,7 +23,13 @@ import {
   decodeMarketConfig,
   decodeMintCounter,
   decodeOffer,
+  decodePrizeConfig,
+  decodeSeason,
   decodeTokenAccountAmount,
+  PRIZE_VAULT_LENGTH,
+  prizeConfigAddress,
+  prizeVaultAddress,
+  seasonAddress,
   marketAuthorityAddress,
   marketConfigAddress,
   mintCounterAddress,
@@ -33,7 +39,7 @@ import {
   type ListingOnChain,
 } from '@bas/chain-client/browser';
 import { address, createSolanaRpc, getAddressEncoder, getBase58Decoder, getBase64Encoder, type Address } from '@solana/kit';
-import type { Balances, ChainCitizen, DistrictReads, MarketReading, SaleReading } from './types';
+import type { Balances, ChainCitizen, DistrictReads, MarketReading, PrizeReading, SaleReading } from './types';
 
 /**
  * Reads of the cluster through `@solana/kit`. The RPC is wrapped in a small
@@ -69,6 +75,8 @@ export interface ReadsOptions {
   readonly candyMachine?: string;
   /** The market program; without it `market()` reports no market. */
   readonly marketProgramId?: string;
+  /** The prize vault program; without it `prize()` reports no vault. */
+  readonly prizeVaultProgramId?: string;
 }
 
 const addressToBytes = (value: string): Uint8Array => new Uint8Array(getAddressEncoder().encode(address(value)));
@@ -115,7 +123,7 @@ export function kitReadRpc(url: string): ReadRpc {
 }
 
 export function createReads(options: ReadsOptions): DistrictReads {
-  const { rpc, programId, collection, utilityMint, candyMachine, marketProgramId } = options;
+  const { rpc, programId, collection, utilityMint, candyMachine, marketProgramId, prizeVaultProgramId } = options;
   let tokenProgram: Promise<Address> | undefined;
 
   const mintProgram = (): Promise<Address> => {
@@ -215,6 +223,27 @@ export function createReads(options: ReadsOptions): DistrictReads {
         if (offer) offers.push(offer);
       }
       return { config, authority, listings, auctions, offers, offerDepositLamports };
+    },
+
+    async prize(seasonId): Promise<PrizeReading | null> {
+      if (!prizeVaultProgramId) return null;
+      const program = address(prizeVaultProgramId);
+      const [configAddress, vault, seasonKey] = await Promise.all([
+        prizeConfigAddress(program),
+        prizeVaultAddress(program),
+        seasonAddress(program, seasonId),
+      ]);
+      const [configAccount, seasonAccount, vaultLamports, vaultRentLamports] = await Promise.all([
+        rpc.account(configAddress),
+        rpc.account(seasonKey),
+        rpc.balance(vault),
+        rpc.rentExempt(PRIZE_VAULT_LENGTH),
+      ]);
+      // As with the market: bytes in an account the program does not own are not its state.
+      const config = configAccount?.owner === prizeVaultProgramId ? decodePrizeConfig(configAccount.data) : undefined;
+      if (!config) return null;
+      const season = seasonAccount?.owner === prizeVaultProgramId ? decodeSeason(seasonAccount.data) : undefined;
+      return { vault, vaultLamports, vaultRentLamports, config, season: season?.seasonId === seasonId ? season : null };
     },
 
     async balances(owner): Promise<Balances> {

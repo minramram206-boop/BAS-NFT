@@ -34,6 +34,17 @@ export interface DistrictNetworkConfig {
    * `scripts/devnet/deploy.sh` refuses a binary that disagrees with it.
    */
   auctionClock?: 'devnet-fast';
+  /**
+   * Season prize vault program (`programs/prize_vault`, docs/PRIZE_VAULT.md,
+   * D-0019). A cluster without it shows the season with no vault yet.
+   */
+  prizeVaultProgramId?: string;
+  /**
+   * `devnet-fast` when the deployed prize vault was built with its
+   * `devnet-clock` feature: the dispute window lasts 8 minutes instead of
+   * 48 hours. Devnet only, like `auctionClock`.
+   */
+  prizeClock?: 'devnet-fast';
   /** Official Metaplex Core collection (`coreCollection` in SPEC §4.3). */
   coreCollection: string;
   /** Metaplex Core Candy Machine address. */

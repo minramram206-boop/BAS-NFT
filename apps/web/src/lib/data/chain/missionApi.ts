@@ -12,9 +12,30 @@ export interface SeasonInfo {
   readonly id: number;
   readonly startsAt: number;
   readonly days: number;
+  /** Seconds in a season day; a server from before short devnet days leaves it out. */
+  readonly daySeconds?: number;
+  readonly endsAt?: number;
   readonly day: number;
   readonly open: boolean;
   readonly events: Readonly<Record<string, { startsAt: number; endsAt: number }>>;
+}
+
+/** One row of a season's published winners. Lamports are decimal strings. */
+export interface PublishedPrizeRow {
+  readonly index: number;
+  readonly winner: string;
+  readonly amountLamports: string;
+  readonly asset: string;
+  readonly pool: 'open' | 'rookie' | 'skilled' | 'elite' | 'master';
+  readonly rank: number;
+}
+
+/** The winners list behind a season's root in the prize vault. */
+export interface PublishedPrizes {
+  readonly seasonId: number;
+  /** Hex of the root the list hashes to. */
+  readonly root: string;
+  readonly rows: readonly PublishedPrizeRow[];
 }
 
 /** One sale in the market, as the mission server reports it. Lamports are decimal strings. */
@@ -127,6 +148,12 @@ export class MissionApi {
 
   async standings(): Promise<readonly Standing[]> {
     return (await this.request<{ standings: Standing[] }>('GET', '/season/standings', undefined, false)).standings;
+  }
+
+  /** The published winners of a season, or `null` before they are drawn up. Public: no sign-in. */
+  async prizes(seasonId: number): Promise<PublishedPrizes | null> {
+    const body = await this.request<{ prizes: PublishedPrizes | null }>('GET', `/season/prizes?season=${seasonId}`, undefined, false);
+    return body.prizes && Array.isArray(body.prizes.rows) ? body.prizes : null;
   }
 
   /** Sales and bids the server read from the market program. Public: no sign-in. */

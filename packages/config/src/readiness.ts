@@ -105,8 +105,12 @@ export function findPlaceholderAddresses(config: DistrictNetworkConfig): Readine
   });
 }
 
-/** Every field whose value may be a key or account address, the optional market included. */
-const ADDRESS_LIKE_FIELDS = [...PRODUCTION_CRITICAL_ADDRESS_FIELDS, 'marketProgramId'] as const satisfies readonly ConfigField[];
+/** Every field whose value may be a key or account address, the optional programs included. */
+const ADDRESS_LIKE_FIELDS = [
+  ...PRODUCTION_CRITICAL_ADDRESS_FIELDS,
+  'marketProgramId',
+  'prizeVaultProgramId',
+] as const satisfies readonly ConfigField[];
 
 /**
  * Values another cluster copied from the devnet manifest. Everything on

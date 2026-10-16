@@ -112,7 +112,7 @@ Yang tidak dipakai:
 | `fund_season` | Menyisihkan jumlah tetap untuk satu season; tidak bisa dikurangi setelah season dibuka |
 | `finalize_winners` | Menyimpan Merkle root pemenang setelah season berakhir, lalu membuka masa sanggah |
 | `claim` | Pemenang menandatangani sendiri dengan bukti Merkle setelah masa sanggah; batas per pemenang dan 35 pemenang dicek program |
-| `rollover` | Hadiah yang tidak diklaim sampai batas waktu pindah ke season berikutnya |
+| `rollover` | Bagian dana season yang tidak dimiliki pemenang mana pun (pool dengan peserta kurang dari lima, sisa pembulatan) kembali ke pool untuk season berikutnya. Hadiah pemenang tidak pernah ditarik kembali dan bisa diklaim kapan saja (D-0102) |
 
 Dana hanya bisa keluar ke wallet pemenang lewat `claim`. Upgrade authority program dipegang multisig dengan timelock, lalu dicabut setelah audit.
 

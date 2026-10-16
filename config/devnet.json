@@ -3,6 +3,8 @@
   "districtProgramId": "82zccW1Z97ic24aCrt2c3U6qDUZMfbHufZMCjv2dm1Ym",
   "marketProgramId": "EVjdJiuyVfKUoQFirJDbCauvkHcVKZ38y9i2XAP1ypyP",
   "auctionClock": "devnet-fast",
+  "prizeVaultProgramId": "5A2vzRDhfPfzpZrtvmhx6HFLLD2xmdcHStDwzPcNuXUP",
+  "prizeClock": "devnet-fast",
   "coreCollection": "7Cxz7FfrZ5cAeZruPU8wN9fdti4Y97DJgw3y3kXw4jDa",
   "candyMachine": "3zpmY11JMZX9shPizFbdb1ABQUQVFRecfGzoyHqR9a7N",
   "candyGuard": "ATS8u21wBkf9PYggDbHwVDVUGenwvFP8cyp5TjnsA49F",

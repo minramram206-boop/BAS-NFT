@@ -10,6 +10,7 @@ import {
   MAP_HEIGHT,
   MAP_WIDTH,
   PROPS,
+  STUDIO,
   canEnter,
   cellAt,
   cellCenter,
@@ -51,6 +52,10 @@ export interface CitySceneOptions {
   /** Label copy per district: the name, and the rule shown while locked. */
   labels: Readonly<Record<DistrictId, { name: string; locked: string }>>;
   onSelect: (id: number) => void;
+  /** Copy for the sign over BAS Studio. */
+  studio: { name: string; hint: string };
+  /** BAS Studio or its sign was tapped. */
+  onStudio: () => void;
   /** The selected citizen was asked to walk somewhere it may not go. */
   onBlocked: (district: DistrictId) => void;
   /** The map was tapped while the selected citizen belongs to someone else. */
@@ -213,6 +218,7 @@ export class CityScene extends Phaser.Scene {
     });
     this.ambience.create();
     this.crowd.push(...this.ambience.members());
+    this.setupStudio();
     for (const [district, position] of this.labelPositions()) {
       const text = this.add
         .text(position.x, position.y, '', {
@@ -687,6 +693,38 @@ export class CityScene extends Phaser.Scene {
         .setVisible(isSelected)
         .setColor(isSelected ? '#f7d23d' : '#1a2734')
         .setBackgroundColor(isSelected ? '#1a2734' : '#e3ecf4');
+    }
+  }
+
+  /** BAS Studio answers a tap, on the building or on its sign, and glows a little under the pointer. */
+  private setupStudio(): void {
+    const [gx, gy, w, d] = STUDIO.cells;
+    const building = this.props.find(({ prop }) => {
+      const [px, py, pw, pd] = prop.cells;
+      return px === gx && py === gy && pw === w && pd === d;
+    });
+    const sign = this.add
+      .text(STUDIO.label[0], STUDIO.label[1], `${this.options.studio.name.toUpperCase()}\n${this.options.studio.hint}`, {
+        fontFamily: 'Silkscreen, monospace',
+        fontSize: '10px',
+        color: '#f7d23d',
+        backgroundColor: 'rgba(40, 20, 52, 0.88)',
+        padding: { x: 7, y: 4 },
+        align: 'center',
+      })
+      .setOrigin(0.5, 1)
+      .setResolution(2)
+      .setDepth(LABEL_DEPTH);
+    this.tweens.add({ targets: sign, y: STUDIO.label[1] - 4, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    const targets = building ? [building.image] : [];
+    const open = () => {
+      if (!this.drag?.moved) this.options.onStudio();
+    };
+    for (const target of [sign, ...(building ? [building.image] : [])]) {
+      target.setInteractive({ useHandCursor: true, pixelPerfect: target !== sign });
+      target.on('pointerup', open);
+      target.on('pointerover', () => targets.forEach((image) => image.setTint(0xfff0d8)));
+      target.on('pointerout', () => targets.forEach((image) => image.clearTint()));
     }
   }
 

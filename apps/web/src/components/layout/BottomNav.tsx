@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import React from 'react';
 import { BoardIcon, MarketIcon, PersonIcon, PlazaIcon, PlusIcon, TrophyIcon, UpIcon } from '@/components/ui/icons';
+import { NowPlaying } from '@/components/studio/StudioPlayer';
 import { cn } from '@/lib/utils/cn';
 import { MESSAGES } from '@/messages';
 import { useOwnedIds, useSelectedCitizenId } from '@/stores/selectors';
@@ -43,24 +44,27 @@ export const BottomNav: React.FC = () => {
   const tabs = useNavTabs();
 
   return (
-    <nav
-      aria-label={MESSAGES.nav.label}
-      className="pointer-events-auto grid h-16 shrink-0 grid-cols-6 border-t-2 border-[#05090e] bg-[#1a2734] px-1 pb-[env(safe-area-inset-bottom)] md:hidden"
-    >
-      {tabs.map((tab) => (
-        <Link
-          key={tab.label}
-          href={tab.href}
-          aria-current={tab.active ? 'page' : undefined}
-          className={cn(
-            'flex flex-col items-center justify-center gap-1 font-heading text-[9px] no-underline',
-            tab.active ? 'text-[#f7d23d]' : 'text-[#c9d5e0]',
-          )}
-        >
-          {tab.icon}
-          {tab.label}
-        </Link>
-      ))}
-    </nav>
+    <>
+      <NowPlaying variant="bar" />
+      <nav
+        aria-label={MESSAGES.nav.label}
+        className="pointer-events-auto grid h-16 shrink-0 grid-cols-6 border-t-2 border-[#05090e] bg-[#1a2734] px-1 pb-[env(safe-area-inset-bottom)] md:hidden"
+      >
+        {tabs.map((tab) => (
+          <Link
+            key={tab.label}
+            href={tab.href}
+            aria-current={tab.active ? 'page' : undefined}
+            className={cn(
+              'flex flex-col items-center justify-center gap-1 font-heading text-[9px] no-underline',
+              tab.active ? 'text-[#f7d23d]' : 'text-[#c9d5e0]',
+            )}
+          >
+            {tab.icon}
+            {tab.label}
+          </Link>
+        ))}
+      </nav>
+    </>
   );
 };

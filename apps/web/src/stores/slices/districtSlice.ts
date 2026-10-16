@@ -52,12 +52,14 @@ function createSource(options: CreateBasStoreOptions): DistrictDataSource {
       utilityMint: chain.utilityMint,
       candyMachine: chain.candyMachine,
       ...(chain.marketProgramId ? { marketProgramId: chain.marketProgramId } : {}),
+      ...(chain.prizeVaultProgramId ? { prizeVaultProgramId: chain.prizeVaultProgramId } : {}),
     }),
     transactions: createTransactions({
       rpc: kitSendRpc(chain.rpcUrl),
       programId: chain.programId,
       utilityMint: chain.utilityMint,
       ...(chain.marketProgramId ? { market: { programId: chain.marketProgramId, collection: chain.collection } } : {}),
+      ...(chain.prizeVaultProgramId ? { prizeVaultProgramId: chain.prizeVaultProgramId } : {}),
     }),
     missionApi: { baseUrl: chain.missionServerUrl },
     chatApi: { baseUrl: chain.chatServerUrl },
@@ -416,6 +418,12 @@ export function createDistrictSlice(options: CreateBasStoreOptions, set: SetStat
         }),
       );
       return true;
+    },
+
+    claimPrizes: async () => {
+      const next = await run(() => source.claimPrizes());
+      if (next) retroAudio.play('mint');
+      return Boolean(next);
     },
 
     closeExpiredOffers: async (citizenId) => {

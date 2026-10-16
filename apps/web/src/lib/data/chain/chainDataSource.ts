@@ -1,7 +1,17 @@
 import type { CitizenRecord, StatKey } from '@bas/content';
 import { MAX_STAT_SCORE } from '@bas/content';
 import { trainingCostAtoms } from '@bas/chain-client/stats';
-import type { AuctionClock } from '@bas/chain-client/browser';
+import {
+  buildPrizeTree,
+  hasClaimed,
+  prizeErrorName,
+  seasonPrizeStage,
+  toHex,
+  unallocatedLamports,
+  type AuctionClock,
+  type PrizeRow,
+} from '@bas/chain-client/browser';
+import type { Address } from '@solana/kit';
 import { ChatPortError, type CitizenChatPort } from '../chat';
 import { bracketOf } from '../districts';
 import {
@@ -34,6 +44,7 @@ import type {
   MarketSnapshot,
   MissionDefinition,
   MissionProgress,
+  SeasonPrize,
   StatCredits,
   StepProof,
 } from '../types';
@@ -44,6 +55,7 @@ import {
   fromBase64,
   type MarketActivity,
   type MissionStatus,
+  type PublishedPrizes,
   type SeasonInfo,
   type Standing,
 } from './missionApi';
@@ -56,6 +68,7 @@ import {
   type DistrictReads,
   type DistrictTransactions,
   type MarketReading,
+  type PrizeReading,
   type SaleReading,
   type WalletSession,
 } from './types';
@@ -144,6 +157,16 @@ const MARKET_ERRORS: Readonly<Partial<Record<string, DistrictActionError>>> = {
   OfferChanged: 'price-changed',
 };
 
+/** Prize vault refusals and what the screens call them. Anything not listed is `transaction-failed`. */
+const PRIZE_ERRORS: Readonly<Partial<Record<string, DistrictActionError>>> = {
+  NotFinalized: 'prize-not-open',
+  ClaimsNotOpen: 'prize-not-open',
+  AlreadyClaimed: 'prize-claimed',
+};
+
+/** Prizes claimed in one transaction; each claim carries a proof of up to six hashes. */
+const CLAIMS_PER_TRANSACTION = 3;
+
 /** The error the screens show for anything that went wrong while talking to the wallet, server or cluster. */
 export function actionErrorOf(error: unknown): DistrictActionError {
   if (error instanceof WalletDeclinedError) return 'declined';
@@ -186,6 +209,9 @@ export function createChainDataSource(options: ChainDataSourceOptions): ChainDat
   let activity: MarketActivity = { sales: [], bids: [] };
   let season: SeasonInfo | null = null;
   let standings: readonly Standing[] = [];
+  let prize: PrizeReading | null = null;
+  /** The published winners with their proofs, kept only while they hash to the root on chain. */
+  let winners: { readonly rows: readonly PrizeRow[]; readonly proofs: readonly Uint8Array[][] } | null = null;
   const statuses = new Map<string, MissionStatus>();
   /** Set when the person closed the sign-in prompt, so a refresh does not ask again on its own. */
   let signInDeclined = false;
@@ -252,7 +278,8 @@ export function createChainDataSource(options: ChainDataSourceOptions): ChainDat
   /** Season day of a Unix time, kept inside the season. */
   const dayOf = (seconds: number): number => {
     if (!season) return 1;
-    return Math.min(Math.max(Math.floor((seconds - season.startsAt) / SECONDS_PER_DAY) + 1, 1), season.days);
+    const length = season.daySeconds ?? SECONDS_PER_DAY;
+    return Math.min(Math.max(Math.floor((seconds - season.startsAt) / length) + 1, 1), season.days);
   };
 
   /**
@@ -545,14 +572,73 @@ export function createChainDataSource(options: ChainDataSourceOptions): ChainDat
         number: season?.id ?? 1,
         day: season ? Math.min(Math.max(season.day, 1), season.days) : 1,
         length: season?.days ?? 1,
-        vaultLamports: 0n,
-        fundedLamports: 0n,
-        vaultAddress: '—',
+        vaultLamports: prize?.vaultLamports ?? 0n,
+        fundedLamports: prize?.season?.fundedLamports ?? 0n,
+        vaultAddress: prize?.vault ?? '—',
         pools: POOL_RULES.map((rule) => ({ ...rule, validEntries: leaderboards[rule.id]?.length ?? 0 })),
         leaderboards,
+        prize: prizeNow(),
       },
       market: marketNow(minted),
     };
+  };
+
+  /** The season in the prize vault, with what the connected wallet won in it. */
+  const prizeNow = (): SeasonPrize | null => {
+    if (!prize) return null;
+    const account = prize.season;
+    const serials = new Map([...bySerial()].map(([serial, citizen]) => [citizen.asset, serial]));
+    const me = session?.address;
+    const mine =
+      me && winners && account
+        ? winners.rows
+            .filter((row) => row.winner === me)
+            .map((row) => ({
+              index: row.index,
+              pool: row.pool,
+              rank: row.rank,
+              amountLamports: row.amountLamports,
+              citizenId: serials.get(row.asset) ?? null,
+              claimed: hasClaimed(account, row.index),
+            }))
+        : [];
+    const published = Boolean(account && account.finalizedAt !== 0);
+    return {
+      stage: seasonPrizeStage(account ?? undefined, Math.floor(clock() / 1000)),
+      endsAt: account?.endsAt ?? null,
+      claimsOpenAt: published ? (account?.claimsOpenAt ?? null) : null,
+      winners: account?.winners ?? 0,
+      prizesLamports: account?.prizesLamports ?? 0n,
+      claimedLamports: account?.claimedLamports ?? 0n,
+      unallocatedLamports: unallocatedLamports(prize.vaultLamports, prize.vaultRentLamports, prize.config),
+      paidLamports: prize.config.paidLamports,
+      mine,
+      listMissing: published && winners === null,
+    };
+  };
+
+  /**
+   * The winners list the mission server publishes, kept only when its rows
+   * hash to the root the vault holds: the server could be behind or wrong,
+   * the vault is not.
+   */
+  const checkWinners = async (list: PublishedPrizes | null, reading: PrizeReading | null): Promise<typeof winners> => {
+    const account = reading?.season;
+    if (!list || !account || account.finalizedAt === 0 || list.seasonId !== account.seasonId) return null;
+    try {
+      const rows: PrizeRow[] = list.rows.map((row) => ({
+        index: row.index,
+        winner: row.winner as Address,
+        amountLamports: BigInt(row.amountLamports),
+        asset: row.asset,
+        pool: row.pool,
+        rank: row.rank,
+      }));
+      const tree = await buildPrizeTree(account.seasonId, rows);
+      return toHex(tree.root) === toHex(account.winnersRoot) ? { rows, proofs: tree.proofs } : null;
+    } catch {
+      return null;
+    }
   };
 
   /** Standings of this season, split by the bracket each citizen is in now. */
@@ -636,6 +722,14 @@ export function createChainDataSource(options: ChainDataSourceOptions): ChainDat
       chain = list;
       season = info;
       standings = ranks;
+      // The vault and the published winners follow the season the server runs.
+      if (info) {
+        const reading = await reads.prize(info.id).catch(() => prize);
+        const finalized = Boolean(reading?.season && reading.season.finalizedAt !== 0);
+        const list = finalized ? await api.prizes(info.id).catch(() => null) : null;
+        prize = reading;
+        winners = await checkWinners(list, reading);
+      }
       sale = machine;
       market = listings;
       activity = trades;
@@ -1008,6 +1102,33 @@ export function createChainDataSource(options: ChainDataSourceOptions): ChainDat
           config,
         }),
       );
+    },
+
+    async claimPrizes() {
+      if (!session) return fail('not-connected');
+      const account = prize?.season;
+      if (!account || !winners) return fail('prize-not-open');
+      const now = Math.floor(clock() / 1000);
+      const stage = seasonPrizeStage(account, now);
+      if (stage === 'settled') return fail('prize-claimed');
+      if (stage !== 'claiming') return fail('prize-not-open');
+      const me = session.address;
+      const open = winners.rows
+        .filter((row) => row.winner === me && !hasClaimed(account, row.index))
+        .slice(0, CLAIMS_PER_TRANSACTION)
+        .map((row) => ({ index: row.index, amountLamports: row.amountLamports, proof: winners?.proofs[row.index] ?? [] }));
+      if (open.length === 0) return fail('prize-claimed');
+      try {
+        const built = await transactions.buildClaimPrizes({ winner: me, seasonId: account.seasonId, prizes: open });
+        await transactions.send(await session.signTransaction(built));
+      } catch (error) {
+        const name = error instanceof TransactionFailedError && error.errorNumber !== undefined ? prizeErrorName(error.errorNumber) : undefined;
+        const refused = name ? PRIZE_ERRORS[name] : undefined;
+        if (!refused) return failed(error);
+        await load();
+        return fail(refused);
+      }
+      return load();
     },
 
     async closeExpiredOffers(citizenId: number) {

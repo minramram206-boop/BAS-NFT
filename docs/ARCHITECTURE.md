@@ -10,7 +10,7 @@ and the mandated technology choices in [`id/TECH_STACK_ID.md`](./id/TECH_STACK_I
 apps/
   web/                     Next.js 15 App Router application
     src/
-      app/                 routes (/, /missions, /training, /mint, /season, /citizen/[id]) and the root layout
+      app/                 routes (/, /missions, /training, /mint, /season, /market, /studio, /citizen/[id]) and the root layout
       components/
         city/              city screen (top bar, sidebar, framed map), Phaser host, selected citizen card with roster tabs, mission tracker and mission popup, event card
         citizen/           profile screen, the citizen rail (left column of Missions and the city sidebar), the player strip (Training), avatar switcher, stat rows
@@ -62,6 +62,10 @@ programs/
     src/errors.rs          DistrictError
     src/events.rs          §13 events plus ConfigUpdated
     tests/integration/     solana-program-test suite: harness/ plus one file per area
+  market/                  Anchor program: listings, offers and auctions (docs/MARKET.md)
+  prize_vault/             Anchor program: the season prize vault (docs/PRIZE_VAULT.md)
+    src/merkle.rs          the winners tree the claims are proved against
+    tests/                 solana-program-test suite from funding to rollover
 
 config/
   devnet.json              devnet addresses and parameters
@@ -80,7 +84,7 @@ scripts/
   gen-metadata.mjs         writes apps/web/public/templates/7/*.json (pnpm metadata)
   gen-program-id.mjs       one-off program keypair and placeholder generator
   devnet/                  deploy.sh, setup.mjs, mint-setup.mjs (Candy Machine), mint-simulate.mjs and the dependency-free solana.mjs they use
-  mock-city/               generate_city.py: city images and cityLayout.json
+  mock-city/               generate_city.py: city images and cityLayout.json; add_studio.py: BAS Studio and its garden on top
 
 docs/                      this directory
 tests/                     reserved for e2e and integration suites (TECH_STACK_ID.md §11)
@@ -219,7 +223,8 @@ Every sprite the UI renders is referenced from exactly one place:
 | Asset | Referenced by |
 | --- | --- |
 | `public/characters/<id>.png`, `public/avatars/<id>.png`, `public/sprites/citizens/<id>.png`, `public/sprites/citizens/<id>-front.png`, `public/sprites/citizens/<id>-back.png` | `content/en/citizens.json` (no screen renders `avatar` yet; `spriteFront` and `spriteBack` are optional) |
-| `public/images/city/*.png` | `apps/web/src/game/CityScene.ts`, produced by `scripts/mock-city/generate_city.py` |
+| `public/images/city/*.png` | `apps/web/src/game/CityScene.ts`, produced by `scripts/mock-city/generate_city.py`, with BAS Studio added by `add_studio.py` |
+| `public/studio/*` | `apps/web/src/config/studio.json` (the BAS Studio playlist; `apps/web/test/studio.test.ts` checks every listed file exists) |
 | `public/images/district/courtyard_stage_bg.png` | `apps/web/src/components/training/TrainingScreen.tsx` |
 | `public/icons/*.png` | `PixelIcon` call sites in `apps/web/src/components` |
 

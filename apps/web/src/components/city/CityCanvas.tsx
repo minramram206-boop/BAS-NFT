@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import React, { useEffect, useRef, useState } from 'react';
 import type { CityActivity, CityCitizen, CitySceneOptions, MissionTarget } from '@/game/CityScene';
 import type { CityGame } from '@/game/createCityGame';
@@ -43,6 +44,9 @@ export interface CityCanvasProps {
 /** Hosts the Phaser city and keeps it in step with the store. */
 export const CityCanvas: React.FC<CityCanvasProps> = ({ onActivity }) => {
   const api = useBasStoreApi();
+  const router = useRouter();
+  const routerRef = useRef(router);
+  routerRef.current = router;
   const hostRef = useRef<HTMLDivElement | null>(null);
   const activityRef = useRef(onActivity);
   activityRef.current = onActivity;
@@ -60,6 +64,8 @@ export const CityCanvas: React.FC<CityCanvasProps> = ({ onActivity }) => {
       mode: state.cityMode,
       labels: LABELS,
       onSelect: (id) => api.getState().pickFromCity(id),
+      studio: { name: MESSAGES.studio.name, hint: MESSAGES.studio.cityHint },
+      onStudio: () => routerRef.current.push('/studio'),
       onBlocked: (district) => {
         const current = api.getState();
         const citizen = current.citizens.find((item) => item.id === current.selectedCitizenId);

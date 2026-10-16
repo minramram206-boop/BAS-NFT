@@ -112,6 +112,13 @@ export function labelPosition(district: DistrictId): { x: number; y: number } {
   return { x, y: y - 64 };
 }
 
+/** BAS Studio: its footprint, the cell before its doors, and where its sign floats (world pixels). */
+export const STUDIO = layout.studio as unknown as {
+  readonly cells: readonly [number, number, number, number];
+  readonly door: Cell;
+  readonly label: readonly [number, number];
+};
+
 /** A building, tree, lamp or wall drawn as its own image so citizens can walk behind it. */
 export interface Prop {
   /** `[x, y, width, height]` inside `city-props.png`. */

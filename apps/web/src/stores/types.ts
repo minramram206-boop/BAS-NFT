@@ -102,6 +102,8 @@ export interface DistrictSlice extends Omit<DistrictSnapshot, 'citizens'> {
   /** Sell an owned citizen to one offer; resolves to whether the sale went through. */
   acceptOffer: (citizenId: number, offerId: string) => Promise<boolean>;
   closeExpiredOffers: (citizenId: number) => Promise<boolean>;
+  /** Claims the connected wallet's prizes from the vault; `true` once they are paid. */
+  claimPrizes: () => Promise<boolean>;
   /** Mock only: another player makes an offer on one of the wallet's citizens. */
   simulateOffer: (citizenId: number) => Promise<void>;
   /** Mock only: the owner accepts the wallet's offer. */
@@ -212,6 +214,10 @@ export interface ChainOptions {
   marketProgramId?: string;
   /** The manifest's `auctionClock`: set when the deployed market runs auctions in minutes. */
   auctionClock?: 'devnet-fast';
+  /** The season prize vault program; without it the Season screen shows no vault. */
+  prizeVaultProgramId?: string;
+  /** The manifest's `prizeClock`: set when the deployed vault runs its windows in minutes. */
+  prizeClock?: 'devnet-fast';
   maxSupply: number;
   /** Origin of the mission server. */
   missionServerUrl: string;

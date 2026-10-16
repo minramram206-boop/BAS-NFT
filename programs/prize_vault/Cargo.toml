@@ -1,0 +1,41 @@
+[package]
+name = "prize_vault"
+description = "BAS season prize vault - holds the prize pool and pays winners by Merkle proof"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "prize_vault"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build"]
+# Devnet only: the dispute and claim windows run in minutes instead of days (see HOUR_SECONDS).
+devnet-clock = []
+# Anchor 0.30's macros test these cfgs. Naming them keeps rustc 1.80 and later
+# from warning about each one in host builds; none of them is ever turned on.
+anchor-debug = []
+custom-heap = []
+custom-panic = []
+
+[lints.rust]
+# The entrypoint macro tests `target_os = "solana"`, which host rustc does not know.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
+
+[dependencies]
+# `init-if-needed` lets `fund_season` both open a season and add to it.
+anchor-lang = { workspace = true, features = ["init-if-needed"] }
+solana-program = { workspace = true }
+
+[dev-dependencies]
+solana-program-test = { workspace = true }
+solana-sdk = { workspace = true }
+tokio = { workspace = true }

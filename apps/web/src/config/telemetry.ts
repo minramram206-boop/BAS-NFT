@@ -41,6 +41,10 @@ export interface DistrictTelemetry {
   marketProgramId: string | null;
   /** `devnet-fast` when the market's auctions run in minutes for testing; `null` for the real clock. */
   auctionClock: 'devnet-fast' | null;
+  /** The season prize vault program, or `null` on a cluster without one yet. */
+  prizeVaultProgramId: string | null;
+  /** `devnet-fast` when the vault's dispute and claim windows run in minutes for testing. */
+  prizeClock: 'devnet-fast' | null;
   /** Lamports one citizen mint costs, a decimal string. */
   mintPriceLamports: string;
   /** Citizens one wallet can mint in the public sale. */
@@ -74,6 +78,8 @@ export function loadDistrictTelemetry(): DistrictTelemetry {
     utilityTokenMint: config.utilityTokenMint,
     marketProgramId: config.marketProgramId ?? null,
     auctionClock: config.auctionClock ?? null,
+    prizeVaultProgramId: config.prizeVaultProgramId ?? null,
+    prizeClock: config.prizeClock ?? null,
     mintPriceLamports: config.mintPriceLamports,
     mintLimitPerWallet: config.mintLimitPerWallet,
   };

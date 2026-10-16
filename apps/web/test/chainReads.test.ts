@@ -15,7 +15,14 @@ import {
   OFFER_DISCRIMINATOR,
   LISTING_DISCRIMINATOR,
   MARKET_CONFIG_DISCRIMINATOR,
+  PRIZE_CONFIG_DISCRIMINATOR,
+  PRIZE_CONFIG_LAYOUT,
+  SEASON_DISCRIMINATOR,
+  SEASON_LAYOUT,
   associatedTokenAddress,
+  prizeConfigAddress,
+  prizeVaultAddress,
+  seasonAddress,
   candyGuardAddress,
   marketAuthorityAddress,
   marketConfigAddress,
@@ -413,5 +420,58 @@ describe('reading the market', () => {
     assert.equal(citizen?.frozen, true);
     assert.deepEqual(citizen?.freezeDelegate, { kind: 'address', address: delegate });
     assert.deepEqual(citizen?.transferDelegate, { kind: 'address', address: delegate });
+  });
+});
+
+describe('reading the prize vault', () => {
+  const VAULT_PROGRAM = '5A2vzRDhfPfzpZrtvmhx6HFLLD2xmdcHStDwzPcNuXUP';
+
+  function prizeConfig(authority: string, reserved: bigint): Uint8Array {
+    const data = new Uint8Array(PRIZE_CONFIG_LAYOUT.length);
+    data.set(PRIZE_CONFIG_DISCRIMINATOR);
+    data.set(bytesOf(authority), PRIZE_CONFIG_LAYOUT.authorityOffset);
+    new DataView(data.buffer).setBigUint64(PRIZE_CONFIG_LAYOUT.reservedOffset, reserved, true);
+    return data;
+  }
+
+  function season(id: number, funded: bigint): Uint8Array {
+    const data = new Uint8Array(SEASON_LAYOUT.length);
+    data.set(SEASON_DISCRIMINATOR);
+    const view = new DataView(data.buffer);
+    view.setUint32(SEASON_LAYOUT.seasonIdOffset, id, true);
+    view.setBigUint64(SEASON_LAYOUT.fundedOffset, funded, true);
+    return data;
+  }
+
+  const reads = (rpc: FakeRpc, withVault = true) =>
+    createReads({ rpc, programId: PROGRAM, collection: COLLECTION, utilityMint: MINT, ...(withVault ? { prizeVaultProgramId: VAULT_PROGRAM } : {}) });
+
+  it('reads the vault, its config and the season, and nothing the program does not own', async () => {
+    const rpc = new FakeRpc();
+    const program = address(VAULT_PROGRAM);
+    const authority = key();
+    rpc.accounts.set(await prizeConfigAddress(program), { owner: VAULT_PROGRAM, data: prizeConfig(authority, 4n) });
+    rpc.lamports.set(await prizeVaultAddress(program), 9n);
+    rpc.accounts.set(await seasonAddress(program, 2), { owner: PROGRAM, data: season(2, 4n) });
+    let reading = await reads(rpc).prize(2);
+    assert.ok(reading);
+    assert.equal(reading.config.authority, authority);
+    assert.equal(reading.vault, await prizeVaultAddress(program));
+    assert.equal(reading.vaultLamports, 9n);
+    assert.equal(reading.vaultRentLamports, (128n + 10n) * 5_080n);
+    assert.equal(reading.season, null, 'a season account another program owns is not read');
+
+    rpc.accounts.set(await seasonAddress(program, 2), { owner: VAULT_PROGRAM, data: season(2, 4n) });
+    reading = await reads(rpc).prize(2);
+    assert.equal(reading?.season?.fundedLamports, 4n);
+    assert.equal((await reads(rpc).prize(3))?.season, null);
+  });
+
+  it('reports no vault without a program id, before it is opened, or with a foreign config', async () => {
+    const rpc = new FakeRpc();
+    assert.equal(await reads(rpc, false).prize(1), null);
+    assert.equal(await reads(rpc).prize(1), null);
+    rpc.accounts.set(await prizeConfigAddress(address(VAULT_PROGRAM)), { owner: PROGRAM, data: prizeConfig(key(), 0n) });
+    assert.equal(await reads(rpc).prize(1), null);
   });
 });

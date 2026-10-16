@@ -1,6 +1,7 @@
 import {
   acceptOfferInstruction,
   buyInstruction,
+  claimPrizeInstruction,
   closeExpiredOfferInstruction,
   cancelAuctionInstructions,
   cancelSaleInstructions,
@@ -39,11 +40,14 @@ import type { DistrictTransactions } from './types';
 export class TransactionFailedError extends Error {
   /** Set when the market program refused it, so the screens can say why. */
   readonly marketError: MarketErrorName | undefined;
+  /** The Anchor error number, for a refusal by a program other than the market. */
+  readonly errorNumber: number | undefined;
 
-  constructor(message: string, marketError?: MarketErrorName) {
+  constructor(message: string, marketError?: MarketErrorName, errorNumber?: number) {
     super(message);
     this.name = 'TransactionFailedError';
     this.marketError = marketError;
+    this.errorNumber = errorNumber;
   }
 }
 
@@ -126,6 +130,8 @@ export interface TransactionsOptions {
   readonly utilityMint: string;
   /** The market program and the collection it trades; without it every market build throws. */
   readonly market?: { readonly programId: string; readonly collection: string };
+  /** The prize vault program; without it a claim build throws. */
+  readonly prizeVaultProgramId?: string;
   /** Milliseconds between status checks. */
   readonly pollMs?: number;
   /** Milliseconds to wait for a confirmation before giving up. */
@@ -314,6 +320,26 @@ export function createTransactions(options: TransactionsOptions): DistrictTransa
       );
     },
 
+    async buildClaimPrizes({ winner, seasonId, prizes }) {
+      const { prizeVaultProgramId } = options;
+      if (!prizeVaultProgramId) throw new Error('this cluster has no prize vault program');
+      return unsigned(
+        winner,
+        Promise.all(
+          prizes.map((prize) =>
+            claimPrizeInstruction({
+              programId: address(prizeVaultProgramId),
+              winner: address(winner),
+              seasonId,
+              index: prize.index,
+              amountLamports: prize.amountLamports,
+              proof: prize.proof,
+            }),
+          ),
+        ),
+      );
+    },
+
     async send(signed) {
       let signature: string;
       try {
@@ -324,6 +350,7 @@ export function createTransactions(options: TransactionsOptions): DistrictTransa
         throw new TransactionFailedError(
           error instanceof Error ? error.message : 'the cluster refused the transaction',
           code === undefined ? undefined : marketErrorName(code),
+          code,
         );
       }
       const deadline = Date.now() + timeoutMs;

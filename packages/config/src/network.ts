@@ -132,6 +132,15 @@ function requireAuctionClock(source: NetworkConfigFile, network: SupportedNetwor
   return 'devnet-fast';
 }
 
+/** The fast prize clock is a devnet test aid too, and needs a prize vault to apply to. */
+function requirePrizeClock(source: NetworkConfigFile, network: SupportedNetwork): 'devnet-fast' {
+  const field: ConfigField = 'prizeClock';
+  if (source[field] !== 'devnet-fast') invalid(field, 'expected "devnet-fast" or no value');
+  if (network !== 'devnet') invalid(field, 'the fast prize clock exists only on devnet');
+  if (source.prizeVaultProgramId === undefined) invalid(field, 'needs a prizeVaultProgramId');
+  return 'devnet-fast';
+}
+
 /**
  * Validate one cluster manifest and narrow it to {@link DistrictNetworkConfig}.
  *
@@ -163,6 +172,10 @@ export function parseNetworkConfig(
     districtProgramId: requireAddress(source, 'districtProgramId'),
     ...(source.marketProgramId === undefined ? {} : { marketProgramId: requireAddress(source, 'marketProgramId') }),
     ...(source.auctionClock === undefined ? {} : { auctionClock: requireAuctionClock(source, expectedNetwork) }),
+    ...(source.prizeVaultProgramId === undefined
+      ? {}
+      : { prizeVaultProgramId: requireAddress(source, 'prizeVaultProgramId') }),
+    ...(source.prizeClock === undefined ? {} : { prizeClock: requirePrizeClock(source, expectedNetwork) }),
     coreCollection: requireAddress(source, 'coreCollection'),
     candyMachine: requireAddress(source, 'candyMachine'),
     candyGuard: requireAddress(source, 'candyGuard'),

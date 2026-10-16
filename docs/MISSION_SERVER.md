@@ -40,8 +40,9 @@ Semua respons berupa JSON. Kesalahan berbentuk `{ "error": "<kode>", "message": 
 | `POST /citizens/:asset/missions/claim` `{missionId}` | `{status:'sign', transaction, expiresAt}` atau `{status:'confirmed', points}` |
 | `POST /citizens/:asset/missions/confirm` `{missionId}` | Hitung klaim yang sudah masuk chain |
 | `POST /citizens/:asset/missions/abandon` | Batalkan misi aktif |
-| `GET /season` | Info season (`id`, `startsAt`, `days`, `day`, `open`) dan jendela event, tanpa token. Web memakainya untuk menampilkan kartu event |
+| `GET /season` | Info season (`id`, `startsAt`, `days`, `daySeconds`, `endsAt`, `day`, `open`) dan jendela event, tanpa token. Web memakainya untuk menampilkan kartu event |
 | `GET /season/standings` | Poin season per citizen, tanpa token |
+| `GET /season/prizes[?season=<id>]` | Daftar pemenang yang sudah dipublikasikan (`{prizes: {seasonId, root, rows, ...}}` atau `{prizes: null}`), tanpa token. File-nya ditulis `pnpm devnet:prize finalize` ke `PRIZES_DIR`; server menolak file yang barisnya tidak menghasilkan `root`-nya sendiri, dan web hanya memakai daftar yang root-nya sama dengan akun season di prize vault (D-0101) |
 | `POST /mint/prepare` | Transaksi mint penjualan publik (D-0061) untuk wallet pada token: `{transaction, asset, blockhash, lastValidBlockHeight}`. Transaksi base64 sudah ditandatangani semua pihak kecuali wallet pembeli. Hanya aktif bila `MINT_SIGNER_KEYPAIR_FILE` diisi |
 | `GET /market/activity` | Penjualan dan tawaran lelang yang dibaca dari log transaksi program market, terbaru dulu, tanpa token: `{sales, bids}` dengan lamport sebagai string desimal (D-0087). Kosong bila `marketProgramId` tidak ada di config jaringan |
 
@@ -105,5 +106,6 @@ Pengaturan lengkap ada di `.env.example`. Path relatif untuk file kunci dan even
 - Adapter chain di web sudah ada (D-0060): `NEXT_PUBLIC_BAS_DATA=chain` membuat web memakai server ini untuk semua misi. Katalog di web tidak memuat kunci jawaban; kunci itu hanya ada di `apps/mission-server/src/catalog.ts`.
 - Mint (D-0061) belum dijalankan terhadap program Core Candy Machine dan Core Candy Guard yang sungguhan; tes memakai transaksi yang dibangun offline dan dicocokkan dengan kode sumber guard. Jalankan `pnpm devnet:mint-simulate` sebelum mint pertama.
 - Server belum bisa diuji terhadap devnet karena program belum dideploy. Pembacaan akun (`RpcChainReader`) diuji lewat byte yang disusun sesuai layout program, dan tes mencocokkan layout itu dengan sumber Rust.
-- Poin season hanya ada di server. Papan peringkat dan pemenang musim (SPEC bagian 5.8) butuh langkah finalisasi terpisah.
+- Poin season hanya ada di server. Pemenang disusun dari poin itu oleh `pnpm devnet:prize finalize` dan diumumkan sebagai Merkle root di prize vault (D-0101, `docs/PRIZE_VAULT.md`).
+- `SEASON_DAY_SECONDS` (khusus devnet) memendekkan satu hari season, supaya satu season penuh, pemenangnya, dan klaimnya bisa dicoba dalam satu sesi. Server menolak nilai selain 86400 di luar devnet.
 - Database sungguhan, cadangan data, dan pemantauan.

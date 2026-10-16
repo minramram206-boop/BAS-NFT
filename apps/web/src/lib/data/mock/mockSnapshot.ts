@@ -349,6 +349,8 @@ export function createMockSnapshot(
         { id: 'master', shareBps: 2500, maxWinners: 3, validEntries: 0 },
       ],
       leaderboards: { skilled: leaderboard() },
+      // The preview has no vault account; the prize stage and claims come from devnet.
+      prize: null,
     },
     market: {
       open: true,

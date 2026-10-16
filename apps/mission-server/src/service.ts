@@ -13,7 +13,8 @@ import { describeClaim, type HistoryEvent } from './history.js';
 import { assertCanStart, checkStep, type StepProof } from './rules.js';
 import type { ClaimRecord, IssuedClaim, MissionStore, Session } from './store.js';
 
-const DAY_SECONDS = 86_400;
+/** One season day on the real clock. */
+export const DAY_SECONDS = 86_400;
 /** How long a signed claim stays valid on chain. */
 export const CLAIM_TTL_SECONDS = 120;
 /** Slack for clock skew between this server and the validators before an expired claim is replaced. */
@@ -24,6 +25,13 @@ export interface SeasonConfig {
   /** Unix seconds of day 1, hour 0. */
   readonly startsAt: number;
   readonly days: number;
+  /** Seconds in one season day; shorter only on devnet, to play a season through in an afternoon. */
+  readonly daySeconds?: number;
+}
+
+/** When a season ends, in unix seconds; the prize vault takes the same end. */
+export function seasonEndsAt(season: SeasonConfig): number {
+  return season.startsAt + season.days * (season.daySeconds ?? DAY_SECONDS);
 }
 
 export interface EventWindow {
@@ -72,6 +80,9 @@ export interface SeasonInfo {
   /** Unix seconds of day 1, hour 0. */
   readonly startsAt: number;
   readonly days: number;
+  readonly daySeconds: number;
+  /** Unix seconds; the season's prizes can be drawn up from then on. */
+  readonly endsAt: number;
   /** Season day counted from 1; 0 or less before the start, above `days` after the end. */
   readonly day: number;
   readonly open: boolean;
@@ -114,7 +125,8 @@ export class MissionService {
 
   /** Season day, counted from 1; 0 or less before the season starts. */
   dayAt(now: number): number {
-    return Math.floor((Math.floor(now / 1000) - this.options.season.startsAt) / DAY_SECONDS) + 1;
+    const { startsAt, daySeconds = DAY_SECONDS } = this.options.season;
+    return Math.floor((Math.floor(now / 1000) - startsAt) / daySeconds) + 1;
   }
 
   season(): SeasonInfo {
@@ -124,6 +136,8 @@ export class MissionService {
       id: season.id,
       startsAt: season.startsAt,
       days: season.days,
+      daySeconds: season.daySeconds ?? DAY_SECONDS,
+      endsAt: seasonEndsAt(season),
       day,
       open: day >= 1 && day <= season.days,
       events: { ...events },
