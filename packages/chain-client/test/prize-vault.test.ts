@@ -7,6 +7,7 @@ import { describe, it } from 'node:test';
 import { findRepoRoot } from '@bas/config';
 import { AccountRole, getAddressDecoder, type Address } from '@solana/kit';
 import {
+  MIN_PRIZE_LAMPORTS,
   PRIZE_CLOCKS,
   PRIZE_CONFIG_DISCRIMINATOR,
   PRIZE_CONFIG_LAYOUT,
@@ -21,6 +22,7 @@ import {
   PRIZE_VAULT_LENGTH,
   SEASON_DISCRIMINATOR,
   SEASON_LAYOUT,
+  bracketOfStats,
   buildPrizeTree,
   claimPrizeInstruction,
   decodePrizeConfig,
@@ -29,6 +31,7 @@ import {
   fundSeasonInstruction,
   hasClaimed,
   initializePrizeVaultInstruction,
+  isMasterEligible,
   prizeLeaf,
   rolloverSeasonInstruction,
   seasonPrizeRows,
@@ -289,5 +292,53 @@ describe('season prizes', () => {
   it('leaves out citizens without points', () => {
     const entries = Array.from({ length: 6 }, (_, i) => entry(i + 1, i < 5 ? 10 : 0, 'rookie'));
     assert.equal(seasonPrizeRows(1_000_000_000n, entries).filter((row) => row.pool === 'open').length, 1);
+  });
+
+  it('counts at most one citizen per wallet in each competition pool', () => {
+    const whale = addressOf(99);
+    // One wallet holds five rookies; alone they do not reach five valid entries.
+    const solo = Array.from({ length: 5 }, (_, i) => ({
+      asset: `whale-${i}`,
+      owner: whale,
+      points: 500 - i * 10,
+      bracket: 'rookie' as const,
+    }));
+    assert.deepEqual(seasonPrizeRows(10_000_000_000n, solo), []);
+
+    // Add four other wallets: now open and rookie each have 5 valid entries (1 winner), and the whale's best citizen wins.
+    const others = Array.from({ length: 4 }, (_, i) => entry(i + 1, 100 - i, 'rookie'));
+    const rows = seasonPrizeRows(10_000_000_000n, [...solo, ...others]);
+    assert.deepEqual(
+      rows.map((row) => [row.pool, row.rank, row.asset, row.winner]),
+      [
+        ['open', 1, 'whale-0', whale],
+        ['rookie', 1, 'whale-0', whale],
+      ],
+    );
+  });
+
+  it('requires three seasonal claims including summitTrial for the Master bracket', () => {
+    assert.equal(isMasterEligible([{ missionId: 'summitTrial' }, { missionId: 'streetLamp' }]), false);
+    assert.equal(isMasterEligible([{ missionId: 'streetLamp' }, { missionId: 'lightsOut' }, { missionId: 'nightPatrol' }]), false);
+    assert.equal(isMasterEligible([{ missionId: 'summitTrial' }, { missionId: 'streetLamp' }, { missionId: 'lightsOut' }]), true);
+    assert.equal(bracketOfStats({ intelligence: 10, alignment: 1, compute: 1 }, false), 'elite');
+    assert.equal(bracketOfStats({ intelligence: 10, alignment: 1, compute: 1 }, true), 'master');
+  });
+
+  it('caps winners by the 0.1 SOL minimum prize', () => {
+    assert.equal(MIN_PRIZE_LAMPORTS, 100_000_000n);
+    const entries = [
+      ...Array.from({ length: 10 }, (_, i) => entry(i + 1, 200 - i, 'rookie')),
+      ...Array.from({ length: 10 }, (_, i) => entry(20 + i, 100 - i, 'elite')),
+    ];
+    // With 0.5 SOL funded: open has 0.15 SOL (1 winner), elite has 0.10 SOL (1 winner), rookie has 0.05 SOL (0 winners, below 0.1 SOL).
+    const rows = seasonPrizeRows(500_000_000n, entries);
+    assert.deepEqual(
+      rows.map((row) => [row.pool, row.rank, row.amountLamports]),
+      [
+        ['open', 1, 150_000_000n],
+        ['elite', 1, 100_000_000n],
+      ],
+    );
   });
 });

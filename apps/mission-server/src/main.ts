@@ -44,6 +44,8 @@ const sale = mint
         candyMachine: network.candyMachine,
         collection: network.coreCollection,
         treasury: network.solTreasury,
+        ...(network.prizeVaultProgramId ? { prizeVaultProgramId: network.prizeVaultProgramId } : {}),
+        ...(network.mintPrizeShareBps === undefined ? {} : { mintPrizeShareBps: network.mintPrizeShareBps }),
         mintLimitId: MINT_LIMIT_ID,
         mintSecretKey: mint.signer.secretKey,
       }),

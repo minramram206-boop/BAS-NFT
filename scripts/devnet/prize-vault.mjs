@@ -266,7 +266,7 @@ if (command === 'finalize') {
   step('Who holds each citizen now, and its bracket');
   const marketAuthority = config.marketProgramId ? await marketAuthorityAddress(config.marketProgramId) : null;
   const entries = [];
-  for (const { asset, points } of standings) {
+  for (const { asset, points, masterEligible } of standings) {
     const [assetAccount, stateAccount] = await Promise.all([
       rpc.getAccount(new PublicKey(asset)),
       rpc.getAccount(new PublicKey(await citizenStateAddress(config.districtProgramId, asset))),
@@ -288,7 +288,7 @@ if (command === 'finalize') {
       }
       owner = seller;
     }
-    entries.push({ asset, owner, points, bracket: bracketOfStats(citizen) });
+    entries.push({ asset, owner, points, bracket: bracketOfStats(citizen, Boolean(masterEligible)) });
   }
   done(`${entries.length} entries`);
 

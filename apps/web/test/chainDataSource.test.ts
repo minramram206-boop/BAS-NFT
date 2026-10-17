@@ -486,7 +486,11 @@ describe('missions', () => {
       ok(await r.source.setWallet(r.owner));
       assert.equal(refused(await r.source.startMission(A, 'nightPatrol', 'compute')), 'district-locked');
       assert.equal(refused(await r.source.startMission(B, 'streetLamp', 'compute')), 'not-owner');
-      assert.equal(refused(await r.source.startMission(A, 'streetLamp', 'intelligence')), 'invalid-stat');
+      r.world.find(r.asset.a).scores[2] = 3;
+      ok(await r.source.refresh!());
+      assert.equal(refused(await r.source.startMission(A, 'nightPatrol', 'intelligence')), 'invalid-stat');
+      r.world.find(r.asset.a).scores[2] = 1;
+      ok(await r.source.refresh!());
 
       ok(await r.source.startMission(A, 'streetLamp', 'compute'));
       assert.equal(refused(await r.source.startMission(A, 'lightsOut', 'intelligence')), 'citizen-busy');

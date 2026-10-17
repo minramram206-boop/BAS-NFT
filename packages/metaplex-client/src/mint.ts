@@ -21,8 +21,10 @@ export interface MintTransactionInput {
   readonly asset: Signer;
   /** The backend key named by the guard's `thirdPartySigner`. */
   readonly mintSigner: Signer;
-  /** `solTreasury`, where the guard sends the price. */
+  /** `solTreasury`, where the guard sends the treasury share of the price. */
   readonly treasury: string;
+  /** Optional prize vault PDA where the guard sends the prize share via `solFixedFee`. */
+  readonly prizeVault?: string;
   /** Must equal the `mintLimit.id` the guard was created with. */
   readonly mintLimitId: number;
   /** `register_citizen` for `asset`, from `@bas/chain-client`. */
@@ -71,6 +73,7 @@ export async function buildMintTransaction(umi: Umi, input: MintTransactionInput
         payer: minter,
         mintArgs: {
           solPayment: some({ destination: publicKey(input.treasury) }),
+          ...(input.prizeVault ? { solFixedFee: some({ destination: publicKey(input.prizeVault) }) } : {}),
           mintLimit: some({ id: input.mintLimitId }),
           thirdPartySigner: some({ signer: input.mintSigner }),
         },

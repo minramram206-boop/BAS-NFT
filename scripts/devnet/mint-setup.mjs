@@ -34,18 +34,26 @@ if (!existsSync(metaplexEntry)) {
   console.error('packages/metaplex-client is not built. Run `pnpm install` (or `pnpm build:packages`) first.');
   process.exit(1);
 }
+const chainEntry = resolve(repoRoot, 'packages/chain-client/dist/index.js');
+if (!existsSync(chainEntry)) {
+  console.error('packages/chain-client is not built. Run `pnpm install` (or `pnpm build:packages`) first.');
+  process.exit(1);
+}
+const { prizeVaultAddress } = await import(pathToFileURL(chainEntry).href);
 const {
   MINT_LIMIT_ID,
   ROYALTY_BASIS_POINTS,
   buildAddItems,
   buildAddRoyalties,
   buildCreateSale,
+  buildUpdateSaleGuards,
   candyGuardOf,
   createMetaplexContext,
   newSigner,
   readRoyalties,
   readSale,
   signerFromSecretKey,
+  splitMintPayment,
   useSigner,
 } = await import(pathToFileURL(metaplexEntry).href);
 
@@ -169,9 +177,12 @@ if (placed?.basisPoints !== ROYALTY_BASIS_POINTS || placed.creators.length !== 1
 done(`${placed.basisPoints} bps to ${creator.address}`);
 
 const items = rosterItems();
+const prizeVault = config.prizeVaultProgramId ? await prizeVaultAddress(config.prizeVaultProgramId) : undefined;
+const prizeShareBps = config.mintPrizeShareBps ?? 0;
 const guards = {
   priceLamports: BigInt(config.mintPriceLamports),
   treasury: config.solTreasury,
+  ...(prizeVault && prizeShareBps > 0 ? { prizeVault, prizeShareBps } : {}),
   mintLimitPerWallet: config.mintLimitPerWallet,
   mintLimitId: MINT_LIMIT_ID,
   mintSigner: config.mintSigner,
@@ -210,7 +221,11 @@ if (!sale) {
 } else {
   config.candyGuard = candyGuardOf(umi, config.candyMachine);
   saveConfig();
-  done(`machine ${config.candyMachine} already exists`);
+  await send(buildUpdateSaleGuards(umi, { candyGuard: config.candyGuard, authority: deployer, guards }), 'updating the guard');
+  const { treasuryLamports, prizeVaultLamports } = splitMintPayment(guards.priceLamports, guards.prizeShareBps ?? 0);
+  done(
+    `machine ${config.candyMachine}, guard ${config.candyGuard} (${Number(treasuryLamports) / 1e9} SOL treasury, ${Number(prizeVaultLamports) / 1e9} SOL prize vault)`,
+  );
 }
 
 async function splitBuilder(builder) {

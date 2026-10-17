@@ -193,6 +193,9 @@ export function parseNetworkConfig(
     approvedTemplateUriPrefix,
     maxSupply: requirePositiveInteger(source, 'maxSupply'),
     mintPriceLamports: requireU64Atoms(source, 'mintPriceLamports'),
+    ...(source.mintPrizeShareBps === undefined
+      ? {}
+      : { mintPrizeShareBps: requireBoundedInteger(source, 'mintPrizeShareBps', 0, 10_000) }),
     mintLimitPerWallet: requireBoundedInteger(source, 'mintLimitPerWallet', 1, 255),
   };
 }

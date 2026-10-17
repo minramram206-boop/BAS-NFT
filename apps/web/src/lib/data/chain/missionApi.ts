@@ -89,6 +89,7 @@ export interface MintOffer {
 export interface Standing {
   readonly asset: string;
   readonly points: number;
+  readonly masterEligible?: boolean;
 }
 
 /** The server refused the request, or could not be reached (`code: 'unavailable'`). */

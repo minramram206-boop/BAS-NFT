@@ -13,13 +13,13 @@ import { findCandyGuardPda, findMintCounterPda } from '@metaplex-foundation/mpl-
 import { publicKey } from '@metaplex-foundation/umi';
 import { address } from '@solana/kit';
 
-import { buildMintTransaction } from '../dist/index.js';
+import { buildMintTransaction, guardSetFor, splitMintPayment } from '../dist/index.js';
 import { BLOCKHASH, PROGRAM_ID, TREASURY, offlineUmi, signerOf } from './fixtures.ts';
 
 const COMPUTE_BUDGET = 'ComputeBudget111111111111111111111111111111';
 const PACKET_LIMIT = 1232;
 
-async function prepare(overrides: { minter?: string } = {}) {
+async function prepare(overrides: { minter?: string; prizeVault?: string } = {}) {
   const umi = offlineUmi();
   const candyMachine = signerOf(umi, 'machine').publicKey;
   const collection = signerOf(umi, 'collection').publicKey;
@@ -39,6 +39,7 @@ async function prepare(overrides: { minter?: string } = {}) {
     asset,
     mintSigner,
     treasury: TREASURY,
+    ...(overrides.prizeVault ? { prizeVault: overrides.prizeVault } : {}),
     mintLimitId: MINT_LIMIT_ID,
     register,
     computeUnitLimit: 400_000,
@@ -105,6 +106,31 @@ describe('mint transaction', () => {
     assert.ok(message.accounts.includes(TREASURY));
   });
 
+  it('splits the mint payment between the treasury and the prize vault when configured', async () => {
+    const umi = offlineUmi();
+    const prizeVault = signerOf(umi, 'prize-vault').publicKey;
+    assert.deepEqual(splitMintPayment(10_000_000n, 5000), {
+      treasuryLamports: 5_000_000n,
+      prizeVaultLamports: 5_000_000n,
+    });
+    const guards = guardSetFor({
+      priceLamports: 10_000_000n,
+      treasury: TREASURY,
+      prizeVault,
+      prizeShareBps: 5000,
+      mintLimitPerWallet: 1,
+      mintLimitId: MINT_LIMIT_ID,
+      mintSigner: signerOf(umi, 'mint-signer').publicKey,
+    });
+    assert.equal((guards.solPayment as { value: { lamports: { basisPoints: bigint } } }).value.lamports.basisPoints, 5_000_000n);
+    assert.equal((guards.solFixedFee as { value: { lamports: { basisPoints: bigint } } }).value.lamports.basisPoints, 5_000_000n);
+
+    const { message, prepared } = await prepare({ prizeVault });
+    assert.ok(message.accounts.includes(TREASURY));
+    assert.ok(message.accounts.includes(prizeVault));
+    assert.ok(prepared.transaction.length <= PACKET_LIMIT);
+  });
+
   it('leaves exactly the minter unsigned and fits one packet', async () => {
     const { prepared, message, minter } = await prepare();
     const umi = offlineUmi();
@@ -114,6 +140,7 @@ describe('mint transaction', () => {
       .filter((_, index) => signed.signatures[index]?.every((byte) => byte === 0));
     assert.deepEqual(blank, [minter]);
     assert.ok(prepared.transaction.length <= PACKET_LIMIT, `transaction is ${prepared.transaction.length} bytes`);
+    assert.equal(prepared.blockhash, BLOCKHASH.blockhash);
     assert.equal(prepared.blockhash, BLOCKHASH.blockhash);
     assert.equal(prepared.lastValidBlockHeight, BLOCKHASH.lastValidBlockHeight);
   });

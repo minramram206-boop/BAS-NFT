@@ -114,6 +114,8 @@ describe('@bas/config', () => {
     // D-0024: minting costs 0.01 SOL on both clusters.
     assert.equal(DEVNET_CONFIG.mintPriceLamports, '10000000');
     assert.equal(MAINNET_CONFIG.mintPriceLamports, DEVNET_CONFIG.mintPriceLamports);
+    assert.equal(DEVNET_CONFIG.mintPrizeShareBps, 5000);
+    assert.equal(MAINNET_CONFIG.mintPrizeShareBps, DEVNET_CONFIG.mintPrizeShareBps);
     // D-0055: one citizen per wallet in the public sale keeps the roles scarce.
     assert.equal(DEVNET_CONFIG.mintLimitPerWallet, 1);
     assert.equal(MAINNET_CONFIG.mintLimitPerWallet, DEVNET_CONFIG.mintLimitPerWallet);

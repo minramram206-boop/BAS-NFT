@@ -98,9 +98,9 @@ describe('route of a new citizen', () => {
     }
   });
 
-  it('estimates the days to Tier 1 from one mission a day', () => {
-    // Every stat has exactly one mission open to a Tier 0 citizen, so two missing credits take two days.
-    assert.deepEqual(journey.pace, { stat: 'intelligence', tier: 1, days: 2 });
+  it('estimates the days to Tier 1 from up to three missions a day', () => {
+    // All three Tier 0 missions offer every stat, so two missing credits can be earned in one day.
+    assert.deepEqual(journey.pace, { stat: 'intelligence', tier: 1, days: 1 });
   });
 
   it('gives no estimate when a tier can be reached today', () => {

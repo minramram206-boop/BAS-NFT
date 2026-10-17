@@ -42,14 +42,14 @@ export const MISSIONS: readonly MissionSpec[] = [
     id: 'streetLamp',
     chainId: 1,
     district: 'forge',
-    rewards: ['compute'],
+    rewards: ['compute', 'intelligence', 'alignment'],
     steps: [{ kind: 'goto', cell: [18, 18] }, { kind: 'goto', cell: [25, 16] }, { kind: 'puzzle', pieces: 4 }],
   },
   {
     id: 'lightsOut',
     chainId: 2,
     district: 'archive',
-    rewards: ['intelligence'],
+    rewards: ['intelligence', 'alignment', 'compute'],
     steps: [
       { kind: 'goto', cell: [16, 16] },
       { kind: 'talk', options: 3, answer: 1 },
@@ -60,7 +60,7 @@ export const MISSIONS: readonly MissionSpec[] = [
     id: 'hearthDeliveries',
     chainId: 3,
     district: 'hearth',
-    rewards: ['alignment'],
+    rewards: ['alignment', 'intelligence', 'compute'],
     steps: [{ kind: 'goto', cell: [21, 18] }, { kind: 'goto', cell: [14, 24] }, { kind: 'talk', options: 3, answer: 0 }],
   },
   {

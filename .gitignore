@@ -39,3 +39,6 @@ apps/mission-server/data/
 
 # Metaplex Core binary dumped from devnet for the market tests (docs/MARKET.md)
 programs/market/integration/tests/fixtures/*.so
+
+# Large local media files for BAS Studio
+apps/web/public/studio/

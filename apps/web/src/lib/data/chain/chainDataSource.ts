@@ -27,7 +27,7 @@ import {
 } from '../market';
 import { MISSION_CATALOG } from '../missionCatalog';
 import { startBlocker } from '../missions';
-import { POOL_RULES } from '../season';
+import { POOL_RULES, poolField } from '../season';
 import type {
   BracketId,
   DistrictActionError,
@@ -641,18 +641,44 @@ export function createChainDataSource(options: ChainDataSourceOptions): ChainDat
     }
   };
 
-  /** Standings of this season, split by the bracket each citizen is in now. */
+  /**
+   * Standings of this season, split by the bracket each citizen is in now, with
+   * at most one citizen per wallet in each pool (PRIZE_POOL_MODEL §6, §7.1, §11).
+   */
   const boards = (): Partial<Record<BracketId, LeaderboardEntry[]>> => {
     const byAsset = new Map(chain.map((citizen) => [citizen.asset, citizen]));
-    const result: Partial<Record<BracketId, LeaderboardEntry[]>> = {};
+    const candidates: {
+      readonly asset: string;
+      readonly owner: string;
+      readonly points: number;
+      readonly bracket: Exclude<BracketId, 'open'>;
+      readonly row: LeaderboardEntry;
+    }[] = [];
     for (const standing of standings) {
       const onChain = byAsset.get(standing.asset);
       const base = onChain?.serial != null ? roster.get(onChain.serial) : undefined;
       if (!onChain || !base) continue;
+      let owner = onChain.owner;
+      if (market && owner === market.authority) {
+        const seller = market.auctions.find((item) => item.asset === onChain.asset)?.seller;
+        if (!seller) continue;
+        owner = seller;
+      }
       const state = onChain.state;
       const current = state ? { ...base, intelligence: state.intelligence, alignment: state.alignment, compute: state.compute } : base;
       const row: LeaderboardEntry = { citizenId: base.id, serial: base.code, roleKey: base.roleKey, points: standing.points };
-      for (const bracket of ['open', bracketOf(current)] as const) (result[bracket] ??= []).push(row);
+      candidates.push({
+        asset: standing.asset,
+        owner,
+        points: standing.points,
+        bracket: bracketOf(current, Boolean(standing.masterEligible)),
+        row,
+      });
+    }
+    const result: Partial<Record<BracketId, LeaderboardEntry[]>> = {};
+    for (const rule of POOL_RULES) {
+      const rows = poolField(candidates, rule.id).map((entry) => entry.row);
+      if (rows.length > 0) result[rule.id] = rows;
     }
     return result;
   };

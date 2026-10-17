@@ -1,4 +1,4 @@
-import { addConfigLines, create } from '@metaplex-foundation/mpl-core-candy-machine';
+import { addConfigLines, create, updateCandyGuard } from '@metaplex-foundation/mpl-core-candy-machine';
 import { publicKey, some, type Signer, type TransactionBuilder, type Umi } from '@metaplex-foundation/umi';
 import { guardSetFor, type SaleGuardSettings } from './guards.js';
 
@@ -62,6 +62,19 @@ export async function buildCreateSale(umi: Umi, input: CreateSaleInput): Promise
       isSequential: false,
     }),
     guards: guardSetFor(input.guards),
+  });
+}
+
+/** Updates an existing Candy Guard's guard set in place. */
+export function buildUpdateSaleGuards(
+  umi: Umi,
+  input: { readonly candyGuard: string; readonly authority: Signer; readonly guards: SaleGuardSettings },
+): TransactionBuilder {
+  return updateCandyGuard(umi, {
+    candyGuard: publicKey(input.candyGuard),
+    authority: input.authority,
+    guards: guardSetFor(input.guards),
+    groups: [],
   });
 }
 

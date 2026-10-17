@@ -265,7 +265,10 @@ export const SeasonScreen: React.FC = () => {
               {formatMessage(copy.bracketHeading, { bracket: copy.bracketNames[bracket].toUpperCase() })}
             </span>
             <span className="text-[15px] text-[#2b3d4f]">
-              {formatMessage(copy.entries, { entries: pool.validEntries, winners: actualWinners(pool) })}
+              {formatMessage(copy.entries, {
+                entries: pool.validEntries,
+                winners: actualWinners(pool, season.fundedLamports > 0n ? bracketPoolLamports(season.fundedLamports, pool) : undefined),
+              })}
             </span>
           </div>
           <Leaderboard pool={pool} rows={season.leaderboards[bracket] ?? []} fundedLamports={season.fundedLamports} />

@@ -202,7 +202,7 @@
     "statsTitle": "STATS AND MISSIONS",
     "ladderTitle": "TIER LADDER",
     "ladderNote": "A stat at 3, 6 and 10 reaches Tier 1, 2 and 3.",
-    "bracketNote": "The bracket follows the highest stat: {rookie} 0–3 · {skilled} 4–6 · {elite} 7–9 · {master} 10.",
+    "bracketNote": "The bracket follows the highest stat: {rookie} 0–3 · {skilled} 4–6 · {elite} 7–9 · {master} 10 (with 3 season missions including The Summit Trial; otherwise Elite).",
     "tierName": "Tier {tier}",
     "anyStatAt": "Any stat at {score}",
     "reached": "REACHED",
@@ -233,7 +233,7 @@
       "waitDaily": "{name} finished all {max} missions today. Missions open again tomorrow.",
       "waitCooldown": "{name} finished every mission that gives a credit today. They open again tomorrow.",
       "idle": "No mission is open for {name} right now. A district event may start soon.",
-      "complete": "Every stat is at 10. {name} can now compete for the Master bracket.",
+      "complete": "Every stat is at 10. Finish The Summit Trial and at least 3 missions this season to compete in the Master bracket.",
       "notOwner": "{name} belongs to another player, so there is no path to follow."
     },
     "cta": {
@@ -247,13 +247,13 @@
     "tierUpBody": "{name} reached Tier {tier} in {stat}.",
     "tierUpOpened": " {districts} is now open to {name}.",
     "tierUpTry": " Try the mission \"{mission}\".",
-    "tierUpMaster": " {name} now competes in the Master bracket.",
+    "tierUpMaster": " Finish The Summit Trial and at least 3 missions this season to enter the Master bracket.",
     "showPath": "SHOW MY PATH",
     "hidePath": "HIDE MY PATH",
     "tierUpAchievement": " Achievement earned: {title}.",
     "credits": "Credits to spend",
-    "paceOne": "About 1 day to Tier {tier} through {stat}: one mission a day gives one credit.",
-    "paceMany": "About {days} days to Tier {tier} through {stat}: one mission a day gives one credit.",
+    "paceOne": "Reachable today through {stat}: up to 3 missions a day earn credits, then Training raises the stat.",
+    "paceMany": "About {days} days to Tier {tier} through {stat}: up to 3 missions a day earn credits, then Training raises the stat.",
     "goal": "Tier {tier} of 3"
   },
   "missions": {
@@ -263,7 +263,7 @@
     "filterLabel": "Filter by stat",
     "all": "ALL",
     "events": "EVENTS",
-    "note": "Credits from missions are the only way to train",
+    "note": "Step 1: finish a mission for +100 season points and 1 training credit · Step 2: spend that credit in Training to raise your stat level",
     "needCitizen": "Take this mission with a citizen of your own.",
     "statusActive": "IN PROGRESS",
     "statusOpen": "AVAILABLE",
@@ -465,7 +465,7 @@
       },
       "summitTrial": {
         "title": "The Summit Trial",
-        "body": "Only a citizen at the top of one stat may enter Summit Hall. Show the council the district can rely on you.",
+        "body": "Only a citizen with a stat at 10 may enter Summit Hall. Finishing this trial and at least 3 missions in the season qualifies your citizen for the Master prize bracket.",
         "steps": [
           {
             "title": "Climb to the Hall",
@@ -591,7 +591,7 @@
     "you": "YOU",
     "titleOnly": "title only",
     "cutline": "CASH PRIZES STOP AT RANK {rank} · ACHIEVEMENT TITLES CONTINUE",
-    "rules": "Points reset each season. Scores, achievements and history stay with the citizen. One wallet enters one citizen per competition.",
+    "rules": "Points reset each season; stats and history stay with the citizen. Each pool counts one citizen per wallet (0.1 SOL minimum per prize slot), and Master requires a stat at 10 plus 3 season missions including The Summit Trial.",
     "vault": "PRIZE VAULT",
     "noWithdraw": "NO WITHDRAW",
     "explorer": "View on explorer",
@@ -608,7 +608,7 @@
     "stepChallengeText": "Challenge window",
     "stepClaim": "CLAIM",
     "stepClaimText": "Winner signs, any time",
-    "disclosure": "Funded only by Pump.fun creator fees under a locked 50 / 30 / 20 split. Prize amounts are not guaranteed. Holding a citizen does not earn rewards.",
+    "disclosure": "Funded by Pump.fun creator fees and the citizen mint prize share into a program vault with no withdraw instruction. Prize amounts are not guaranteed. Holding a citizen does not earn rewards.",
     "vaultSoon": "The vault address appears here once the prize vault is live.",
     "explorerTitle": "MOCK VAULT",
     "explorerTitleChain": "PRIZE VAULT",
@@ -1196,7 +1196,7 @@
   },
   "studio": {
     "name": "BAS Studio",
-    "cityHint": "TAP TO LISTEN",
+    "cityHint": "TAP TO ENTER",
     "title": "BAS STUDIO",
     "subtitle": "Music and videos from the district",
     "stage": "STAGE",
@@ -1233,6 +1233,14 @@
     "unmute": "Unmute",
     "fullscreen": "Full screen",
     "stop": "Stop",
-    "openStudio": "Open BAS Studio"
+    "openStudio": "Open BAS Studio",
+    "exitDoor": "EXIT TO CITY",
+    "floorHint": "Tap the floor to move inside · step to the automatic door to return to the city"
+  },
+  "fomo": {
+    "name": "FOMO Office",
+    "cityHint": "TAP TO WALK HERE",
+    "title": "FOMO OFFICE",
+    "subtitle": "Frontier market and trend desk"
   }
 }

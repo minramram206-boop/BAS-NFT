@@ -83,10 +83,15 @@ export interface DistrictNetworkConfig {
   /** Mock collection supply for UI preview; the Candy Machine enforces live supply. */
   maxSupply: number;
   /**
-   * Public mint price in lamports, charged by the Candy Guard `solPayment`
-   * guard and paid to `solTreasury` (D-0024). `10000000` is 0.01 SOL.
+   * Public mint price in lamports, charged by the Candy Guard (D-0024).
+   * `10000000` is 0.01 SOL.
    */
   mintPriceLamports: string;
+  /**
+   * Share of `mintPriceLamports` sent directly to the prize vault PDA on every
+   * mint, in basis points (`0` to `10000`); the rest goes to `solTreasury`.
+   */
+  mintPrizeShareBps?: number;
   /**
    * How many citizens one wallet can mint in the public sale, enforced by the
    * Candy Guard `mintLimit` guard (D-0055). The collection is small and its

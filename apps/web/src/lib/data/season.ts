@@ -1,8 +1,10 @@
 import {
+  MIN_PRIZE_LAMPORTS,
   MIN_VALID_ENTRIES,
   PRIZE_POOLS,
   actualWinners,
   payoutSplitBps,
+  poolField,
   poolLamports,
   poolPrizesLamports,
 } from '@bas/chain-client/browser';
@@ -11,11 +13,10 @@ import type { BracketPool } from './types';
 /**
  * Season payout rules from PRIZE_POOL_MODEL §7.1. They live in
  * `@bas/chain-client`, where the mission server draws up the winners tree
- * with the same code, so the board shows what the vault will pay. The
- * minimum-prize cap is left out until a minimum prize is configured.
+ * with the same code, so the board shows what the vault will pay.
  */
 
-export { MIN_VALID_ENTRIES, actualWinners, payoutSplitBps };
+export { MIN_PRIZE_LAMPORTS, MIN_VALID_ENTRIES, actualWinners, payoutSplitBps, poolField };
 
 export function bracketPoolLamports(fundedLamports: bigint, pool: BracketPool): bigint {
   return poolLamports(fundedLamports, pool);

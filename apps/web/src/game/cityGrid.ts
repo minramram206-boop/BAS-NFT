@@ -24,11 +24,62 @@ export const HALF_TILE_W = TILE_W / 2;
 export const HALF_TILE_H = TILE_H / 2;
 const ORIGIN = layout.origin;
 
-const BLOCKED = new Set(layout.blocked.map(([gx, gy]) => key(gx as number, gy as number)));
+/** Floor cells inside the BAS Studio auditorium (5x3 grid) and the doorway cell connecting them to `STUDIO.door`. */
+export const STUDIO_STAGE_CELL: Cell = [9, 31];
+export const STUDIO_DOORWAY_CELL: Cell = [9, 33];
+export const STUDIO_FLOOR_CELLS: readonly Cell[] = [
+  [7, 30],
+  [8, 30],
+  [9, 30],
+  [10, 30],
+  [11, 30],
+  [7, 31],
+  [8, 31],
+  [9, 31],
+  [10, 31],
+  [11, 31],
+  [7, 32],
+  [8, 32],
+  [9, 32],
+  [10, 32],
+  [11, 32],
+];
+const STUDIO_WALKABLE_KEYS = new Set(
+  [STUDIO_DOORWAY_CELL, ...STUDIO_FLOOR_CELLS].map(([gx, gy]) => key(gx, gy)),
+);
+
+/**
+ * Outer walls and roof of BAS Studio (`gx = 6..12, gy = 28..33`) that must stay
+ * blocked so citizens cannot walk over the studio roof or enter from behind/sides;
+ * the only entrance is the front automatic door at `STUDIO_DOORWAY_CELL` (`[9, 33]`).
+ */
+const STUDIO_PERIMETER_BLOCKED: readonly Cell[] = [
+  // North roof & back wall (gy = 28, 29)
+  [6, 28], [7, 28], [8, 28], [9, 28], [10, 28], [11, 28], [12, 28],
+  [6, 29], [7, 29], [8, 29], [9, 29], [10, 29], [11, 29], [12, 29],
+  // West wall (gx = 6) and East wall (gx = 12)
+  [6, 30], [12, 30],
+  [6, 31], [12, 31],
+  [6, 32], [12, 32],
+  // South front wall on either side of the automatic door [9, 33]
+  [6, 33], [7, 33], [8, 33], [10, 33], [11, 33], [12, 33],
+];
+
+const BLOCKED = new Set([
+  ...layout.blocked
+    .map(([gx, gy]) => key(gx as number, gy as number))
+    .filter((cellKey) => !STUDIO_WALKABLE_KEYS.has(cellKey)),
+  ...STUDIO_PERIMETER_BLOCKED.map(([gx, gy]) => key(gx, gy)),
+]);
 const CELLS = layout.cells as Zone[][];
 
 function key(gx: number, gy: number): string {
   return `${gx},${gy}`;
+}
+
+/** True when `cell` is inside the BAS Studio hall or its doorway threshold. */
+export function isStudioInterior(cell: Cell): boolean {
+  return STUDIO_WALKABLE_KEYS.has(key(cell[0], cell[1]));
 }
 
 export function zoneOf(cell: Cell): Zone | undefined {
@@ -100,9 +151,11 @@ export function findPath(from: Cell, to: Cell, scores: Scores): Cell[] {
 
 /** Free cells near the middle of a district, used as schedule stops. */
 export function spotsOf(district: DistrictId): Cell[] {
-  return ((layout.spots as Record<string, number[][]>)[district] ?? []).map(
-    ([gx, gy]) => [gx, gy] as Cell,
-  );
+  return ((layout.spots as Record<string, number[][]>)[district] ?? []).map(([gx, gy]) => {
+    if (district === 'hearth' && gx === 8 && gy === 30) return [8, 34] as Cell;
+    if (district === 'hearth' && gx === 10 && gy === 28) return [10, 34] as Cell;
+    return [gx, gy] as Cell;
+  });
 }
 
 /** World position for a district name label, above its middle. */
@@ -118,6 +171,15 @@ export const STUDIO = layout.studio as unknown as {
   readonly door: Cell;
   readonly label: readonly [number, number];
 };
+
+/** FOMO Office: its footprint, the cell before its doors, and where its sign floats (world pixels). */
+export const FOMO = (layout as unknown as {
+  fomo: {
+    readonly cells: readonly [number, number, number, number];
+    readonly door: Cell;
+    readonly label: readonly [number, number];
+  };
+}).fomo;
 
 /** A building, tree, lamp or wall drawn as its own image so citizens can walk behind it. */
 export interface Prop {
@@ -156,13 +218,13 @@ export function propOrder(prop: Prop): number {
 }
 
 /**
- * True when a citizen standing on `cell` is behind `prop` on screen: in one of
- * its columns and north of its front edge, and not on the prop's own cells (a
- * lamp post).
+ * True when a citizen standing on `cell` whose sprite intersects `prop` is
+ * behind `prop` on screen: north of its front edge (`cy < gy + d`), and not
+ * standing on the prop's own footprint cells.
  */
 export function isBehind(cell: Cell, prop: Prop): boolean {
   const [gx, gy, w, d] = prop.cells;
   const [cx, cy] = cell;
   const inside = cx >= gx && cx < gx + w && cy >= gy && cy < gy + d;
-  return !inside && cx >= gx && cx < gx + w && cy < gy + d;
+  return !inside && cy < gy + d;
 }

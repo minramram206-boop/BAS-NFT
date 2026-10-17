@@ -54,10 +54,10 @@ export function highestStat(citizen: CitizenRecord): number {
   return Math.max(citizen.intelligence, citizen.alignment, citizen.compute);
 }
 
-/** Competition bracket by highest stat (PRIZE_POOL_MODEL §6). */
-export function bracketOf(citizen: CitizenRecord): Exclude<BracketId, 'open'> {
+/** Competition bracket by highest stat and seasonal Master achievement (PRIZE_POOL_MODEL §6). */
+export function bracketOf(citizen: CitizenRecord, masterEligible = true): Exclude<BracketId, 'open'> {
   const highest = highestStat(citizen);
-  if (highest >= 10) return 'master';
+  if (highest >= 10) return masterEligible ? 'master' : 'elite';
   if (highest >= 7) return 'elite';
   if (highest >= 4) return 'skilled';
   return 'rookie';

@@ -10,19 +10,19 @@ export const MISSION_CATALOG: readonly MissionDefinition[] = [
   {
     id: 'streetLamp',
     district: 'forge',
-    rewards: ['compute'],
+    rewards: ['compute', 'intelligence', 'alignment'],
     steps: [{ kind: 'goto', cell: [18, 18] }, { kind: 'goto', cell: [25, 16] }, { kind: 'puzzle' }],
   },
   {
     id: 'lightsOut',
     district: 'archive',
-    rewards: ['intelligence'],
+    rewards: ['intelligence', 'alignment', 'compute'],
     steps: [{ kind: 'goto', cell: [16, 16] }, { kind: 'talk' }, { kind: 'talk' }],
   },
   {
     id: 'hearthDeliveries',
     district: 'hearth',
-    rewards: ['alignment'],
+    rewards: ['alignment', 'intelligence', 'compute'],
     steps: [{ kind: 'goto', cell: [21, 18] }, { kind: 'goto', cell: [14, 24] }, { kind: 'talk' }],
   },
   {

@@ -18,6 +18,7 @@
   "approvedTemplateId": 7,
   "maxSupply": 100,
   "mintPriceLamports": "10000000",
+  "mintPrizeShareBps": 5000,
   "mintLimitPerWallet": 1,
   "approvedTemplateUriPrefix": "https://metadata.example.invalid/templates/7/"
 }

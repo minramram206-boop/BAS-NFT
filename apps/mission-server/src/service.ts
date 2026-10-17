@@ -284,15 +284,23 @@ export class MissionService {
     });
   }
 
-  /** Season points per citizen, highest first. */
-  async standings(): Promise<readonly { asset: string; points: number }[]> {
+  /** Season points per citizen, highest first, with whether the citizen met the Master seasonal requirement (§6). */
+  async standings(): Promise<readonly { asset: string; points: number; masterEligible?: true }[]> {
     const totals = new Map<string, number>();
+    const counts = new Map<string, number>();
+    const summit = new Set<string>();
     for (const claim of await this.options.store.allClaims()) {
       if (claim.seasonId !== this.options.season.id) continue;
       totals.set(claim.asset, (totals.get(claim.asset) ?? 0) + claim.points);
+      counts.set(claim.asset, (counts.get(claim.asset) ?? 0) + 1);
+      if (claim.missionId === 'summitTrial') summit.add(claim.asset);
     }
     return [...totals.entries()]
-      .map(([asset, points]) => ({ asset, points }))
+      .map(([asset, points]) => ({
+        asset,
+        points,
+        ...((counts.get(asset) ?? 0) >= 3 && summit.has(asset) ? { masterEligible: true as const } : {}),
+      }))
       .sort((a, b) => b.points - a.points || a.asset.localeCompare(b.asset));
   }
 

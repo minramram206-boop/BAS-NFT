@@ -191,7 +191,9 @@ function nextStepFor(citizen: CitizenRecord, paths: readonly StatPath[], input: 
   }
 
   for (const path of [...open].sort(byProgress)) {
-    const ready = path.missions.find((option) => option.blocker === null);
+    const ready =
+      path.missions.find((option) => option.blocker === null && option.mission.rewards[0] === path.stat) ??
+      path.missions.find((option) => option.blocker === null);
     if (ready) return { kind: 'start-mission', missionId: ready.mission.id, stat: path.stat };
   }
 

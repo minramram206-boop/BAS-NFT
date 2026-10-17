@@ -94,6 +94,7 @@ interface Glow {
   zone: Zone;
   kind: keyof typeof GLOW_TINT;
   seed: number;
+  studioExterior: boolean;
 }
 
 interface Villager {
@@ -120,6 +121,7 @@ export class CityAmbience {
   private readonly locked = new Set<Zone>();
   private dark!: Phaser.GameObjects.Rectangle;
   private night = 0;
+  private studioOpen = false;
 
   constructor(scene: Phaser.Scene, hooks: AmbienceHooks) {
     this.scene = scene;
@@ -148,10 +150,15 @@ export class CityAmbience {
     for (const { emitter, zone: smokeZone } of this.smoke) emitter.setVisible(!this.locked.has(smokeZone));
   }
 
+  /** Switches outdoor sky multiply, clouds, and window glows off while inside the BAS Studio indoor room. */
+  setStudioOpen(open: boolean): void {
+    this.studioOpen = open;
+  }
+
   update(time: number, delta: number): void {
     const { color, night } = skyAt((START_PHASE + time / CYCLE_MS) % 1);
     this.night = night;
-    this.dark.setFillStyle(color, 1);
+    this.dark.setFillStyle(this.studioOpen ? 0xffffff : color, 1);
     this.updateGlows(time, night);
     this.updateClouds(delta);
     for (const villager of this.villagers) this.stepVillager(villager, time, delta);
@@ -286,14 +293,14 @@ export class CityAmbience {
       if (cloud.image.x > MAP_WIDTH + 500) {
         cloud.image.setPosition(-500, Phaser.Math.Between(40, MAP_HEIGHT - 80));
       }
-      // Clouds shade the day; at night there is nothing left to shade.
-      cloud.image.setAlpha(0.15 * (1 - this.night));
+      // Clouds shade the day; at night or inside a building they are hidden.
+      cloud.image.setAlpha(this.studioOpen ? 0 : 0.15 * (1 - this.night));
     }
   }
 
   private scheduleBirds(delay: number): void {
     this.scene.time.delayedCall(delay, () => {
-      if (this.night < 0.5) this.flyFlock();
+      if (this.night < 0.5 && !this.studioOpen) this.flyFlock();
       this.scheduleBirds(Phaser.Math.Between(9000, 18000));
     });
   }
@@ -333,12 +340,17 @@ export class CityAmbience {
         .setScale((spot.r * 2) / 64)
         .setAlpha(0)
         .setDepth(GLOW_DEPTH);
-      this.glows.push({ image, zone: spot.zone, kind: spot.kind, seed: index });
+      const studioExterior = spot.x >= 395 && spot.x <= 685 && spot.y >= 1240 && spot.y <= 1560;
+      this.glows.push({ image, zone: spot.zone, kind: spot.kind, seed: index, studioExterior });
     });
   }
 
   private updateGlows(time: number, night: number): void {
     for (const glow of this.glows) {
+      if (this.studioOpen) {
+        glow.image.setAlpha(0).setVisible(false);
+        continue;
+      }
       const lit = this.locked.has(glow.zone) ? 0 : glow.kind === 'lamp' ? Math.min(1, night * 1.7) : night;
       const flicker = glow.kind === 'window' ? 0.9 + 0.1 * Math.sin(time / (500 + glow.seed * 7) + glow.seed) : 1;
       glow.image.setAlpha(lit * flicker * 0.9).setVisible(lit > 0.01);

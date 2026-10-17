@@ -6,6 +6,8 @@ export interface CityGame {
   zoomBy(step: 1 | -1): void;
   focusSelected(): void;
   walkToTarget(): void;
+  enterStudio(): void;
+  exitStudio(): void;
   destroy(): void;
 }
 
@@ -56,6 +58,8 @@ export async function createCityGame(parent: HTMLElement, options: CitySceneOpti
     zoomBy: (step) => whenReady(() => scene.zoomBy(step)),
     focusSelected: () => whenReady(() => scene.focusSelected()),
     walkToTarget: () => whenReady(() => scene.walkToTarget()),
+    enterStudio: () => whenReady(() => scene.enterStudio()),
+    exitStudio: () => whenReady(() => scene.exitStudio()),
     destroy: () => game.destroy(true),
   };
 }

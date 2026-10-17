@@ -466,12 +466,23 @@ export const PRIZE_POOLS: readonly PrizePoolRule[] = [
 
 /** A pool with fewer valid entries pays nothing; its share rolls over. */
 export const MIN_VALID_ENTRIES = 5;
+/** Configured minimum prize per winner slot: 0.1 SOL (PRIZE_POOL_MODEL §7.1). */
+export const MIN_PRIZE_LAMPORTS = 100_000_000n;
+/** Seasonal mission claims required for a stat-10 citizen to enter the Master bracket (§6). */
+export const MASTER_MIN_SEASON_CLAIMS = 3;
+/** Summit mastery mission required among a citizen's seasonal claims to enter the Master bracket (§6). */
+export const MASTER_REQUIRED_MISSION_ID = 'summitTrial';
 const WINNER_SHARE_OF_ENTRIES_BPS = 2000;
 
-/** Ranks a pool pays: at most its cap, and one for every five valid entries. */
-export function actualWinners(pool: { maxWinners: number; validEntries: number }): number {
+/**
+ * Ranks a pool pays: at most its cap, one for every five valid entries, and no
+ * more than the pool can fund at `MIN_PRIZE_LAMPORTS` per winner slot (§7.1).
+ */
+export function actualWinners(pool: { maxWinners: number; validEntries: number }, poolTotalLamports?: bigint): number {
   if (pool.validEntries < MIN_VALID_ENTRIES) return 0;
-  return Math.min(pool.maxWinners, Math.floor((pool.validEntries * WINNER_SHARE_OF_ENTRIES_BPS) / 10_000));
+  const byEntries = Math.floor((pool.validEntries * WINNER_SHARE_OF_ENTRIES_BPS) / 10_000);
+  const byMinPrize = poolTotalLamports === undefined ? pool.maxWinners : Number(poolTotalLamports / MIN_PRIZE_LAMPORTS);
+  return Math.min(pool.maxWinners, byEntries, byMinPrize);
 }
 
 /** Share of the pool per rank, in basis points, for `winners` cash winners (§7.1). */
@@ -491,13 +502,32 @@ export function poolLamports(fundedLamports: bigint, pool: { shareBps: number })
 /** Prize of each paid rank in a pool, rank 1 first. */
 export function poolPrizesLamports(fundedLamports: bigint, pool: { shareBps: number; maxWinners: number; validEntries: number }): bigint[] {
   const total = poolLamports(fundedLamports, pool);
-  return payoutSplitBps(actualWinners(pool)).map((bps) => (total * BigInt(bps)) / 10_000n);
+  return payoutSplitBps(actualWinners(pool, total)).map((bps) => (total * BigInt(bps)) / 10_000n);
 }
 
-/** The bracket of a citizen from its highest stat (§6; the Master achievements are not checked yet). */
-export function bracketOfStats(stats: { intelligence: number; alignment: number; compute: number }): PrizeBracket {
+/**
+ * Whether a citizen's confirmed claims in this season satisfy the Master
+ * bracket's seasonal achievement requirement (§6): at least three completed
+ * missions including the Summit trial (`summitTrial`).
+ */
+export function isMasterEligible(claims: readonly { readonly missionId: string }[]): boolean {
+  return (
+    claims.length >= MASTER_MIN_SEASON_CLAIMS &&
+    claims.some((claim) => claim.missionId === MASTER_REQUIRED_MISSION_ID)
+  );
+}
+
+/**
+ * The bracket of a citizen from its highest stat and seasonal Master
+ * achievement (§6): a citizen with a stat at 10 enters `master` once
+ * `masterEligible` is met, and competes in `elite` until then.
+ */
+export function bracketOfStats(
+  stats: { intelligence: number; alignment: number; compute: number },
+  masterEligible = true,
+): PrizeBracket {
   const highest = Math.max(stats.intelligence, stats.alignment, stats.compute);
-  if (highest >= 10) return 'master';
+  if (highest >= 10) return masterEligible ? 'master' : 'elite';
   if (highest >= 7) return 'elite';
   if (highest >= 4) return 'skilled';
   return 'rookie';
@@ -523,16 +553,37 @@ export interface PrizeRow {
 }
 
 /**
+ * Valid entries in one competition pool, highest points first (ties broken by
+ * asset address): citizens with points in this pool, keeping only each wallet's
+ * highest-scoring citizen so one wallet never takes two places in the same
+ * competition (PRIZE_POOL_MODEL §7.1, §11).
+ */
+export function poolField<
+  T extends { readonly asset: string; readonly owner: string; readonly points: number; readonly bracket: PrizeBracket },
+>(entries: readonly T[], poolId: PrizePool): T[] {
+  const ranked = [...entries].sort((a, b) => b.points - a.points || a.asset.localeCompare(b.asset));
+  const seenOwners = new Set<string>();
+  const field: T[] = [];
+  for (const entry of ranked) {
+    if (entry.points <= 0 || (poolId !== 'open' && entry.bracket !== poolId)) continue;
+    if (seenOwners.has(entry.owner)) continue;
+    seenOwners.add(entry.owner);
+    field.push(entry);
+  }
+  return field;
+}
+
+/**
  * The prizes of a season from its standings: every citizen competes in the
- * open pool and in its own bracket, each pool ranked by points (ties by
- * asset address, as the mission server sorts them). The owner at the time of
- * drawing up is paid. Rows are numbered pool by pool in `PRIZE_POOLS` order.
+ * open pool and in its own bracket, with at most one citizen per wallet in each
+ * pool, ranked by points (ties by asset address, as the mission server sorts
+ * them). The owner at the time of drawing up is paid. Rows are numbered pool by
+ * pool in `PRIZE_POOLS` order.
  */
 export function seasonPrizeRows(fundedLamports: bigint, entries: readonly PrizeEntry[]): PrizeRow[] {
-  const ranked = [...entries].sort((a, b) => b.points - a.points || a.asset.localeCompare(b.asset));
   const rows: PrizeRow[] = [];
   for (const pool of PRIZE_POOLS) {
-    const field = ranked.filter((entry) => entry.points > 0 && (pool.id === 'open' || entry.bracket === pool.id));
+    const field = poolField(entries, pool.id);
     const prizes = poolPrizesLamports(fundedLamports, { ...pool, validEntries: field.length });
     prizes.forEach((amountLamports, place) => {
       const entry = field[place];

@@ -60,7 +60,10 @@ describe('starting a mission', () => {
   });
 
   it('refuses a stat the mission does not reward', () => {
-    assert.equal(refusal(() => assertCanStart(context({ stat: 'intelligence' }))), 'invalid-stat');
+    assert.equal(
+      refusal(() => assertCanStart(context({ mission: patrol, scores: { intelligence: 0, alignment: 3, compute: 0 }, stat: 'intelligence' }))),
+      'invalid-stat',
+    );
   });
 
   it('keeps the district locked until a stat reaches the unlock score', () => {

@@ -67,13 +67,28 @@ whole season can be played, published and claimed in one sitting.
 ## Winners
 
 `seasonPrizeRows` in `@bas/chain-client` turns the standings into prizes with
-the rules of PRIZE_POOL_MODEL §7: every citizen with points competes in the
-open pool and in its bracket (from its highest stat), each pool pays one rank
-per five valid entries up to its cap (10 / 10 / 7 / 5 / 3), split 100%, 65/35,
-50/30/20, or 40/25/15 and the rest shared. A pool with fewer than five entries
-pays nothing. Rows are numbered pool by pool (open, rookie, skilled, elite,
-master). The citizen's owner when the list is drawn up is paid; for a citizen
-held by the market in an auction, its seller.
+the rules of PRIZE_POOL_MODEL §§6, 7 and 11:
+- **Pools**: every citizen with points competes in the `open` pool and in its
+  bracket (`rookie`, `skilled`, `elite`, `master`). A citizen with highest stat
+  10 enters `master` only when it completed at least 3 confirmed missions in
+  the season including `summitTrial` (`isMasterEligible`); otherwise it
+  competes in `elite`.
+- **One citizen per wallet per pool**: in each competition pool, a wallet can
+  contribute at most one valid entry and win at most one prize — its
+  highest-scoring citizen in that pool (`poolField`).
+- **Winner caps & 0.1 SOL floor**: each pool pays one rank per five valid
+  entries up to its cap (10 / 10 / 7 / 5 / 3) and at most
+  `floor(poolTotalLamports / 0.1 SOL)` (`MIN_PRIZE_LAMPORTS = 100_000_000`),
+  split 100%, 65/35, 50/30/20, or 40/25/15 and the rest shared. A pool with
+  fewer than five valid entries or less than 0.1 SOL pays nothing.
+- **Payout recipient**: rows are numbered pool by pool (open, rookie, skilled,
+  elite, master). The citizen's owner when the list is drawn up is paid; for a
+  citizen held by the market in an auction, its seller.
+
+Every citizen mint also splits `mintPriceLamports` on chain inside the Candy
+Guard when `mintPrizeShareBps > 0`: `solPayment` sends the team share to
+`solTreasury` and `solFixedFee` sends `floor(mintPriceLamports * mintPrizeShareBps / 10000)`
+straight to `PrizeVault`.
 
 The tree: a leaf is `sha256(0x00 ‖ season u32 LE ‖ index u8 ‖ winner ‖ amount u64 LE)`,
 a node `sha256(0x01 ‖ lower ‖ higher)` with the pair sorted, and an odd hash
@@ -127,8 +142,8 @@ open. The explorer link opens the vault on Solana Explorer.
 | `pnpm prize:test` | 4 unit tests (the tree for 1 to 35 leaves, the shared vector) and 19 instruction tests in solana-program-test: opening, funding only from unallocated SOL, top-ups, the season end, publishing and correcting a list, every claim refusal, the 30% cap, the published total, the dispute window, a claim ten years later, a rollover that releases only the leftover and keeps the prizes, a season with no winners, and the authority handover |
 | `pnpm prize:test` with `--features devnet-clock` | the same on the fast clock |
 | `pnpm prize:test-sbf-devnet` | the same against the built `prize_vault.so` |
-| `pnpm --filter @bas/chain-client test` | layouts, seeds, errors, discriminators and account orders read from the Rust sources; the tree and the payout rules |
-| `pnpm --filter @bas/mission-server test` | the published list (refused when its rows do not hash to its root), `/season/prizes`, the short devnet day |
+| `pnpm --filter @bas/chain-client test` | layouts, seeds, errors, discriminators and account orders read from the Rust sources; the tree, payout rules, 1-citizen-per-wallet-per-pool, Master eligibility and 0.1 SOL minimum prize |
+| `pnpm --filter @bas/mission-server test` | the published list (refused when its rows do not hash to its root), `/season/prizes`, Master eligibility in `/season/standings`, the short devnet day |
 | `pnpm --filter @bas/web test` | reading the vault, claiming one and several prizes in one signature, refusals before the window and after a claim, and a list that does not match the root |
 
 ## Before mainnet
@@ -137,6 +152,5 @@ open. The explorer link opens the vault on Solana Explorer.
 - `propose_authority` to the Squads multisig, `accept_authority` from it.
 - The upgrade authority to the multisig with a timelock, revoked after the audit.
 - A mainnet fork test: `distribute_creator_fees_v2` paying into the vault PDA.
-- The winners list published somewhere public with its scoring evidence (PRIZE_POOL_MODEL §13).
-- Not checked yet: one citizen per wallet per competition, the Master
-  achievements, a minimum prize, and manual review of the top winners.
+- The winners list published somewhere public with its scoring evidence (PRIZE_POOL_MODEL §13), with manual review of the top winners before `finalize`.
+

@@ -1,4 +1,4 @@
-import { registerCitizenInstruction } from '@bas/chain-client';
+import { prizeVaultAddress, registerCitizenInstruction } from '@bas/chain-client';
 import { address } from '@solana/kit';
 import type { Signer, Umi } from '@metaplex-foundation/umi';
 import { createMetaplexContext } from './context.js';
@@ -20,8 +20,11 @@ export interface MintBackendOptions {
   readonly approvedTemplateId: number;
   readonly candyMachine: string;
   readonly collection: string;
-  /** `solTreasury`: where the guard sends the price. */
+  /** `solTreasury`: where the guard sends the treasury share of the price. */
   readonly treasury: string;
+  /** Optional `prizeVaultProgramId` whose vault PDA receives `mintPrizeShareBps` of each mint. */
+  readonly prizeVaultProgramId?: string;
+  readonly mintPrizeShareBps?: number;
   /** Must equal the id `scripts/devnet/mint-setup.mjs` gave the `mintLimit` guard. */
   readonly mintLimitId: number;
   /** Secret key of the `thirdPartySigner` named in the manifest (`mintSigner`). */
@@ -44,12 +47,13 @@ export function createMintBackend(options: MintBackendOptions): MintBackend {
   const umi = options.umi ?? createMetaplexContext(options.rpcUrl);
   const mintSigner = signerFromSecretKey(umi, options.mintSecretKey);
   const newAsset = options.newAsset ?? newSigner;
+  const sharePrize = Boolean(options.prizeVaultProgramId && (options.mintPrizeShareBps ?? 0) > 0);
   return {
     signer: mintSigner.publicKey,
     sale: (wallet) => readSale(umi, { candyMachine: options.candyMachine, mintLimitId: options.mintLimitId, wallet }),
     async prepare(wallet) {
       const asset = newAsset(umi);
-      const [blockhash, register] = await Promise.all([
+      const [blockhash, register, prizeVault] = await Promise.all([
         umi.rpc.getLatestBlockhash({ commitment: 'confirmed' }),
         registerCitizenInstruction({
           programId: address(options.programId),
@@ -57,6 +61,7 @@ export function createMintBackend(options: MintBackendOptions): MintBackend {
           asset: address(asset.publicKey),
           approvedTemplateId: options.approvedTemplateId,
         }),
+        sharePrize ? prizeVaultAddress(address(options.prizeVaultProgramId as string)) : Promise.resolve(undefined),
       ]);
       return buildMintTransaction(umi, {
         candyMachine: options.candyMachine,
@@ -65,6 +70,7 @@ export function createMintBackend(options: MintBackendOptions): MintBackend {
         asset,
         mintSigner,
         treasury: options.treasury,
+        ...(prizeVault ? { prizeVault } : {}),
         mintLimitId: options.mintLimitId,
         register,
         computeUnitLimit: options.computeUnitLimit ?? MINT_COMPUTE_UNIT_LIMIT,
