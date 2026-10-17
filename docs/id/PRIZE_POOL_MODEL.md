@@ -73,9 +73,8 @@ Penerima di `sharing_config` Pump.fun:
 
 | Penerima | `share_bps` | Purpose |
 | --- | ---: | --- |
-| `PrizePoolVault` (PDA program `prize_vault`) | 5000 | Fund published competitions |
-| `OperationsTreasury` (multisig) | 3000 | RPC, database, LLM, storage, monitoring |
-| `SecurityReserve` (multisig) | 2000 | Audit, incident reserve, monitoring, and operational support |
+| `OperationsTreasury` (multisig) | 7000 | RPC, database, LLM, storage, audit, monitoring, and operational support (70%) |
+| `PrizePoolVault` (PDA program `prize_vault`) | 3000 | Fund published seasonal competitions (30%) |
 
 Alur dana:
 

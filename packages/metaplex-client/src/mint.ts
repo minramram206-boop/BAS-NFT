@@ -23,8 +23,10 @@ export interface MintTransactionInput {
   readonly mintSigner: Signer;
   /** `solTreasury`, where the guard sends the treasury share of the price. */
   readonly treasury: string;
-  /** Optional prize vault PDA where the guard sends the prize share via `solFixedFee`. */
+  /** Optional prize vault PDA where the guard sends the prize share via `solFixedFee` or `solPayment`. */
   readonly prizeVault?: string;
+  /** Share of the mint price sent to the prize vault, in basis points (`0` to `10000`). */
+  readonly mintPrizeShareBps?: number;
   /** Must equal the `mintLimit.id` the guard was created with. */
   readonly mintLimitId: number;
   /** `register_citizen` for `asset`, from `@bas/chain-client`. */
@@ -61,6 +63,10 @@ export async function buildMintTransaction(umi: Umi, input: MintTransactionInput
   const candyMachine = publicKey(input.candyMachine);
   const candyGuard = findCandyGuardPda(umi, { base: candyMachine });
 
+  const is100PercentPrize = Boolean(input.prizeVault && input.mintPrizeShareBps === 10_000);
+  const solPaymentDestination = is100PercentPrize ? input.prizeVault! : input.treasury;
+  const hasFixedFee = Boolean(input.prizeVault && !is100PercentPrize);
+
   const builder = transactionBuilder()
     .add(setComputeUnitLimit(umi, { units: input.computeUnitLimit }))
     .add(
@@ -72,8 +78,8 @@ export async function buildMintTransaction(umi: Umi, input: MintTransactionInput
         minter,
         payer: minter,
         mintArgs: {
-          solPayment: some({ destination: publicKey(input.treasury) }),
-          ...(input.prizeVault ? { solFixedFee: some({ destination: publicKey(input.prizeVault) }) } : {}),
+          solPayment: some({ destination: publicKey(solPaymentDestination) }),
+          ...(hasFixedFee ? { solFixedFee: some({ destination: publicKey(input.prizeVault!) }) } : {}),
           mintLimit: some({ id: input.mintLimitId }),
           thirdPartySigner: some({ signer: input.mintSigner }),
         },

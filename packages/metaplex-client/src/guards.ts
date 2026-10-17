@@ -45,15 +45,19 @@ export function splitMintPayment(
 export function guardSetFor(settings: SaleGuardSettings): Partial<DefaultGuardSetArgs> {
   const { startsAt, botTaxLamports, prizeVault, prizeShareBps = 0 } = settings;
   const { treasuryLamports, prizeVaultLamports } = splitMintPayment(settings.priceLamports, prizeVault ? prizeShareBps : 0);
+  const is100PercentPrize = Boolean(prizeVault && prizeVaultLamports > 0n && treasuryLamports === 0n);
+  const isSplit = Boolean(prizeVault && prizeVaultLamports > 0n && treasuryLamports > 0n);
+
   return {
     botTax:
       botTaxLamports === undefined ? none() : some({ lamports: lamports(botTaxLamports), lastInstruction: true }),
-    solPayment:
-      treasuryLamports > 0n
+    solPayment: is100PercentPrize
+      ? some({ lamports: lamports(prizeVaultLamports), destination: publicKey(prizeVault!) })
+      : treasuryLamports > 0n
         ? some({ lamports: lamports(treasuryLamports), destination: publicKey(settings.treasury) })
         : none(),
-    ...(prizeVault && prizeVaultLamports > 0n
-      ? { solFixedFee: some({ lamports: lamports(prizeVaultLamports), destination: publicKey(prizeVault) }) }
+    ...(isSplit
+      ? { solFixedFee: some({ lamports: lamports(prizeVaultLamports), destination: publicKey(prizeVault!) }) }
       : {}),
     startDate: startsAt === undefined ? none() : some({ date: BigInt(startsAt) }),
     thirdPartySigner: some({ signerKey: publicKey(settings.mintSigner) }),

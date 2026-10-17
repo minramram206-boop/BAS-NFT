@@ -19,7 +19,7 @@ import { BLOCKHASH, PROGRAM_ID, TREASURY, offlineUmi, signerOf } from './fixture
 const COMPUTE_BUDGET = 'ComputeBudget111111111111111111111111111111';
 const PACKET_LIMIT = 1232;
 
-async function prepare(overrides: { minter?: string; prizeVault?: string } = {}) {
+async function prepare(overrides: { minter?: string; prizeVault?: string; mintPrizeShareBps?: number } = {}) {
   const umi = offlineUmi();
   const candyMachine = signerOf(umi, 'machine').publicKey;
   const collection = signerOf(umi, 'collection').publicKey;
@@ -39,7 +39,7 @@ async function prepare(overrides: { minter?: string; prizeVault?: string } = {})
     asset,
     mintSigner,
     treasury: TREASURY,
-    ...(overrides.prizeVault ? { prizeVault: overrides.prizeVault } : {}),
+    ...(overrides.prizeVault ? { prizeVault: overrides.prizeVault, mintPrizeShareBps: overrides.mintPrizeShareBps } : {}),
     mintLimitId: MINT_LIMIT_ID,
     register,
     computeUnitLimit: 400_000,
@@ -128,6 +128,32 @@ describe('mint transaction', () => {
     const { message, prepared } = await prepare({ prizeVault });
     assert.ok(message.accounts.includes(TREASURY));
     assert.ok(message.accounts.includes(prizeVault));
+    assert.ok(prepared.transaction.length <= PACKET_LIMIT);
+  });
+
+  it('routes 100% of the mint payment directly to the prize vault when configured', async () => {
+    const umi = offlineUmi();
+    const prizeVault = signerOf(umi, 'prize-vault').publicKey;
+    assert.deepEqual(splitMintPayment(10_000_000n, 10_000), {
+      treasuryLamports: 0n,
+      prizeVaultLamports: 10_000_000n,
+    });
+    const guards = guardSetFor({
+      priceLamports: 10_000_000n,
+      treasury: TREASURY,
+      prizeVault,
+      prizeShareBps: 10_000,
+      mintLimitPerWallet: 1,
+      mintLimitId: MINT_LIMIT_ID,
+      mintSigner: signerOf(umi, 'mint-signer').publicKey,
+    });
+    assert.equal((guards.solPayment as { value: { destination: string; lamports: { basisPoints: bigint } } }).value.destination, prizeVault);
+    assert.equal((guards.solPayment as { value: { lamports: { basisPoints: bigint } } }).value.lamports.basisPoints, 10_000_000n);
+    assert.equal(guards.solFixedFee, undefined);
+
+    const { message, prepared } = await prepare({ prizeVault, mintPrizeShareBps: 10_000 });
+    assert.ok(message.accounts.includes(prizeVault));
+    assert.ok(!message.accounts.includes(TREASURY));
     assert.ok(prepared.transaction.length <= PACKET_LIMIT);
   });
 

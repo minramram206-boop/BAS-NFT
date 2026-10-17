@@ -251,8 +251,8 @@ The program enforces that order on chain (D-0016):
   bids and open offers, so its audit comes before any mainnet use.
 - The season prize vault (D-0019, D-0101, D-0102, D-0103, `docs/PRIZE_VAULT.md`) is
   deployed on devnet (`5A2vzRDhfPfzpZrtvmhx6HFLLD2xmdcHStDwzPcNuXUP`), and the
-  devnet Candy Guard splits every citizen mint 50/50 between `solTreasury` and
-  the prize vault PDA (`mintPrizeShareBps: 5000`). Manual review of top winners
+  devnet Candy Guard routes 100% of every citizen mint into
+  the prize vault PDA (`mintPrizeShareBps: 10000`). Manual review of top winners
   and public publication of scoring evidence remain part of the season
   finalization runbook before mainnet.
 - Clans (D-0023) and the Squads multisig that will hold the program

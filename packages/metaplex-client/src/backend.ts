@@ -70,7 +70,7 @@ export function createMintBackend(options: MintBackendOptions): MintBackend {
         asset,
         mintSigner,
         treasury: options.treasury,
-        ...(prizeVault ? { prizeVault } : {}),
+        ...(prizeVault ? { prizeVault, mintPrizeShareBps: options.mintPrizeShareBps } : {}),
         mintLimitId: options.mintLimitId,
         register,
         computeUnitLimit: options.computeUnitLimit ?? MINT_COMPUTE_UNIT_LIMIT,

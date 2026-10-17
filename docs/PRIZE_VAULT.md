@@ -13,7 +13,7 @@ running season 1 (ends 2026-11-11 00:00 WIB). Mainnet gets a new keypair, a
 multisig authority and an audit first.
 
 The vault is the program `programs/prize_vault`, decided in D-0019: the prize
-share of Pump.fun's creator fees (5000 bps under fee sharing) is paid straight
+share of Pump.fun's creator fees (3000 bps under fee sharing; 7000 bps to operations treasury) is paid straight
 to a PDA this program owns, and nothing but a winner's own claim can take SOL
 out of it. There is no `withdraw`.
 
@@ -85,10 +85,10 @@ the rules of PRIZE_POOL_MODEL §§6, 7 and 11:
   elite, master). The citizen's owner when the list is drawn up is paid; for a
   citizen held by the market in an auction, its seller.
 
-Every citizen mint also splits `mintPriceLamports` on chain inside the Candy
-Guard when `mintPrizeShareBps > 0`: `solPayment` sends the team share to
-`solTreasury` and `solFixedFee` sends `floor(mintPriceLamports * mintPrizeShareBps / 10000)`
-straight to `PrizeVault`.
+Every citizen mint also sends `mintPriceLamports` on chain inside the Candy
+Guard: with `mintPrizeShareBps: 10000`, `solPayment` routes 100% of the mint price
+directly to `PrizeVault`. (When configured with a partial share, `solPayment`
+sends the team share to `solTreasury` and `solFixedFee` sends the prize share to `PrizeVault`).
 
 The tree: a leaf is `sha256(0x00 ‖ season u32 LE ‖ index u8 ‖ winner ‖ amount u64 LE)`,
 a node `sha256(0x01 ‖ lower ‖ higher)` with the pair sorted, and an odd hash
