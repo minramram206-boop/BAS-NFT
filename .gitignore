@@ -13,12 +13,10 @@ target/
 coverage/
 *.tsbuildinfo
 .eslintcache
-
-# environment
+# env
 .env
-.env.*
-!.env.example
-
+.env.local
+.env.*.local
 # editors & OS
 .DS_Store
 Thumbs.db

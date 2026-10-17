@@ -1,8 +1,16 @@
 # Season prize vault
 
-Status: written and tested on 2026-10-17 (D-0101); ready to deploy on devnet
-at `5A2vzRDhfPfzpZrtvmhx6HFLLD2xmdcHStDwzPcNuXUP` with the fast devnet clock.
-Mainnet gets a new keypair, a multisig authority and an audit first.
+Status: deployed on devnet on 2026-10-17 at 03:30 WIB (slot 511831825,
+program data 379,152 bytes, fast devnet clock) at
+`5A2vzRDhfPfzpZrtvmhx6HFLLD2xmdcHStDwzPcNuXUP`. The vault is
+`7HuPcx5kGfCWXhzqnKR9QXFbSANHbfYgYC5cp2MpPj3n`; it was opened, took a 1 SOL
+deposit the way fee sharing will pay, and set 0.5 SOL aside for test season 2
+(03:20 to 04:20 WIB, days of 10 minutes). `finalize` before the end was
+refused, then succeeded at 04:22 WIB (0 winners, claims open 04:30:01 WIB after
+the 8-minute devnet dispute window); `rollover` after 04:30 WIB returned the
+0.5 SOL to the unallocated pool, and `fund_season` set 0.5 SOL aside for
+running season 1 (ends 2026-11-11 00:00 WIB). Mainnet gets a new keypair, a
+multisig authority and an audit first.
 
 The vault is the program `programs/prize_vault`, decided in D-0019: the prize
 share of Pump.fun's creator fees (5000 bps under fee sharing) is paid straight

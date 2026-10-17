@@ -20,10 +20,11 @@ program data on chain matches the owner's build byte for byte (sha256
 (#019) put up by `CJkc…t2AK` from 0.10 SOL for 24 hours, a bid of 0.10 SOL
 from `5WjX…Wo4y`, then 0.105 SOL from `CJLT…ZaY1`, and the first bid paid back
 in full inside that second `place_bid`. The auction account held exactly the
-highest bid plus its rent throughout. That auction runs on the real clock and
-ends on 2026-10-17 at 02:58 WIB; finishing it is the one auction step not yet
-seen on devnet. Every bid of an auction is listed beside the cards and in its
-dialog (D-0088).
+highest bid plus its rent throughout. That auction ran on the real clock,
+ended on 2026-10-17 at 02:58 WIB, and settled cleanly after the D-0092
+upgrade: `CJLT…ZaY1` received Ivy (#019), unfrozen, and seller `CJkc…t2AK`
+received 0.09975 SOL after the 0.00525 SOL royalty. Every bid of an auction is
+listed beside the cards and in its dialog (D-0088).
 
 Since 05:13 WIB the same day devnet runs the fast test clock, where an auction
 hour lasts 10 seconds (D-0089): the program data matches the owner's
@@ -48,8 +49,8 @@ citizen sold. Since the upgrade of 2026-10-16 at about 09:00 WIB (slot
 511552165, after the owner's SBF run of all 61 integration tests on the
 `devnet-clock` build) the market holds an auctioned citizen itself (D-0092),
 so a seller can stop an auction only before the first bid; Ivy's auction,
-started before that, still finishes the old way. The decision
-records are D-0082 to D-0092 in `DECISIONS.md`.
+started before that, finished the old way after 02:58 WIB on 2026-10-17. The
+decision records are D-0082 to D-0092 in `DECISIONS.md`.
 
 ## Goal
 

@@ -5,15 +5,14 @@ District 01, train three attributes, and burn the one official utility token to
 raise a canonical score.
 
 > **Status:** everything runs on devnet and is for testing only. The
-> `district` program (registration, mission credits, token-burn training) and
-> the `market` program (fixed-price sales, offers and auctions) are deployed
+> `district` program (registration, mission credits, token-burn training),
+> the `market` program (fixed-price sales, offers and auctions) and the
+> `prize_vault` program (season prize vault and Merkle claims) are deployed
 > there; citizens are minted through a Core Candy Machine, missions are
 > checked and signed by `apps/mission-server`, and citizens talk through
-> `apps/chat-server`. The season prize vault (`programs/prize_vault`) is
-> written and tested and goes to devnet next. No program is audited, clans
-> are not built yet, and mainnet has no addresses of its own. Nothing here
-> is launch ready — see [Launch gate](#launch-gate) and
-> [Known gaps](#known-gaps).
+> `apps/chat-server`. No program is audited, clans are not built yet, and
+> mainnet has no addresses of its own. Nothing here is launch ready — see
+> [Launch gate](#launch-gate) and [Known gaps](#known-gaps).
 
 ## Quick start
 
@@ -250,10 +249,10 @@ The program enforces that order on chain (D-0016):
   missing.
 - No program is audited (SPEC §16). The market holds SOL for auction
   bids and open offers, so its audit comes before any mainnet use.
-- The season prize vault (D-0019, D-0101, `docs/PRIZE_VAULT.md`) is not on
-  devnet until its first deploy; until then the Season screen shows the vault
-  as not live. One citizen per wallet per competition, the Master
-  achievements and a minimum prize are not checked yet.
+- The season prize vault (D-0019, D-0101, D-0102, `docs/PRIZE_VAULT.md`) is
+  deployed on devnet (`5A2vzRDhfPfzpZrtvmhx6HFLLD2xmdcHStDwzPcNuXUP`). One
+  citizen per wallet per competition, the Master achievements and a minimum
+  prize are not checked yet.
 - Clans (D-0023) and the Squads multisig that will hold the program
   authorities (D-0024) are not built or tried yet.
 - `pnpm dev` without `NEXT_PUBLIC_BAS_DATA=chain` runs on mock data with a

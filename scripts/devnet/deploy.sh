@@ -100,7 +100,9 @@ echo "Program:  $program_id"
 # An upgrade needs ProgramData at least as large as the new binary. The
 # account is sized at first deploy, so a binary that grew is room short.
 so_bytes="$(stat -c %s "$PROGRAM_SO")"
-data_bytes="$(solana program show "$program_id" --url "$RPC_URL" 2>/dev/null | sed -n 's/^Data Length: \([0-9]*\).*/\1/p')"
+# A program that is not deployed yet has nothing to show; with pipefail that
+# failure would end the script here, before the first deploy.
+data_bytes="$( (solana program show "$program_id" --url "$RPC_URL" 2>/dev/null || true) | sed -n 's/^Data Length: \([0-9]*\).*/\1/p')"
 if [ -n "$data_bytes" ] && [ "$so_bytes" -gt "$data_bytes" ]; then
   extra=$((so_bytes - data_bytes))
   # The loader refuses to extend by less than 10,240 bytes at a time, so a

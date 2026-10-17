@@ -113,3 +113,7 @@ jobs:
       # validator is still required before deployment.
       - name: Integration tests
         run: cargo test --test integration -- --test-threads=1
+
+      # The season prize vault from funding to rollover (programs/prize_vault/tests).
+      - name: Prize vault tests
+        run: cargo test --manifest-path programs/prize_vault/Cargo.toml --test prize -- --test-threads=1
